@@ -500,9 +500,7 @@ class ChecksConfiguration(AbstractBaseConfiguration):
         default=False, description="Do not echo generated output to stdout"
     )
 
-    verbose: bool = pydantic.Field(
-        default=False, description="Display verbose output"
-    )
+    verbose: bool = pydantic.Field(default=False, description="Display verbose output")
 
     progressive: bool = pydantic.Field(
         default=True, description="Execute checks and emit output progressively"

@@ -838,7 +838,7 @@ class CheckHelpers(pydantic.BaseModel, servo.logging.Mixin):
                     names.append(check.name)
                     ids.append(check.id)
                     tags.append(", ".join(check.tags) if check.tags else "-")
-                    statuses.append(_check_status_to_str(check))
+                    statuses.append(servo.utilities.strings.check_status_to_str(check))
                     comments.append(textwrap.shorten(check.message or "-", 70))
                     and_checks_passed &= check.success
 

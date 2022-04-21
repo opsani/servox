@@ -62,3 +62,13 @@ def parse_id(
         return parse_csv(v)
 
     return v
+
+
+def check_status_to_str(check) -> str:
+    if check.success:
+        return "√ PASSED"
+    else:
+        if check.warning:
+            return "! WARNING"
+        else:
+            return "X FAILED"

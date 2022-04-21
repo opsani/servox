@@ -12,6 +12,7 @@ from typer.testing import CliRunner
 
 import servo
 from servo import Optimizer
+from servo.configuration import ChecksConfiguration
 from servo.cli import CLI, Context, ServoCLI
 from servo.connectors.vegeta import VegetaConnector
 from servo.servo import Servo
@@ -48,6 +49,31 @@ def vegeta_config_file(servo_yaml: Path) -> Path:
     }
     servo_yaml.write_text(yaml.dump(config))
     return servo_yaml
+
+
+@pytest.fixture()
+def no_progressive_servo_yaml(tmp_path: Path) -> Path:
+    """Return the path to a servo config file set up for running stub connectors from the test helpers."""
+    config_path: pathlib.Path = tmp_path / "servo.yaml"
+    # checks_config = ChecksConfiguration(progressive=False)
+    # os.environ["CHECKS_PROGRESSIVE"] = 'False'
+    settings = servo.BaseConfiguration()
+    servo.logger.info(settings)
+    measure_config_json = json.loads(
+        json.dumps(
+            settings.dict(
+                by_alias=True,
+            )
+        )
+    )
+    config = {
+        "connectors": ["measure", "adjust"],
+        "measure": measure_config_json,
+        "adjust": {},
+    }
+    config = yaml.dump(config)
+    config_path.write_text(config)
+    return config_path
 
 
 def test_help(cli_runner: CliRunner, servo_cli: Typer) -> None:
@@ -98,13 +124,19 @@ def test_check_no_optimizer(cli_runner: CliRunner, servo_cli: Typer) -> None:
 def test_check(
     cli_runner: CliRunner, servo_cli: Typer, optimizer_env: None, stub_servo_yaml: Path
 ) -> None:
-    request = respx.post(
-        "https://api.opsani.com/accounts/dev.opsani.com/applications/servox/servo"
-    )
-    result = cli_runner.invoke(servo_cli, "check")
-    assert request.called, f"stdout={result.stdout}, stderr={result.stderr}"
-    assert result.exit_code == 0
-    assert re.search("CONNECTOR\\s+STATUS", result.stdout)
+    try:
+        os.environ["CHECKS_PROGRESSIVE"] = "False"
+
+        request = respx.post(
+            "https://api.opsani.com/accounts/dev.opsani.com/applications/servox/servo"
+        )
+        result = cli_runner.invoke(servo_cli, "check")
+        assert request.called, f"stdout={result.stdout}, stderr={result.stderr}"
+        assert result.exit_code == 0
+        assert re.search("CONNECTOR\\s+STATUS", result.stdout)
+
+    finally:
+        os.environ.pop("CHECKS_PROGRESSIVE", None)
 
 
 @respx.mock
@@ -113,21 +145,27 @@ def test_check_multiservo(
     servo_cli: Typer,
     stub_multiservo_yaml: Path,
 ) -> None:
-    request1 = respx.post(
-        "https://api.opsani.com/accounts/dev.opsani.com/applications/multi-servox-1/servo"
-    )
-    request2 = respx.post(
-        "https://api.opsani.com/accounts/dev.opsani.com/applications/multi-servox-2/servo"
-    )
-    result = cli_runner.invoke(servo_cli, "check")
-    assert (
-        result.exit_code == 0
-    ), f"exited with non-zero status code (stdout={result.stdout}, stderr={result.stderr})"
-    assert request1.called
-    assert request2.called
-    assert re.search("CONNECTOR\\s+STATUS", result.stdout)
-    assert re.search("dev.opsani.com/multi-servox-1\\s+√ PASSED", result.stdout)
-    assert re.search("dev.opsani.com/multi-servox-2\\s+√ PASSED", result.stdout)
+    try:
+        os.environ["CHECKS_PROGRESSIVE"] = "False"
+
+        request1 = respx.post(
+            "https://api.opsani.com/accounts/dev.opsani.com/applications/multi-servox-1/servo"
+        )
+        request2 = respx.post(
+            "https://api.opsani.com/accounts/dev.opsani.com/applications/multi-servox-2/servo"
+        )
+        result = cli_runner.invoke(servo_cli, "check")
+        assert (
+            result.exit_code == 0
+        ), f"exited with non-zero status code (stdout={result.stdout}, stderr={result.stderr})"
+        assert request1.called
+        assert request2.called
+        assert re.search("CONNECTOR\\s+STATUS", result.stdout)
+        assert re.search("dev.opsani.com/multi-servox-1\\s+√ PASSED", result.stdout)
+        assert re.search("dev.opsani.com/multi-servox-2\\s+√ PASSED", result.stdout)
+
+    finally:
+        os.environ.pop("CHECKS_PROGRESSIVE", None)
 
 
 @respx.mock
@@ -136,36 +174,56 @@ def test_check_multiservo_by_name(
     servo_cli: Typer,
     stub_multiservo_yaml: Path,
 ) -> None:
-    request1 = respx.post(
-        "https://api.opsani.com/accounts/dev.opsani.com/applications/multi-servox-1/servo"
-    )
-    request2 = respx.post(
-        "https://api.opsani.com/accounts/dev.opsani.com/applications/multi-servox-2/servo"
-    )
-    result = cli_runner.invoke(servo_cli, "-n dev.opsani.com/multi-servox-2 check")
-    assert (
-        result.exit_code == 0
-    ), f"exited with non-zero status code (stdout={result.stdout}, stderr={result.stderr})"
-    assert not request1.called
-    assert request2.called
-    assert re.search("CONNECTOR\\s+STATUS", result.stdout)
-    assert re.search("dev.opsani.com/multi-servox-1\\s+√ PASSED", result.stdout) is None
-    assert re.search("dev.opsani.com/multi-servox-2\\s+√ PASSED", result.stdout)
+    try:
+        os.environ["CHECKS_NAME"] = "dev.opsani.com/multi-servox-2"
+        os.environ["CHECKS_PROGRESSIVE"] = "False"
+
+        request1 = respx.post(
+            "https://api.opsani.com/accounts/dev.opsani.com/applications/multi-servox-1/servo"
+        )
+        request2 = respx.post(
+            "https://api.opsani.com/accounts/dev.opsani.com/applications/multi-servox-2/servo"
+        )
+        result = cli_runner.invoke(servo_cli, "check")
+        assert (
+            result.exit_code == 0
+        ), f"exited with non-zero status code (stdout={result.stdout}, stderr={result.stderr})"
+        assert not request1.called
+        assert request2.called
+        assert re.search("CONNECTOR\\s+STATUS", result.stdout)
+        assert (
+            re.search("dev.opsani.com/multi-servox-1\\s+√ PASSED", result.stdout)
+            is None
+        )
+        assert re.search("dev.opsani.com/multi-servox-2\\s+√ PASSED", result.stdout)
+
+    finally:
+        os.environ.pop("CHECKS_PROGRESSIVE", None)
+        os.environ.pop("CHECKS_NAME", None)
 
 
 @respx.mock
 def test_check_verbose(
     cli_runner: CliRunner, servo_cli: Typer, optimizer_env: None, stub_servo_yaml: Path
 ) -> None:
-    request = respx.post(
-        "https://api.opsani.com/accounts/dev.opsani.com/applications/servox/servo"
-    )
-    result = cli_runner.invoke(servo_cli, "check -v", catch_exceptions=False)
-    assert request.called
-    assert result.exit_code == 0, f"result is: {result.stdout}, {result.stderr}"
-    assert re.search(
-        "CONNECTOR\\s+CHECK\\s+ID\\s+TAGS\\s+STATUS\\s+MESSAGE", result.stdout
-    )
+    try:
+        os.environ["CHECKS_PROGRESSIVE"] = "False"
+        os.environ["CHECKS_VERBOSE"] = "True"
+
+        request = respx.post(
+            "https://api.opsani.com/accounts/dev.opsani.com/applications/servox/servo"
+        )
+        result = cli_runner.invoke(servo_cli, "check", catch_exceptions=False)
+        assert request.called
+        assert result.exit_code == 0, f"result is: {result.stdout}, {result.stderr}"
+        assert re.search(
+            "CONNECTOR\\s+CHECK\\s+ID\\s+TAGS\\s+STATUS\\s+MESSAGE", result.stdout
+        )
+
+    finally:
+        os.environ.pop("CHECKS_PROGRESSIVE", None)
+        os.environ.pop("CHECKS_VERBOSE", None)
+
 
 
 @pytest.mark.usefixtures("optimizer_env")

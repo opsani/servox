@@ -45,7 +45,7 @@ from timeago import format as timeago
 import servo
 import servo.runner
 import servo.utilities.yaml
-
+import servo.utilities.strings
 
 class Section(str, enum.Enum):
     assembly = "Assembly Commands"
@@ -1251,8 +1251,10 @@ class ServoCLI(CLI):
                         return_exceptions=True,
                     )
                 )
-                ready = functools.reduce(lambda x, y: x and y, results)
-
+                ready = functools.reduce(lambda x, y: x and y, [i[0] for i in results])
+                output = [i[1] for i in results]
+                if output:
+                    typer.echo(output)
             # Return instead of exiting if we are being invoked
             if ready:
                 if run:
@@ -2175,11 +2177,3 @@ def print_table(table, headers) -> None:
     typer.echo(tabulate(table, headers, tablefmt="plain") + "\n")
 
 
-def _check_status_to_str(check: servo.Check) -> str:
-    if check.success:
-        return "√ PASSED"
-    else:
-        if check.warning:
-            return "! WARNING"
-        else:
-            return "X FAILED"
