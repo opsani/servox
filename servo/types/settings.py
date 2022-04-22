@@ -614,6 +614,13 @@ class EnvironmentSettingList(pydantic.BaseModel):
         ]
     ]
 
+    # above https://pydantic-docs.helpmanual.io/usage/models/#faux-immutability
+    def __iter__(self):
+        return iter(self.__root__)
+
+    def __getitem__(self, item):
+        return self.__root__[item]
+
 
 # TODO: revert to this annotation when the above is resolved
 # PydanticEnvironmentSettingAnnotation = Annotated[
