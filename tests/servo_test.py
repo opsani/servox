@@ -999,6 +999,13 @@ class TestAssembly:
                             "title": "Check Halting",
                             "type": "boolean",
                         },
+                        'connectors': {
+                            'description': 'Connectors to check',
+                            'env_names': ['CHECKS_CONNECTORS'],
+                            'items': {'type': 'string'},
+                            'title': 'Connectors',
+                            'type': 'array',
+                        },
                         "delay": {
                             "default": "10s",
                             "description": "Delay duration. Requires --wait",
@@ -1009,6 +1016,7 @@ class TestAssembly:
                         "halt_on": {
                             "allOf": [{"$ref": "#/definitions/ErrorSeverity"}],
                             "default": "critical",
+                            "description": "Halt running on failure severity",
                             "env_names": ["CHECKS_HALT_ON"],
                         },
                         "id": {
@@ -1027,7 +1035,7 @@ class TestAssembly:
                         },
                         "progressive": {
                             "default": True,
-                            "description": "Display verbose output",
+                            "description": "Execute checks and emit output progressively",
                             "env_names": ["CHECKS_PROGRESSIVE"],
                             "title": "Progressive",
                             "type": "boolean",
@@ -1055,7 +1063,7 @@ class TestAssembly:
                         },
                         "verbose": {
                             "default": False,
-                            "description": "Do not echo generated output to stdout",
+                            "description": "Display verbose output",
                             "env_names": ["CHECKS_VERBOSE"],
                             "title": "Verbose",
                             "type": "boolean",
