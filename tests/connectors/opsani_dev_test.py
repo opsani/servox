@@ -1606,7 +1606,7 @@ class TestCheckHalting:
             os.environ.pop("POD_NAME", None)
             os.environ.pop("POD_NAMESPACE", None)
 
-    @pytest.mark.namespace(create=False, name="test-process")
+    @pytest.mark.namespace(create=False, name="test-checks")
     async def test_checks_do_not_halt(
         self,
         kube,
@@ -1655,7 +1655,7 @@ class TestCheckHalting:
             "🔥 Now witness the firepower of this fully ARMED and OPERATIONAL battle station!"
         )
 
-    @pytest.mark.namespace(create=False, name="test-process")
+    @pytest.mark.namespace(create=False, name="test-checks")
     @pytest.mark.xfail(
         reason="Remedy flow does not complete in time with check halting"
     )
