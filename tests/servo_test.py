@@ -999,12 +999,12 @@ class TestAssembly:
                             "title": "Check Halting",
                             "type": "boolean",
                         },
-                        'connectors': {
-                            'description': 'Connectors to check',
-                            'env_names': ['CHECKS_CONNECTORS'],
-                            'items': {'type': 'string'},
-                            'title': 'Connectors',
-                            'type': 'array',
+                        "connectors": {
+                            "description": "Connectors to check",
+                            "env_names": ["CHECKS_CONNECTORS"],
+                            "items": {"type": "string"},
+                            "title": "Connectors",
+                            "type": "array",
                         },
                         "delay": {
                             "default": "10s",

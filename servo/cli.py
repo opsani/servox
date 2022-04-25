@@ -1193,15 +1193,50 @@ class ServoCLI(CLI):
                 "-i",
                 help="Ask for confirmation before executing operations",
             ),
+            dry_run: Optional[bool] = typer.Option(
+                False,
+                "--dry-run",
+                "-d",
+                help="Execute checks without running servo",
+            ),
         ) -> None:
             """
             Run the servo
             """
             if check:
-                typer_click_object = typer.main.get_group(self)
-                context.invoke(
-                    typer_click_object.commands["check"], exit_on_success=False
-                )
+                if isinstance(context, click.core.Context):
+                    context = context.parent
+
+                # Check all targeted servos
+                if context.servo:
+                    ready, output = run_async(context.servo.check_servo())
+                    if output:
+                        typer.echo(output)
+                else:
+                    results = run_async(
+                        asyncio.gather(
+                            *list(
+                                map(lambda s: s.check_servo(), context.assembly.servos)
+                            ),
+                            return_exceptions=True,
+                        )
+                    )
+                    ready = functools.reduce(
+                        lambda x, y: x and y, [i[0] for i in results]
+                    )
+                    output = [i[1] for i in results]
+                    if output:
+                        typer.echo(output)
+
+                if not dry_run:
+                    if ready:
+                        poll = not no_poll
+                        servo.runner.AssemblyRunner(context.assembly).run(
+                            poll=poll, interactive=bool(interactive)
+                        )
+                else:
+                    exit_code = 0 if ready else 1
+                    raise typer.Exit(exit_code)
 
             if context.assembly:
                 poll = not no_poll
@@ -1210,61 +1245,6 @@ class ServoCLI(CLI):
                 )
             else:
                 raise typer.Abort("failed to assemble servo")
-
-        @self.command(section=section)
-        def check(
-            context: Context,
-            connectors: Optional[list[str]] = typer.Argument(
-                None,
-                help="Connectors to check",
-            ),
-            interactive: Optional[bool] = typer.Option(
-                None,
-                "--interactive",
-                "-i",
-                help="Ask for confirmation before executing operations",
-            ),
-            run: bool = typer.Option(
-                False,
-                "--run",
-                help="Run the servo when checks pass",
-            ),
-            exit_on_success: bool = typer.Option(True, hidden=True),
-        ) -> None:
-            """
-            Check that the servo is ready to run
-            """
-            # FIXME: temporary workaround until I can unwind Context overload
-            if isinstance(context, click.core.Context):
-                context = context.parent
-
-            # Check all targeted servos
-            if context.servo:
-                ready, output = run_async(context.servo.check_servo())
-                if output:
-                    typer.echo(output)
-            else:
-                results = run_async(
-                    asyncio.gather(
-                        *list(map(lambda s: s.check_servo(), context.assembly.servos)),
-                        return_exceptions=True,
-                    )
-                )
-                ready = functools.reduce(lambda x, y: x and y, [i[0] for i in results])
-                output = [i[1] for i in results]
-                if output:
-                    typer.echo(output)
-            # Return instead of exiting if we are being invoked
-            if ready:
-                if run:
-                    servo.runner.AssemblyRunner(context.assembly).run(
-                        interactive=bool(interactive)
-                    )
-                elif not exit_on_success:
-                    return
-
-            exit_code = 0 if ready else 1
-            raise typer.Exit(exit_code)
 
         @self.command(section=section)
         def describe(

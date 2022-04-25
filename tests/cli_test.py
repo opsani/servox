@@ -12,7 +12,6 @@ from typer.testing import CliRunner
 
 import servo
 from servo import Optimizer
-from servo.configuration import ChecksConfiguration
 from servo.cli import CLI, Context, ServoCLI
 from servo.connectors.vegeta import VegetaConnector
 from servo.servo import Servo
@@ -49,31 +48,6 @@ def vegeta_config_file(servo_yaml: Path) -> Path:
     }
     servo_yaml.write_text(yaml.dump(config))
     return servo_yaml
-
-
-@pytest.fixture()
-def no_progressive_servo_yaml(tmp_path: Path) -> Path:
-    """Return the path to a servo config file set up for running stub connectors from the test helpers."""
-    config_path: pathlib.Path = tmp_path / "servo.yaml"
-    # checks_config = ChecksConfiguration(progressive=False)
-    # os.environ["CHECKS_PROGRESSIVE"] = 'False'
-    settings = servo.BaseConfiguration()
-    servo.logger.info(settings)
-    measure_config_json = json.loads(
-        json.dumps(
-            settings.dict(
-                by_alias=True,
-            )
-        )
-    )
-    config = {
-        "connectors": ["measure", "adjust"],
-        "measure": measure_config_json,
-        "adjust": {},
-    }
-    config = yaml.dump(config)
-    config_path.write_text(config)
-    return config_path
 
 
 def test_help(cli_runner: CliRunner, servo_cli: Typer) -> None:
@@ -115,7 +89,7 @@ def test_connectors_verbose(
 
 
 def test_check_no_optimizer(cli_runner: CliRunner, servo_cli: Typer) -> None:
-    result = cli_runner.invoke(servo_cli, "check")
+    result = cli_runner.invoke(servo_cli, "run --check --dry-run")
     assert result.exit_code == 2
     assert "Error: Invalid value: An optimizer must be specified" in result.stderr
 
@@ -130,7 +104,7 @@ def test_check(
         request = respx.post(
             "https://api.opsani.com/accounts/dev.opsani.com/applications/servox/servo"
         )
-        result = cli_runner.invoke(servo_cli, "check")
+        result = cli_runner.invoke(servo_cli, "run --check --dry-run")
         assert request.called, f"stdout={result.stdout}, stderr={result.stderr}"
         assert result.exit_code == 0
         assert re.search("CONNECTOR\\s+STATUS", result.stdout)
@@ -154,7 +128,7 @@ def test_check_multiservo(
         request2 = respx.post(
             "https://api.opsani.com/accounts/dev.opsani.com/applications/multi-servox-2/servo"
         )
-        result = cli_runner.invoke(servo_cli, "check")
+        result = cli_runner.invoke(servo_cli, "run --check --dry-run")
         assert (
             result.exit_code == 0
         ), f"exited with non-zero status code (stdout={result.stdout}, stderr={result.stderr})"
@@ -175,7 +149,6 @@ def test_check_multiservo_by_name(
     stub_multiservo_yaml: Path,
 ) -> None:
     try:
-        os.environ["CHECKS_NAME"] = "dev.opsani.com/multi-servox-2"
         os.environ["CHECKS_PROGRESSIVE"] = "False"
 
         request1 = respx.post(
@@ -184,7 +157,9 @@ def test_check_multiservo_by_name(
         request2 = respx.post(
             "https://api.opsani.com/accounts/dev.opsani.com/applications/multi-servox-2/servo"
         )
-        result = cli_runner.invoke(servo_cli, "check")
+        result = cli_runner.invoke(
+            servo_cli, "-n dev.opsani.com/multi-servox-2 run --check --dry-run"
+        )
         assert (
             result.exit_code == 0
         ), f"exited with non-zero status code (stdout={result.stdout}, stderr={result.stderr})"
@@ -213,7 +188,9 @@ def test_check_verbose(
         request = respx.post(
             "https://api.opsani.com/accounts/dev.opsani.com/applications/servox/servo"
         )
-        result = cli_runner.invoke(servo_cli, "check", catch_exceptions=False)
+        result = cli_runner.invoke(
+            servo_cli, "run --check --dry-run", catch_exceptions=False
+        )
         assert request.called
         assert result.exit_code == 0, f"result is: {result.stdout}, {result.stderr}"
         assert re.search(
@@ -1141,9 +1118,7 @@ def test_ordering_of_ops_commands(servo_cli: CLI, cli_runner: CliRunner) -> None
     result = cli_runner.invoke(servo_cli, "--help", catch_exceptions=False)
     assert result.exit_code == 0
     assert (
-        re.search(
-            r".*run.*\n.*check.*\n.*describe.*\n", result.stdout, flags=re.MULTILINE
-        )
+        re.search(r".*run.*\n.*describe.*\n", result.stdout, flags=re.MULTILINE)
         is not None
     )
 
