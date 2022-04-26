@@ -44,13 +44,8 @@ kubetest.manifest.__render__ = chevron.render
 
 
 def pytest_report_header(config) -> str:
-    try:
-        for connector in servo.connector.ConnectorLoader().load():
-            servo.logger.debug(f"Loaded {connector.__qualname__}")
-    except Exception:
-        servo.logger.exception(
-            "failed loading connectors via discovery", backtrace=True, diagnose=True
-        )
+    for connector in servo.connector.ConnectorLoader().load():
+        servo.logger.debug(f"Loaded {connector.__qualname__}")
 
     names = list(
         map(

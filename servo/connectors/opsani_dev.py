@@ -65,7 +65,7 @@ class OpsaniDevConfiguration(servo.BaseConfiguration):
     port: Optional[Union[pydantic.StrictInt, str]] = None
     cpu: Optional[CPU]
     memory: Optional[Memory]
-    env: Optional[list[servo.PydanticEnvironmentSettingAnnotation]]
+    env: Optional[servo.EnvironmentSettingList]
     static_environment_variables: Optional[Dict[str, str]]
     prometheus_base_url: str = PROMETHEUS_SIDECAR_BASE_URL
     envoy_sidecar_image: str = ENVOY_SIDECAR_IMAGE_TAG
@@ -110,7 +110,6 @@ class OpsaniDevConfiguration(servo.BaseConfiguration):
         Returns:
             A Kubernetes connector configuration object.
         """
-
         strategy: Union[
             servo.connectors.kubernetes.CanaryOptimizationStrategyConfiguration,
             servo.connectors.kubernetes.DefaultOptimizationStrategyConfiguration,
@@ -124,7 +123,9 @@ class OpsaniDevConfiguration(servo.BaseConfiguration):
                 )
             )
 
-            replicas = servo.Replicas(min=0, max=1, pinned=True)
+            replicas = servo.Replicas(
+                min=0, max=1, pinned=True  # NOTE always pinned for now
+            )
 
         else:
             # NOTE: currently assuming we NEVER want to adjust the main deployment with the opsani_dev connector
