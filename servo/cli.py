@@ -1199,11 +1199,27 @@ class ServoCLI(CLI):
                 "-d",
                 help="Execute checks without running servo",
             ),
+            debug: bool = typer.Option(
+                False,
+                "--debug",
+                "--DEBUG",
+                help="Prevent exception handling on running event loop to allow error propogation",
+                envvar="SERVO_RUN_DEBUG",
+            ),
         ) -> None:
             """
             Run the servo
             """
-            if check:
+
+            def run_servo():
+                poll = not no_poll
+                servo.runner.AssemblyRunner(context.assembly).run(
+                    poll=poll,
+                    interactive=bool(interactive),
+                    debug=debug,
+                )
+
+            if check or dry_run:
                 if isinstance(context, click.core.Context):
                     context = context.parent
 
@@ -1228,21 +1244,16 @@ class ServoCLI(CLI):
                     if output:
                         typer.echo(output)
 
-                if not dry_run:
-                    if ready:
-                        poll = not no_poll
-                        servo.runner.AssemblyRunner(context.assembly).run(
-                            poll=poll, interactive=bool(interactive)
-                        )
+                if ready:
+                    if not dry_run:
+                        run_servo()
+                    else:
+                        raise typer.Exit(0)
                 else:
-                    exit_code = 0 if ready else 1
-                    raise typer.Exit(exit_code)
+                    raise typer.Exit(1)
 
             if context.assembly:
-                poll = not no_poll
-                servo.runner.AssemblyRunner(context.assembly).run(
-                    poll=poll, interactive=bool(interactive)
-                )
+                run_servo()
             else:
                 raise typer.Abort("failed to assemble servo")
 
