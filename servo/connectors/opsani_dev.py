@@ -63,8 +63,8 @@ class OpsaniDevConfiguration(servo.BaseConfiguration):
     container: str
     service: str
     port: Optional[Union[pydantic.StrictInt, str]] = None
-    cpu: CPU
-    memory: Memory
+    cpu: Optional[CPU]
+    memory: Optional[Memory]
     env: Optional[list[servo.PydanticEnvironmentSettingAnnotation]]
     static_environment_variables: Optional[Dict[str, str]]
     prometheus_base_url: str = PROMETHEUS_SIDECAR_BASE_URL
@@ -110,6 +110,7 @@ class OpsaniDevConfiguration(servo.BaseConfiguration):
         Returns:
             A Kubernetes connector configuration object.
         """
+
         strategy: Union[
             servo.connectors.kubernetes.CanaryOptimizationStrategyConfiguration,
             servo.connectors.kubernetes.DefaultOptimizationStrategyConfiguration,

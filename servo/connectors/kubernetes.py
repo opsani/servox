@@ -3622,6 +3622,7 @@ class DeploymentOptimization(BaseOptimization):
             name = container_config.alias or (
                 f"{deployment.name}/{container.name}" if container else deployment.name
             )
+
             return cls(
                 name=name,
                 deployment_config=config,
@@ -3955,6 +3956,26 @@ class CanaryOptimization(BaseOptimization):
         main_container = await deployment_or_rollout.get_target_container(
             container_config
         )
+
+        # Autoset CPU and memory range based on resources
+        if not container_config.cpu:
+            cpu_resource = Core(
+                main_container.get_resource_requirements("cpu").get(
+                    ResourceRequirement.request
+                )
+            )
+            cpu_autoset = autoset_resource_range("cpu", value=cpu_resource)
+            container_config.cpu = cpu_autoset
+
+        if not container_config.memory:
+            memory_resource = ShortByteSize.validate(
+                main_container.get_resource_requirements("memory").get(
+                    ResourceRequirement.request
+                )
+            )
+            memory_autoset = autoset_resource_range("memory", value=memory_resource)
+            container_config.memory = memory_autoset
+
         name = (
             deployment_or_rollout_config.strategy.alias
             if isinstance(
@@ -4911,8 +4932,8 @@ class ContainerConfiguration(servo.BaseConfiguration):
     name: ContainerTagName
     alias: Optional[ContainerTagName]
     command: Optional[str]  # TODO: create model...
-    cpu: CPU
-    memory: Memory
+    cpu: Optional[CPU]
+    memory: Optional[Memory]
     env: Optional[list[servo.PydanticEnvironmentSettingAnnotation]] = None
     static_environment_variables: Optional[Dict[str, str]]
 
@@ -5771,3 +5792,35 @@ def set_container_resource_defaults_from_config(
             f"Setting resource requirements for '{resource}' to: {requirements}"
         )
         container.set_resource_requirements(resource, requirements)
+
+
+def autoset_resource_range(
+    resource_type: Resource,
+    value: Union[Core, ShortByteSize],
+) -> Union[CPU, Memory]:
+
+    min_multiplier = 4
+    max_multiplier = 3
+
+    servo.logger.trace(f"Retrieved {resource_type} defined resource: {value}")
+
+    resource_min = value / min_multiplier
+    resource_max = value * max_multiplier
+
+    if resource_type == Resource.cpu:
+
+        resource_autoset = CPU(
+            min=Core(resource_min), max=Core(resource_max), step="250m"
+        )
+
+    elif resource_type == Resource.memory:
+
+        resource_autoset = Memory(
+            min=ShortByteSize.validate(str(resource_min)),
+            max=ShortByteSize.validate(str(resource_max)),
+            step="256 MiB",
+        )
+
+    servo.logger.info(f"Autosetting {resource_type} range to: {resource_autoset}")
+
+    return resource_autoset
