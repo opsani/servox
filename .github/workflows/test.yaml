@@ -310,9 +310,7 @@ jobs:
         source .venv/bin/activate
         pytest -n 6 \
           -T system --verbose --durations=0 --durations-min=5 \
-          --cov=servo --cov-config=setup.cfg --doctest-modules \
-          --cov-report=term-missing:skip-covered --cov-report=xml:artifacts/system-test-coverage.xml \
-          --cov-report=html:artifacts/system-test-coverage-html --junitxml=artifacts/system-test-report.xml \
+          --junitxml=artifacts/system-test-report.xml \
           --html=artifacts/system-test-report.html --self-contained-html
     - uses: actions/upload-artifact@v2
       with:
