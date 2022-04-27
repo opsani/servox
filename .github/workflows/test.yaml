@@ -215,7 +215,7 @@ jobs:
       run: |
         source .venv/bin/activate
         pytest -n 8 \
-          -T integration --verbose --durations=0 --durations-min=5 \ 
+          -T integration --verbose --durations=0 --durations-min=5 \
           --cov=servo --cov-config=setup.cfg --doctest-modules \
           --cov-report=term-missing:skip-covered --cov-report=xml:artifacts/integration-test-coverage.xml \
           --cov-report=html:artifacts/integration-test-coverage-html --junitxml=artifacts/integration-test-report.xml \
@@ -309,7 +309,7 @@ jobs:
       run: |
         source .venv/bin/activate
         pytest -n 6 \
-          -T system --verbose --durations=0 --durations-min=5 \ 
+          -T system --verbose --durations=0 --durations-min=5 \
           --cov=servo --cov-config=setup.cfg --doctest-modules \
           --cov-report=term-missing:skip-covered --cov-report=xml:artifacts/system-test-coverage.xml \
           --cov-report=html:artifacts/system-test-coverage-html --junitxml=artifacts/system-test-report.xml \
