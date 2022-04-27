@@ -148,12 +148,12 @@ jobs:
         pytest -T unit -n 6 \
           --cov=servo --cov-config=setup.cfg --doctest-modules \
           --cov-report=term-missing:skip-covered \
-          --cov-report=xml:artifacts/coverage.xml --cov-report=html:artifacts/coverage-html \
-          --junitxml=artifacts/report.xml --html=artifacts/report.html \
+          --cov-report=xml:artifacts/unit-test-coverage.xml --cov-report=html:artifacts/unit-test-coverage-html \
+          --junitxml=artifacts/unit-test-report.xml --html=artifacts/unit-test-report.html \
           --self-contained-html
     - uses: actions/upload-artifact@v2
       with:
-        name: test-reports
+        name: unit-test-reports
         path: artifacts/
     - name: Test CLI entrypoints
       run: |
@@ -215,7 +215,15 @@ jobs:
       run: |
         source .venv/bin/activate
         pytest -n 8 \
-          -T integration --verbose --durations=0 --durations-min=5
+          -T integration --verbose --durations=0 --durations-min=5 \ 
+          --cov=servo --cov-config=setup.cfg --doctest-modules \
+          --cov-report=term-missing:skip-covered --cov-report=xml:artifacts/integration-test-coverage.xml \
+          --cov-report=html:artifacts/integration-test-coverage-html --junitxml=artifacts/integration-test-report.xml \
+          --html=artifacts/integration-test-report.html --self-contained-html
+    - uses: actions/upload-artifact@v2
+      with:
+        name: integration-test-reports
+        path: artifacts/
     - uses: actions/upload-artifact@v2
       with:
         name: integration-test-logs
@@ -301,7 +309,15 @@ jobs:
       run: |
         source .venv/bin/activate
         pytest -n 6 \
-          -T system --verbose --durations=0 --durations-min=5
+          -T system --verbose --durations=0 --durations-min=5 \ 
+          --cov=servo --cov-config=setup.cfg --doctest-modules \
+          --cov-report=term-missing:skip-covered --cov-report=xml:artifacts/system-test-coverage.xml \
+          --cov-report=html:artifacts/system-test-coverage-html --junitxml=artifacts/system-test-report.xml \
+          --html=artifacts/system-test-report.html --self-contained-html
+    - uses: actions/upload-artifact@v2
+      with:
+        name: system-test-reports
+        path: artifacts/
     - uses: actions/upload-artifact@v2
       with:
         name: system-test-logs
