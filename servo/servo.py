@@ -468,16 +468,14 @@ class Servo(servo.connector.BaseConnector):
                 or []
             )
 
-            if progressive:
-                ready = await servo.checks.CheckHelpers.process_checks(
-                    checks_config=self.config.checks,
-                    results=results,
-                    passing=passing,
-                )
-            else:
-                ready, output = await servo.checks.CheckHelpers.checks_to_table(
-                    checks_config=self.config.checks,
-                    results=results,
+            ready = await servo.checks.CheckHelpers.process_checks(
+                checks_config=self.config.checks,
+                results=results,
+                passing=passing,
+            )
+            if not progressive:
+                output = await servo.checks.CheckHelpers.checks_to_table(
+                    checks_config=self.config.checks, results=results
                 )
                 print_callback(output)
 

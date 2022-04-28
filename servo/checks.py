@@ -811,11 +811,9 @@ class CheckHelpers(pydantic.BaseModel, servo.logging.Mixin):
         quiet = checks_config.quiet
         verbose = checks_config.verbose
 
-        ready = False
         output = None
         table = []
-        # Don't return ready if no checks ran but initial value for this var must be true for subsequent "&=" ops to work
-        and_checks_passed = bool(results)
+
         if verbose:
             headers = [
                 "CONNECTOR",
@@ -834,16 +832,13 @@ class CheckHelpers(pydantic.BaseModel, servo.logging.Mixin):
                     [],
                     [],
                 )
-                and_checks_passed &= bool(
-                    checks
-                )  # set ready False if connector responds with empty list
+
                 for check in checks:
                     names.append(check.name)
                     ids.append(check.id)
                     tags.append(", ".join(check.tags) if check.tags else "-")
                     statuses.append(servo.utilities.strings.check_status_to_str(check))
                     comments.append(textwrap.shorten(check.message or "-", 70))
-                    and_checks_passed &= check.success
 
                 if not names:
                     continue
@@ -871,7 +866,6 @@ class CheckHelpers(pydantic.BaseModel, servo.logging.Mixin):
                     check.success or errors.append(
                         f"{check.name}: {textwrap.wrap(check.message or '-')}"
                     )
-                and_checks_passed &= success
                 status = "√ PASSED" if success else "X FAILED"
                 message = functools.reduce(
                     lambda m, e: m + f"({errors.index(e) + 1}/{len(errors)}) {e}\n",
@@ -881,13 +875,12 @@ class CheckHelpers(pydantic.BaseModel, servo.logging.Mixin):
                 row = [result.connector.name, status, message]
                 table.append(row)
 
-        ready = and_checks_passed
         # Output table
         if not quiet:
             output = tabulate(table, headers, tablefmt="plain")
             # servo.logger.info(output)
 
-        return ready, output
+        return output
 
 
 def _validate_check_handler(fn: CheckHandler) -> None:
