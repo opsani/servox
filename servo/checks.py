@@ -744,7 +744,7 @@ class CheckHelpers(pydantic.BaseModel, servo.logging.Mixin):
         checks_config: servo.configuration.ChecksConfiguration,
         results: list,
         passing: set,
-    ):
+    ) -> bool:
 
         remedy = checks_config.remedy
         check_halting = checks_config.check_halting
@@ -806,7 +806,7 @@ class CheckHelpers(pydantic.BaseModel, servo.logging.Mixin):
         return ready
 
     @classmethod
-    async def checks_to_table(cls, checks_config, results):
+    async def checks_to_table(cls, checks_config, results) -> Tuple[bool, str]:
 
         quiet = checks_config.quiet
         verbose = checks_config.verbose
@@ -885,7 +885,7 @@ class CheckHelpers(pydantic.BaseModel, servo.logging.Mixin):
         # Output table
         if not quiet:
             output = tabulate(table, headers, tablefmt="plain")
-            servo.logger.info(output)
+            # servo.logger.info(output)
 
         return ready, output
 

@@ -273,19 +273,10 @@ class Servo(servo.connector.BaseConnector):
         """Return a list of all active connectors including the Servo."""
         return [self, *self.connectors]
 
-    def connectors_named(self, names: List[str]) -> List[servo.BaseConnector]:
-        connectors: List[servo.BaseConnector] = []
-        for name in names:
-            size = len(connectors)
-            for connector in self.all_connectors:
-                if connector.name == name:
-                    connectors.append(connector)
-                    break
-
-            if len(connectors) == size:
-                raise typer.BadParameter(f"no connector found named '{name}'")
-
-        return connectors
+    def connectors_named(self, names: Sequence[str]) -> list[servo.BaseConnector]:
+        return [
+            connector for connector in self.all_connectors if connector.name in names
+        ]
 
     def get_connector(
         self, name: Union[str, Sequence[str]]
@@ -300,16 +291,9 @@ class Servo(servo.connector.BaseConnector):
         When given a sequence of names, returns a list of Connectors for all connectors found.
         """
         if isinstance(name, str):
-            for connector in self.connectors:
-                if connector.name == name:
-                    return connector
-            return None
+            return next(iter(self.connectors_named([name])), None)
         else:
-            connectors = []
-            for connector in self.connectors:
-                if connector.name == name:
-                    connectors.append(connector)
-            return connectors
+            return self.connectors_named(name)
 
     async def add_connector(
         self, name: str, connector: servo.connector.BaseConnector
@@ -418,7 +402,7 @@ class Servo(servo.connector.BaseConnector):
             default=pydantic.json.pydantic_encoder,
         )
 
-    async def check_servo(self) -> bool:
+    async def check_servo(self, print_callback: Callable[[str], None] = None) -> bool:
 
         connectors = self.config.checks.connectors
         name = self.config.checks.name
@@ -441,6 +425,15 @@ class Servo(servo.connector.BaseConnector):
                 )
             )
         )
+        if not connector_objs:
+            if connectors:
+                raise servo.ConnectorNotFoundError(
+                    f"no connector found with name(s) '{connectors}'"
+                )
+            else:
+                raise servo.EventHandlersNotFoundError(
+                    f"no currently assembled connectors respond to the check event"
+                )
         validate_connectors_respond_to_event(connector_objs, servo.Events.check)
 
         if wait:
@@ -475,8 +468,6 @@ class Servo(servo.connector.BaseConnector):
                 or []
             )
 
-            output = None
-
             if progressive:
                 ready = await servo.checks.CheckHelpers.process_checks(
                     checks_config=self.config.checks,
@@ -488,9 +479,10 @@ class Servo(servo.connector.BaseConnector):
                     checks_config=self.config.checks,
                     results=results,
                 )
+                print_callback(output)
 
             if ready:
-                return ready, output
+                return ready
             else:
                 if wait and delay is not None:
                     servo.logger.info(
@@ -504,7 +496,7 @@ class Servo(servo.connector.BaseConnector):
                         servo.logger.error(
                             f"timed out waiting for checks to pass {progress.duration}"
                         )
-                    return ready, output
+                    return ready
 
     ##
     # Event handlers
@@ -563,6 +555,6 @@ def validate_connectors_respond_to_event(
 ) -> None:
     for connector in connectors:
         if not connector.responds_to_event(event):
-            raise typer.BadParameter(
-                f"connectors of type '{connector.__class__.__name__}' do not respond to the event \"{event}\" (name='{connector.name}')"
+            raise servo.EventHandlersNotFoundError(
+                f"no currently assembled connectors respond to the check event"
             )

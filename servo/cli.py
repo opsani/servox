@@ -1224,25 +1224,36 @@ class ServoCLI(CLI):
                     context = context.parent
 
                 # Check all targeted servos
-                if context.servo:
-                    ready, output = run_async(context.servo.check_servo())
-                    if output:
-                        typer.echo(output)
-                else:
-                    results = run_async(
-                        asyncio.gather(
-                            *list(
-                                map(lambda s: s.check_servo(), context.assembly.servos)
-                            ),
-                            return_exceptions=True,
+                def print_callback(input: str) -> None:
+                    typer.echo(input)
+
+                try:
+                    if context.servo:
+                        ready = run_async(context.servo.check_servo(print_callback))
+                    else:
+                        results = run_async(
+                            asyncio.gather(
+                                *list(
+                                    map(
+                                        lambda s: s.check_servo(print_callback),
+                                        context.assembly.servos,
+                                    )
+                                ),
+                            )
                         )
+                        ready = functools.reduce(lambda x, y: x and y, results)
+
+                except servo.ConnectorNotFoundError as e:
+                    typer.echo(
+                        "A connector named within the checks config was not found in the current Assembly"
                     )
-                    ready = functools.reduce(
-                        lambda x, y: x and y, [i[0] for i in results]
+                    raise typer.Exit(1) from e
+                except servo.EventHandlersNotFoundError as e:
+                    typer.echo(
+                        "At least one configured connector must respond to the Check event (Note the servo "
+                        "responds to checks so this error should never raise unless something is well and truly wrong"
                     )
-                    output = [i[1] for i in results]
-                    if output:
-                        typer.echo(output)
+                    raise typer.Exit(1) from e
 
                 if ready:
                     if not dry_run:
