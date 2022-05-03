@@ -35,6 +35,7 @@ import pydantic
 from tabulate import tabulate
 
 import servo.configuration
+import servo.events
 import servo.logging
 import servo.types
 import servo.utilities
@@ -742,19 +743,14 @@ class CheckHelpers(pydantic.BaseModel, servo.logging.Mixin):
     async def process_checks(
         cls,
         checks_config: servo.configuration.ChecksConfiguration,
-        results: list,
-        passing: set,
+        results: list[servo.events.EventResult],
+        passing: set[str],
     ) -> bool:
-
-        remedy = checks_config.remedy
-        check_halting = checks_config.check_halting
 
         ready = False
         failure = None
 
-        checks: List[servo.Check] = functools.reduce(
-            lambda a, b: a + b.value, results, []
-        )
+        checks: list[Check] = functools.reduce(lambda a, b: a + b.value, results, [])
 
         for check in checks:
             if check.success:
@@ -788,7 +784,7 @@ class CheckHelpers(pydantic.BaseModel, servo.logging.Mixin):
 
                         task = asyncio.create_task(fn())
 
-                    if remedy:
+                    if checks_config.remedy:
                         servo.logger.info("💡 Attempting to apply remedy...")
                         try:
                             await asyncio.wait_for(task, 10.0)
@@ -796,7 +792,7 @@ class CheckHelpers(pydantic.BaseModel, servo.logging.Mixin):
                             servo.logger.warning("💡 Remedy attempt timed out after 10s")
                     else:
                         task.cancel()
-                if check_halting:
+                if checks_config.check_halting:
                     break
 
         if not failure:
@@ -806,15 +802,12 @@ class CheckHelpers(pydantic.BaseModel, servo.logging.Mixin):
         return ready
 
     @classmethod
-    async def checks_to_table(cls, checks_config, results) -> Tuple[bool, str]:
-
-        quiet = checks_config.quiet
-        verbose = checks_config.verbose
+    async def checks_to_table(cls, checks_config, results) -> str:
 
         output = None
         table = []
 
-        if verbose:
+        if checks_config.verbose:
             headers = [
                 "CONNECTOR",
                 "CHECK",
@@ -875,10 +868,7 @@ class CheckHelpers(pydantic.BaseModel, servo.logging.Mixin):
                 row = [result.connector.name, status, message]
                 table.append(row)
 
-        # Output table
-        if not quiet:
-            output = tabulate(table, headers, tablefmt="plain")
-            # servo.logger.info(output)
+        output = tabulate(table, headers, tablefmt="plain")
 
         return output
 

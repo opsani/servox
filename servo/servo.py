@@ -477,7 +477,8 @@ class Servo(servo.connector.BaseConnector):
                 output = await servo.checks.CheckHelpers.checks_to_table(
                     checks_config=self.config.checks, results=results
                 )
-                print_callback(output)
+                if not quiet:
+                    print_callback(output)
 
             if ready:
                 return ready
