@@ -269,23 +269,17 @@ class BaseConfiguration(AbstractBaseConfiguration):
     __settings__: Optional[CommonConfiguration] = pydantic.PrivateAttr(
         default_factory=lambda: CommonConfiguration(),
     )
-    __checks__: Optional[ChecksConfiguration] = pydantic.PrivateAttr(
-        default_factory=lambda: ChecksConfiguration(),
-    )
 
     def __init__(
         self,
         __optimizer__: Optional[Optimizer] = None,
         __settings__: Optional[CommonConfiguration] = None,
-        __checks__: Optional[ChecksConfiguration] = None,
         **kwargs,
     ) -> None:
         super().__init__(**kwargs)
         self.__optimizer__ = __optimizer__
         if __settings__:
             self.__settings__ = __settings__
-        if __checks__:
-            self.__checks__ = __checks__
 
     @property
     def optimizer(self) -> Optional[Optimizer]:
@@ -296,11 +290,6 @@ class BaseConfiguration(AbstractBaseConfiguration):
     def settings(self) -> Optional[Optimizer]:
         """Returns the Optimizer this configuration is bound to."""
         return self.__settings__
-
-    @property
-    def checks(self) -> Optional[ChecksConfiguration]:
-        """Returns the Optimizer this configuration is bound to."""
-        return self.__checks__
 
 
 # Uppercase handling for non-subclassed settings models. Should be pushed into Pydantic as a PR
