@@ -409,6 +409,7 @@ class Servo(servo.connector.BaseConnector):
         id = self.config.checks.id
         tag = self.config.checks.tag
 
+        quiet = self.config.checks.quiet
         progressive = self.config.checks.progressive
         wait = self.config.checks.wait
         delay = self.config.checks.delay
