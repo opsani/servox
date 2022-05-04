@@ -43,6 +43,7 @@ from timeago import format as timeago
 import servo
 import servo.runner
 import servo.utilities.yaml
+import servo.utilities.strings
 
 
 class Section(str, enum.Enum):
@@ -1192,382 +1193,80 @@ class ServoCLI(CLI):
                 "-i",
                 help="Ask for confirmation before executing operations",
             ),
+            dry_run: Optional[bool] = typer.Option(
+                False,
+                "--dry-run",
+                "-d",
+                help="Execute checks without running servo",
+            ),
+            debug: bool = typer.Option(
+                False,
+                "--debug",
+                "--DEBUG",
+                help="Prevent exception handling on running event loop to allow error propogation",
+                envvar="SERVO_RUN_DEBUG",
+            ),
         ) -> None:
             """
             Run the servo
             """
-            if check:
-                typer_click_object = typer.main.get_group(self)
-                context.invoke(
-                    typer_click_object.commands["check"], exit_on_success=False
-                )
 
-            if context.assembly:
+            def run_servo():
                 poll = not no_poll
                 servo.runner.AssemblyRunner(context.assembly).run(
-                    poll=poll, interactive=bool(interactive)
+                    poll=poll,
+                    interactive=bool(interactive),
+                    debug=debug,
                 )
+
+            if check or dry_run:
+                if isinstance(context, click.core.Context):
+                    context = context.parent
+
+                # Check all targeted servos
+                def print_callback(input: str) -> None:
+                    typer.echo(input)
+
+                try:
+                    if context.servo:
+                        ready = run_async(context.servo.check_servo(print_callback))
+                    else:
+                        results = run_async(
+                            asyncio.gather(
+                                *list(
+                                    map(
+                                        lambda s: s.check_servo(print_callback),
+                                        context.assembly.servos,
+                                    )
+                                ),
+                            )
+                        )
+                        ready = functools.reduce(lambda x, y: x and y, results)
+
+                except servo.ConnectorNotFoundError as e:
+                    typer.echo(
+                        "A connector named within the checks config was not found in the current Assembly"
+                    )
+                    raise typer.Exit(1) from e
+                except servo.EventHandlersNotFoundError as e:
+                    typer.echo(
+                        "At least one configured connector must respond to the Check event (Note the servo "
+                        "responds to checks so this error should never raise unless something is well and truly wrong"
+                    )
+                    raise typer.Exit(1) from e
+
+                if ready:
+                    if not dry_run:
+                        run_servo()
+                    else:
+                        raise typer.Exit(0)
+                else:
+                    raise typer.Exit(1)
+
+            if context.assembly:
+                run_servo()
             else:
                 raise typer.Abort("failed to assemble servo")
-
-        def validate_connectors_respond_to_event(
-            connectors: Iterable[servo.BaseConnector], event: str
-        ) -> None:
-            for connector in connectors:
-                if not connector.responds_to_event(event):
-                    raise typer.BadParameter(
-                        f"connectors of type '{connector.__class__.__name__}' do not respond to the event \"{event}\" (name='{connector.name}')"
-                    )
-
-        @self.command(section=section)
-        def check(
-            context: Context,
-            connectors: Optional[list[str]] = typer.Argument(
-                None,
-                help="Connectors to check",
-            ),
-            name: Optional[list[str]] = typer.Option(
-                [], "--name", "-n", help="Filter by name"
-            ),
-            id: Optional[list[str]] = typer.Option(
-                [], "--id", "-i", help="Filter by ID"
-            ),
-            tag: Optional[list[str]] = typer.Option(
-                [], "--tag", "-t", help="Filter by tag"
-            ),
-            halt_on: Optional[servo.ErrorSeverity] = typer.Option(
-                servo.ErrorSeverity.critical,
-                "--halt-on",
-                "-h",
-                help="Halt running on failure severity",
-            ),
-            verbose: bool = typer.Option(
-                False, "--verbose", "-v", help="Display verbose output"
-            ),
-            quiet: bool = typer.Option(
-                False,
-                "--quiet",
-                "-q",
-                help="Do not echo generated output to stdout",
-            ),
-            progressive: bool = typer.Option(
-                False,
-                "--progressive",
-                "-p",
-                help="Execute checks and emit output progressively",
-            ),
-            wait: Optional[str] = typer.Option(
-                None,
-                "--wait",
-                "-w",
-                help="Wait for checks to pass",
-                metavar="[TIMEOUT]",
-            ),
-            delay: Optional[str] = typer.Option(
-                "10s",
-                "--delay",
-                "-d",
-                help="Delay duration. Requires --wait",
-                metavar="[DURATION]",
-            ),
-            interactive: Optional[bool] = typer.Option(
-                None,
-                "--interactive",
-                "-i",
-                help="Ask for confirmation before executing operations",
-            ),
-            run: bool = typer.Option(
-                False,
-                "--run",
-                help="Run the servo when checks pass",
-            ),
-            remedy: bool = typer.Option(
-                False,
-                "--remedy",
-                help="Attempt to automatically remedy failures",
-            ),
-            exit_on_success: bool = typer.Option(True, hidden=True),
-        ) -> None:
-            """
-            Check that the servo is ready to run
-            """
-            # FIXME: temporary workaround until I can unwind Context overload
-            if isinstance(context, click.core.Context):
-                context = context.parent
-
-            def parse_re(
-                value: Optional[list[str]],
-            ) -> Union[None, list[str], Pattern[str]]:
-                if value and len(value) == 1:
-                    val = value[0]
-                    if val[:1] == "/" and val[-1] == "/":
-                        return re.compile(val[1:-1])
-
-                return value
-
-            def parse_csv(
-                value: Optional[list[str]],
-            ) -> Union[None, list[str], Pattern[str]]:
-                if value and len(value) == 1:
-                    val = value[0]
-                    if "," in val:
-                        return list(map(lambda v: v.strip(), val.split(",")))
-
-                return value
-
-            def parse_id(
-                value: Optional[list[str]],
-            ) -> Union[None, list[str], Pattern[str]]:
-                v = parse_re(value)
-                if not isinstance(v, Pattern):
-                    return parse_csv(v)
-
-                return v
-
-            async def check_servo(servo_: servo.Servo) -> None:
-                # Validate that explicit args support check events
-                connector_objs = (
-                    self.connectors_named(connectors, servo_)
-                    if connectors
-                    else list(
-                        filter(
-                            lambda c: c.responds_to_event(servo.Events.check),
-                            servo_.all_connectors,
-                        )
-                    )
-                )
-                validate_connectors_respond_to_event(connector_objs, servo.Events.check)
-
-                if os.getenv("KUBERNETES_SERVICE_HOST"):
-                    kubernetes_asyncio.config.load_incluster_config()
-                else:
-                    kubeconfig = (
-                        os.getenv("KUBECONFIG")
-                        or kubernetes_asyncio.config.kube_config.KUBE_CONFIG_DEFAULT_LOCATION
-                    )
-                    kubeconfig_path = pathlib.Path(os.path.expanduser(kubeconfig))
-                    if kubeconfig_path.exists():
-                        await kubernetes_asyncio.config.load_kube_config(
-                            config_file=os.path.expandvars(kubeconfig_path),
-                        )
-
-                if wait:
-                    summary = "Running checks"
-                    summary += " progressively" if progressive else ""
-                    summary += (
-                        f" for up to {wait} with a delay of {delay} between iterations"
-                    )
-                    servo.logger.info(summary)
-                    # typer.echo(summary)
-
-                passing = set()
-                progress = servo.DurationProgress(servo.Duration(wait or 0))
-                ready = False
-                while not progress.finished:
-                    if not progress.started:
-                        # run at least one time
-                        progress.start()
-
-                    args = dict(
-                        name=parse_re(name), id=parse_id(id), tags=parse_csv(tag)
-                    )
-                    constraints = dict(filter(lambda i: bool(i[1]), args.items()))
-                    results: Union[servo.EventResult, list[servo.EventResult]] = (
-                        await servo_.dispatch_event(
-                            servo.Events.check,
-                            servo.CheckFilter(**constraints),
-                            include=connector_objs,
-                            halt_on=halt_on,
-                        )
-                        or []
-                    )
-
-                    if progressive:
-                        if results:
-                            checks: list[servo.Check] = functools.reduce(
-                                lambda a, b: a + b.value, results, []
-                            )
-                            failure = None
-                            for check in checks:
-                                if check.success:
-                                    # FIXME: This should hold Check objects but hashing isn't matching
-                                    if check.id not in passing:
-                                        # calling loguru with kwargs (component) triggers a str.format call which trips up on names with single curly braces
-                                        servo.logger.success(
-                                            f"✅ Check '{check.escaped_name}' passed",
-                                            component=check.id,
-                                        )
-                                        passing.add(check.id)
-                                else:
-                                    failure = check
-                                    break
-
-                            ready = failure is None
-                            if failure:
-                                servo.logger.warning(
-                                    f"❌ Check '{failure.name}' failed ({len(passing)} passed): {failure.message}"
-                                )  # , component=failure.id)
-                                # typer.echo(f"Check '{failure.name}' failed ({len(passing)} passed): {failure.message}")
-                                if failure.hint:
-                                    servo.logger.info(
-                                        f"Hint: {failure.hint}"
-                                    )  # , component=failure.id)
-                                    # typer.echo(f"  Hint: {failure.hint}")
-
-                                if failure.remedy:
-                                    if asyncio.iscoroutinefunction(failure.remedy):
-                                        task = asyncio.create_task(failure.remedy())
-                                    elif asyncio.iscoroutine(failure.remedy):
-                                        task = asyncio.create_task(failure.remedy)
-                                    else:
-
-                                        async def fn() -> None:
-                                            result = failure.remedy()
-                                            if asyncio.iscoroutine(result):
-                                                await result
-
-                                        task = asyncio.create_task(fn())
-
-                                    if remedy:
-                                        servo.logger.info(
-                                            "💡 Attempting to apply remedy..."
-                                        )
-                                        try:
-                                            await asyncio.wait_for(task, 10.0)
-                                        except asyncio.TimeoutError as error:
-                                            servo.logger.warning(
-                                                "💡 Remedy attempt timed out after 10s"
-                                            )
-                                    else:
-                                        task.cancel()
-                            else:
-                                # nothing is left failing, spike the football
-                                servo.logger.info("🔥 All checks passed.")
-                                # typer.echo(f"🔥 All checks are now passing.")
-                        else:
-                            typer.echo(f"WARNING: No checks found -- returning.")
-                    else:
-                        table = []
-                        # Don't return ready if no checks ran but initial value for this var must be true for subsequent "&=" ops to work
-                        and_checks_passed = bool(results)
-                        if verbose:
-                            headers = [
-                                "CONNECTOR",
-                                "CHECK",
-                                "ID",
-                                "TAGS",
-                                "STATUS",
-                                "MESSAGE",
-                            ]
-                            for result in results:
-                                checks: list[servo.Check] = result.value
-                                names, ids, tags, statuses, comments = (
-                                    [],
-                                    [],
-                                    [],
-                                    [],
-                                    [],
-                                )
-                                and_checks_passed &= bool(
-                                    checks
-                                )  # set ready False if connector responds with empty list
-                                for check in checks:
-                                    names.append(check.name)
-                                    ids.append(check.id)
-                                    tags.append(
-                                        ", ".join(check.tags) if check.tags else "-"
-                                    )
-                                    statuses.append(_check_status_to_str(check))
-                                    comments.append(
-                                        textwrap.shorten(check.message or "-", 70)
-                                    )
-                                    and_checks_passed &= check.success
-
-                                if not names:
-                                    continue
-
-                                row = [
-                                    result.connector.name,
-                                    "\n".join(names),
-                                    "\n".join(ids),
-                                    "\n".join(tags),
-                                    "\n".join(statuses),
-                                    "\n".join(comments),
-                                ]
-                                table.append(row)
-                        else:
-                            headers = ["CONNECTOR", "STATUS", "ERRORS"]
-                            for result in results:
-                                checks: list[servo.Check] = result.value
-                                if not checks:
-                                    continue
-
-                                success = bool(
-                                    checks
-                                )  # Don't return ready on empty lists of checks
-                                errors = []
-                                for check in checks:
-                                    success &= check.passed
-                                    check.success or errors.append(
-                                        f"{check.name}: {textwrap.wrap(check.message or '-')}"
-                                    )
-                                and_checks_passed &= success
-                                status = "√ PASSED" if success else "X FAILED"
-                                message = functools.reduce(
-                                    lambda m, e: m
-                                    + f"({errors.index(e) + 1}/{len(errors)}) {e}\n",
-                                    errors,
-                                    "",
-                                )
-                                row = [result.connector.name, status, message]
-                                table.append(row)
-
-                        ready = and_checks_passed
-                        # Output table
-                        if not quiet:
-                            typer.echo(tabulate(table, headers, tablefmt="plain"))
-
-                    if ready:
-                        return True
-                    else:
-                        if wait and delay is not None:
-                            self.logger.info(
-                                f"waiting for {delay} before rerunning failing checks"
-                            )
-                            typer.echo("\n")
-                            await asyncio.sleep(servo.Duration(delay).total_seconds())
-
-                        if progress.finished:
-                            # Don't log a timeout if we aren't running in wait mode
-                            if progress.duration:
-                                self.logger.error(
-                                    f"timed out waiting for checks to pass {progress.duration}"
-                                )
-                            return False
-
-            # Check all targeted servos
-            if context.servo:
-                ready = run_async(check_servo(context.servo))
-            else:
-                results = run_async(
-                    asyncio.gather(
-                        *list(map(lambda s: check_servo(s), context.assembly.servos)),
-                        return_exceptions=True,
-                    )
-                )
-                ready = functools.reduce(lambda x, y: x and y, results)
-
-            # Return instead of exiting if we are being invoked
-            if ready:
-                if run:
-                    servo.runner.AssemblyRunner(context.assembly).run(
-                        interactive=bool(interactive)
-                    )
-                elif not exit_on_success:
-                    return
-
-            exit_code = 0 if ready else 1
-            raise typer.Exit(exit_code)
 
         @self.command(section=section)
         def describe(
@@ -2477,13 +2176,3 @@ def run_async(future: Union[asyncio.Future, asyncio.Task, Awaitable]) -> Any:
 
 def print_table(table, headers) -> None:
     typer.echo(tabulate(table, headers, tablefmt="plain") + "\n")
-
-
-def _check_status_to_str(check: servo.Check) -> str:
-    if check.success:
-        return "√ PASSED"
-    else:
-        if check.warning:
-            return "! WARNING"
-        else:
-            return "X FAILED"

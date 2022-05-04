@@ -1014,6 +1014,16 @@ def test_vegeta_cli_generate_with_defaults(
             "target": "GET https://example.com/",
             "workers": 10,
         },
+        "checks": {
+            "check_halting": False,
+            "delay": "10s",
+            "halt_on": "critical",
+            "progressive": True,
+            "quiet": False,
+            "remedy": True,
+            "verbose": False,
+            "wait": "30m",
+        },
     }
 
 
