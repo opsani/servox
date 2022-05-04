@@ -474,12 +474,11 @@ class Servo(servo.connector.BaseConnector):
                 results=results,
                 passing=passing,
             )
-            if not progressive:
+            if not progressive and not quiet:
                 output = await servo.checks.CheckHelpers.checks_to_table(
                     checks_config=self.config.checks, results=results
                 )
-                if not quiet:
-                    print_callback(output)
+                print_callback(output)
 
             if ready:
                 return ready
