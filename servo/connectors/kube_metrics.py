@@ -408,8 +408,10 @@ class KubeMetricsConnector(servo.BaseConnector):
                         "cpu"
                     )
                     # Set requests = limits if not specified
-                    cpu_request = cpu_resources[ResourceRequirement.request]
-                    if cpu_request is None:
+                    if (
+                        cpu_request := cpu_resources[ResourceRequirement.request]
+                        is None
+                    ):
                         cpu_request = cpu_resources[ResourceRequirement.limit]
 
                     if SupportedKubeMetrics.MAIN_CPU_REQUEST in target_metrics:
@@ -444,8 +446,9 @@ class KubeMetricsConnector(servo.BaseConnector):
                         "memory"
                     )
                     # Set requests = limits if not specified
-                    mem_request = mem_resources[ResourceRequirement.request]
-                    if mem_request is None:
+                    if (
+                        mem_request := mem_resources[ResourceRequirement.request]
+                    ) is None:
                         mem_request = mem_resources[ResourceRequirement.limit]
 
                     if SupportedKubeMetrics.MAIN_MEM_REQUEST in target_metrics:
@@ -511,15 +514,13 @@ class KubeMetricsConnector(servo.BaseConnector):
                     )
                 )
                 # Set requests = limits if not specified
-                cpu_request = cpu_resources[ResourceRequirement.request]
-                if cpu_request is None:
+                if (cpu_request := cpu_resources[ResourceRequirement.request]) is None:
                     cpu_request = cpu_resources[ResourceRequirement.limit]
 
                 mem_resources = target_resource_container.get_resource_requirements(
                     "memory"
                 )
-                mem_request = mem_resources[ResourceRequirement.request]
-                if mem_request is None:
+                if (mem_request := mem_resources[ResourceRequirement.request]) is None:
                     mem_request = mem_resources[ResourceRequirement.limit]
             else:
                 target_resource_tuning_pod_container = None
