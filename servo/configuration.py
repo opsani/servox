@@ -465,6 +465,64 @@ class CommonConfiguration(AbstractBaseConfiguration):
         validate_assignment = True
 
 
+class ChecksConfiguration(AbstractBaseConfiguration):
+    """ChecksConfiguration models configuration for behavior of the checks flow, such as
+    whether to automatically apply remedies.
+    """
+
+    connectors: Optional[list[str]] = pydantic.Field(
+        description="Connectors to check",
+    )
+    name: Optional[list[str]] = pydantic.Field(
+        description="Filter by name",
+    )
+
+    id: Optional[list[str]] = pydantic.Field(
+        description="Filter by ID",
+    )
+
+    tag: Optional[list[str]] = pydantic.Field(
+        description="Filter by tag",
+    )
+
+    quiet: bool = pydantic.Field(
+        default=False, description="Do not echo generated output to stdout"
+    )
+
+    verbose: bool = pydantic.Field(default=False, description="Display verbose output")
+
+    progressive: bool = pydantic.Field(
+        default=True, description="Execute checks and emit output progressively"
+    )
+
+    wait: str = pydantic.Field(default="30m", description="Wait for checks to pass")
+
+    delay: str = pydantic.Field(
+        default="10s", description="Delay duration. Requires --wait"
+    )
+
+    halt_on: servo.types.ErrorSeverity = pydantic.Field(
+        default=servo.types.ErrorSeverity.critical,
+        description="Halt running on failure severity",
+    )
+
+    remedy: bool = pydantic.Field(
+        default=True,
+        description="Automatically apply remedies to failed checks if detected",
+    )
+
+    check_halting: bool = pydantic.Field(
+        default=False, description="Halt to wait for each checks success"
+    )
+
+    @classmethod
+    def generate(cls, **kwargs) -> Optional["ChecksConfiguration"]:
+        return None
+
+    class Config(servo.types.BaseModelConfig):
+        validate_assignment = True
+
+
 class BaseServoConfiguration(AbstractBaseConfiguration, abc.ABC):
     """
     Abstract base class for Servo instances.
@@ -509,6 +567,11 @@ class BaseServoConfiguration(AbstractBaseConfiguration, abc.ABC):
 
     Servo settings are applied as defaults for other connectors whenever possible.
     """
+
+    checks: Optional[ChecksConfiguration] = pydantic.Field(
+        default_factory=lambda: ChecksConfiguration(),
+        description="Configuration of Checks behavior",
+    )
 
     @classmethod
     def generate(

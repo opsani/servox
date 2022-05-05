@@ -5,6 +5,7 @@ import asyncio
 import contextlib
 import contextvars
 import enum
+import functools
 import json
 from typing import Any, Optional, Protocol, Sequence, Tuple, Union
 
@@ -272,6 +273,11 @@ class Servo(servo.connector.BaseConnector):
         """Return a list of all active connectors including the Servo."""
         return [self, *self.connectors]
 
+    def connectors_named(self, names: Sequence[str]) -> list[servo.BaseConnector]:
+        return [
+            connector for connector in self.all_connectors if connector.name in names
+        ]
+
     def get_connector(
         self, name: Union[str, Sequence[str]]
     ) -> Optional[
@@ -285,16 +291,9 @@ class Servo(servo.connector.BaseConnector):
         When given a sequence of names, returns a list of Connectors for all connectors found.
         """
         if isinstance(name, str):
-            for connector in self.connectors:
-                if connector.name == name:
-                    return connector
-            return None
+            return next(iter(self.connectors_named([name])), None)
         else:
-            connectors = []
-            for connector in self.connectors:
-                if connector.name == name:
-                    connectors.append(connector)
-            return connectors
+            return self.connectors_named(name)
 
     async def add_connector(
         self, name: str, connector: servo.connector.BaseConnector
@@ -403,6 +402,101 @@ class Servo(servo.connector.BaseConnector):
             default=pydantic.json.pydantic_encoder,
         )
 
+    async def check_servo(self, print_callback: Callable[[str], None] = None) -> bool:
+
+        connectors = self.config.checks.connectors
+        name = self.config.checks.name
+        id = self.config.checks.id
+        tag = self.config.checks.tag
+
+        quiet = self.config.checks.quiet
+        progressive = self.config.checks.progressive
+        wait = self.config.checks.wait
+        delay = self.config.checks.delay
+        halt_on = self.config.checks.halt_on
+
+        # Validate that explicit args support check events
+        connector_objs = (
+            self.connectors_named(connectors)
+            if connectors
+            else list(
+                filter(
+                    lambda c: c.responds_to_event(servo.Events.check),
+                    self.all_connectors,
+                )
+            )
+        )
+        if not connector_objs:
+            if connectors:
+                raise servo.ConnectorNotFoundError(
+                    f"no connector found with name(s) '{connectors}'"
+                )
+            else:
+                raise servo.EventHandlersNotFoundError(
+                    f"no currently assembled connectors respond to the check event"
+                )
+        validate_connectors_respond_to_event(connector_objs, servo.Events.check)
+
+        if wait:
+            summary = "Running checks"
+            summary += " progressively" if progressive else ""
+            summary += f" for up to {wait} with a delay of {delay} between iterations"
+            servo.logger.info(summary)
+
+        passing = set()
+        progress = servo.DurationProgress(servo.Duration(wait or 0))
+        ready = False
+
+        while not progress.finished:
+            if not progress.started:
+                # run at least one time
+                progress.start()
+
+            args = dict(
+                name=servo.utilities.parse_re(name),
+                id=servo.utilities.parse_id(id),
+                tags=servo.utilities.parse_csv(tag),
+            )
+            constraints = dict(filter(lambda i: bool(i[1]), args.items()))
+
+            results: List[servo.EventResult] = (
+                await self.dispatch_event(
+                    servo.Events.check,
+                    servo.CheckFilter(**constraints),
+                    include=self.all_connectors,
+                    halt_on=halt_on,
+                )
+                or []
+            )
+
+            ready = await servo.checks.CheckHelpers.process_checks(
+                checks_config=self.config.checks,
+                results=results,
+                passing=passing,
+            )
+            if not progressive and not quiet:
+                output = await servo.checks.CheckHelpers.checks_to_table(
+                    checks_config=self.config.checks, results=results
+                )
+                print_callback(output)
+
+            if ready:
+                return ready
+            else:
+                if wait and delay is not None:
+                    servo.logger.info(
+                        f"waiting for {delay} before rerunning failing checks"
+                    )
+                    await asyncio.sleep(servo.Duration(delay).total_seconds())
+
+                if progress.finished:
+                    # Don't log a timeout if we aren't running in wait mode
+                    if progress.duration:
+                        servo.logger.error(
+                            f"timed out waiting for checks to pass {progress.duration}"
+                        )
+                    return ready
+
     ##
     # Event handlers
 
@@ -453,3 +547,13 @@ class Servo(servo.connector.BaseConnector):
 
         finally:
             _current_context_var.reset(token)
+
+
+def validate_connectors_respond_to_event(
+    connectors: Iterable[servo.BaseConnector], event: str
+) -> None:
+    for connector in connectors:
+        if not connector.responds_to_event(event):
+            raise servo.EventHandlersNotFoundError(
+                f"no currently assembled connectors respond to the check event"
+            )
