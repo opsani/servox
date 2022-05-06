@@ -192,7 +192,7 @@ jobs:
       run: |
        mkdir -p ${{ github.workspace }}/bin
        curl -o ${{ github.workspace }}/bin/kubectl -LO "https://dl.k8s.io/release/v1.23.6/bin/linux/amd64/kubectl"
-       echo "::add-path::${{ github.workspace }}/bin"
+       echo "${{ github.workspace }}/bin" >> $GITHUB_PATH
        chmod +x ${{ github.workspace }}/bin/kubectl
     - name: Set up root + dependencies cache
       uses: actions/cache@v2
