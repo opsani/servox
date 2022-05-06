@@ -33,10 +33,6 @@ jobs:
     outputs:
       python-version: ${{ steps.python-version.outputs.python-version }}
     steps:
-      - uses: azure/setup-kubectl@v2.0
-        with:
-          version: 'v1.23.6'
-        id: install
       - uses: actions/checkout@master
       - name: Output Python version
         id: python-version
@@ -191,6 +187,10 @@ jobs:
         wget https://github.com/tsenart/vegeta/releases/download/v12.8.4/vegeta_12.8.4_linux_amd64.tar.gz
         tar xfz vegeta_12.8.4_linux_amd64.tar.gz
         sudo mv vegeta /usr/local/bin/vegeta
+    - name: Install Kubectl
+      run: |
+        wget https://storage.googleapis.com/kubernetes-release/release/v1.23.6/bin/linux/amd64/kubectl
+        sudo mv kubectl /usr/local/bin/kubectl
     - name: Set up root + dependencies cache
       uses: actions/cache@v2
       id: cached-project
