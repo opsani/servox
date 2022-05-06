@@ -410,8 +410,7 @@ class KubeMetricsConnector(servo.BaseConnector):
                     # Set requests = limits if not specified
                     if (
                         cpu_request := cpu_resources[ResourceRequirement.request]
-                        is None
-                    ):
+                    ) is None:
                         cpu_request = cpu_resources[ResourceRequirement.limit]
 
                     if SupportedKubeMetrics.MAIN_CPU_REQUEST in target_metrics:

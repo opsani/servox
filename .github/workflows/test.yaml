@@ -188,6 +188,7 @@ jobs:
         tar xfz vegeta_12.8.4_linux_amd64.tar.gz
         sudo mv vegeta /usr/local/bin/vegeta
     - name: Install Kubectl
+      # Note: pin to v1.23.6
       run: |
        sudo curl -o /usr/local/bin/kubectl -LO "https://dl.k8s.io/release/v1.23.6/bin/linux/amd64/kubectl"
        sudo chmod +x /usr/local/bin/kubectl
