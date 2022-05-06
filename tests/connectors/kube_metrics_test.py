@@ -129,6 +129,144 @@ async def test_periodic_measure(
         assert m in datapoints_dicts
 
 
+@pytest.mark.minikube_profile.with_args("metrics-server")
+@pytest.mark.applymanifests(
+    "../manifests", files=["fiber-http-opsani-dev_no_resource_limits.yaml"]
+)
+async def test_periodic_measure_no_limits(
+    kubeconfig: str,
+    minikube: str,
+    kube: kubetest.client.TestClient,
+    servo_runner: ServoRunner,
+):
+    try:
+        kube.wait_for_registered()
+    except urllib3.exceptions.MaxRetryError as e:
+        pytest.xfail(f"Connection refused: {e}")
+
+    datapoints_dicts: Dict[str, Dict[str, List[DataPoint]]] = defaultdict(
+        lambda: defaultdict(list)
+    )
+    connector = KubeMetricsConnector(
+        config=KubeMetricsConfiguration(
+            name="fiber-http",
+            namespace=kube.namespace,
+            container="fiber-http",
+            context=minikube,
+            kubeconfig=kubeconfig,
+        )
+    )
+
+    await connector.attach(servo_=servo_runner.servo)
+    deployment = await Deployment.read("fiber-http", kube.namespace)
+
+    async def wait_for_scrape():
+        async with kubernetes_asyncio.client.ApiClient() as api:
+            cust_obj_api = kubernetes_asyncio.client.CustomObjectsApi(api)
+            while True:
+                try:
+                    result = await cust_obj_api.list_namespaced_custom_object(
+                        label_selector=deployment.label_selector,
+                        namespace=kube.namespace,
+                        **METRICS_CUSTOM_OJBECT_CONST_ARGS,
+                    )
+                    if result.get("items"):  # items present and non-empty
+                        if any(
+                            any(c["name"] == "fiber-http" for c in i["containers"])
+                            for i in result["items"]
+                        ):
+                            break
+                except kubernetes_asyncio.client.exceptions.ApiException as e:
+                    if e.status == 503:
+                        continue  # Takes a bit to start in GH runners???
+                    raise
+
+    await asyncio.wait_for(wait_for_scrape(), timeout=60)
+
+    await connector.periodic_measure(
+        target_resource=deployment,
+        target_metrics=MAIN_METRICS,
+        datapoints_dicts=datapoints_dicts,
+    )
+
+    for m in MAIN_METRICS:
+        if "limit" in m:
+            assert m not in datapoints_dicts
+
+
+@pytest.mark.minikube_profile.with_args("metrics-server")
+@pytest.mark.applymanifests(
+    "../manifests", files=["fiber-http-opsani-dev_no_resource_requests.yaml"]
+)
+async def test_periodic_measure_no_requests(
+    kubeconfig: str,
+    minikube: str,
+    kube: kubetest.client.TestClient,
+    servo_runner: ServoRunner,
+):
+    try:
+        kube.wait_for_registered()
+    except urllib3.exceptions.MaxRetryError as e:
+        pytest.xfail(f"Connection refused: {e}")
+
+    datapoints_dicts: Dict[str, Dict[str, List[DataPoint]]] = defaultdict(
+        lambda: defaultdict(list)
+    )
+    connector = KubeMetricsConnector(
+        config=KubeMetricsConfiguration(
+            name="fiber-http",
+            namespace=kube.namespace,
+            container="fiber-http",
+            context=minikube,
+            kubeconfig=kubeconfig,
+        )
+    )
+
+    await connector.attach(servo_=servo_runner.servo)
+    deployment = await Deployment.read("fiber-http", kube.namespace)
+
+    async def wait_for_scrape():
+        async with kubernetes_asyncio.client.ApiClient() as api:
+            cust_obj_api = kubernetes_asyncio.client.CustomObjectsApi(api)
+            while True:
+                try:
+                    result = await cust_obj_api.list_namespaced_custom_object(
+                        label_selector=deployment.label_selector,
+                        namespace=kube.namespace,
+                        **METRICS_CUSTOM_OJBECT_CONST_ARGS,
+                    )
+                    if result.get("items"):  # items present and non-empty
+                        if any(
+                            any(c["name"] == "fiber-http" for c in i["containers"])
+                            for i in result["items"]
+                        ):
+                            break
+                except kubernetes_asyncio.client.exceptions.ApiException as e:
+                    if e.status == 503:
+                        continue  # Takes a bit to start in GH runners???
+                    raise
+
+    await asyncio.wait_for(wait_for_scrape(), timeout=60)
+
+    await connector.periodic_measure(
+        target_resource=deployment,
+        target_metrics=MAIN_METRICS,
+        datapoints_dicts=datapoints_dicts,
+    )
+
+    main_cpu_requests_readings = list(
+        datapoints_dicts[SupportedKubeMetrics.MAIN_CPU_REQUEST].values()
+    )
+    main_cpu_limits_readings = list(
+        datapoints_dicts[SupportedKubeMetrics.MAIN_CPU_LIMIT].values()
+    )
+
+    for requests_datapoints, limits_datapoints in zip(
+        main_cpu_requests_readings, main_cpu_limits_readings
+    ):
+        assert requests_datapoints[0].value == limits_datapoints[0].value
+
+
 @freezegun.freeze_time("2020-01-21 12:00:01")
 def test_append_data_point():
     datapoints_dicts: Dict[str, Dict[str, List[DataPoint]]] = defaultdict(
