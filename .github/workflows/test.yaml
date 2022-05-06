@@ -33,6 +33,10 @@ jobs:
     outputs:
       python-version: ${{ steps.python-version.outputs.python-version }}
     steps:
+      - uses: azure/setup-kubectl@v2.0
+        with:
+          version: 'v1.23.6'
+        id: install
       - uses: actions/checkout@master
       - name: Output Python version
         id: python-version
