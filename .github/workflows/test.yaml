@@ -294,7 +294,7 @@ jobs:
         name: coverage-integration
     - name: Combine coverage reports
       run: |
-        coverage combine --append .coverage.unit .coverage.integration 
+        coverage combine --append .coverage.unit .coverage.integration
         coverage html -d artifacts/combined_coverage --skip-covered
     - uses: actions/upload-artifact@v2
       with:
