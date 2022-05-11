@@ -743,9 +743,9 @@ def test_copying_cpu_with_invalid_value_does_not_raise() -> None:
             servo.connectors.kubernetes.CPU(min="250m", max="3000m", step="125m"),
         ),
         (
-                servo.connectors.kubernetes.Core.parse("2"),
-                "cpu",
-                servo.connectors.kubernetes.CPU(min="500m", max="6000m", step="125m"),
+            servo.connectors.kubernetes.Core.parse("2"),
+            "cpu",
+            servo.connectors.kubernetes.CPU(min="500m", max="6000m", step="125m"),
         ),
         (
             servo.connectors.kubernetes.ShortByteSize.validate("2Gi"),
