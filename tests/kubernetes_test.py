@@ -732,3 +732,33 @@ def test_copying_cpu_with_invalid_value_does_not_raise() -> None:
     # Use copy + update to hydrate the value
     cpu_copy = cpu.copy(update={"value": "5"})
     assert cpu_copy.value == "5"
+
+
+@pytest.mark.parametrize(
+    "value, resource_type, expected_autoset",
+    [
+        (
+            servo.connectors.kubernetes.Core.parse("1"),
+            "cpu",
+            servo.connectors.kubernetes.CPU(min="250m", max="3000m", step="125m"),
+        ),
+        (
+                servo.connectors.kubernetes.Core.parse("2"),
+                "cpu",
+                servo.connectors.kubernetes.CPU(min="500m", max="6000m", step="125m"),
+        ),
+        (
+            servo.connectors.kubernetes.ShortByteSize.validate("2Gi"),
+            "memory",
+            servo.connectors.kubernetes.Memory(
+                min="512.0MiB", max="6.0GiB", step="128.0MiB"
+            ),
+        ),
+    ],
+)
+def test_autoset_resource_range(value, resource_type, expected_autoset):
+
+    autoset_value = servo.connectors.kubernetes.autoset_resource_range(
+        resource_type=resource_type, value=value
+    )
+    assert autoset_value == expected_autoset

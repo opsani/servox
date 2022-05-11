@@ -207,8 +207,8 @@ class TestConfig:
             ),
         )
         no_resources_k_config = no_resources_config.generate_kubernetes_config()
-        assert no_resources_k_config.CPU is None
-        assert no_resources_k_config.Memory is None
+        assert no_resources_k_config.deployments[0].containers[0].cpu is None
+        assert no_resources_k_config.deployments[0].containers[0].memory is None
 
     def test_generate_no_tuning_config(self) -> None:
         no_tuning_config = servo.connectors.opsani_dev.OpsaniDevConfiguration(
