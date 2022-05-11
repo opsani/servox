@@ -18,6 +18,8 @@ from servo.connectors.kube_metrics import (
 )
 from tests.connectors.kubernetes_test import namespace
 
+pytestmark = pytest.mark.integration
+
 
 @pytest.fixture
 def kubecontext() -> str:

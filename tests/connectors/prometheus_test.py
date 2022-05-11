@@ -139,8 +139,8 @@ class TestPrometheusConfiguration:
             "  absent: ignore\n"
             "targets: null\n"
             "fast_fail:\n"
-            "  disabled: 0\n"
-            "  period: 1m\n"
+            "  disabled: false\n"
+            "  interval: 1m\n"
             "  span: 1m\n"
             "  skip: '0'\n"
             "  treat_zero_as_missing: false\n"
@@ -712,7 +712,7 @@ class TestPrometheusIntegration:
                                             f"Sent {count} requests to {main_fiber_url} and {tuning_fiber_url}."
                                         )
 
-                        config.fast_fail.period = Duration("20s")
+                        config.fast_fail.interval = Duration("20s")
                         connector = PrometheusConnector(
                             config=config, optimizer=optimizer
                         )
@@ -826,7 +826,7 @@ class TestPrometheusIntegration:
                                         )
 
                         config.fast_fail.skip = Duration("14s")
-                        config.fast_fail.period = Duration("2s")
+                        config.fast_fail.interval = Duration("2s")
                         connector = PrometheusConnector(
                             config=config, optimizer=optimizer
                         )
