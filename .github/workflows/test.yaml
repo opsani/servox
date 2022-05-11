@@ -260,6 +260,7 @@ jobs:
       - setup_build
       - unit
       - integration
+    if: needs.pre_job.outputs.should_skip != 'true'
     steps:
     - uses: actions/checkout@master
     - uses: actions/setup-python@v2.1.3
