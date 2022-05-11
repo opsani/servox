@@ -637,10 +637,10 @@ class FastFailConfiguration(pydantic.BaseSettings):
     """Configuration providing support for fast fail behavior which returns early
     from long running connector operations when SLO violations are observed"""
 
-    disabled: pydantic.conint(ge=0, le=1, multiple_of=1) = 0
+    disabled: bool = False
     """Toggle fast-fail behavior on or off"""
 
-    period: servo.types.Duration = "60s"
+    interval: servo.types.Duration = "60s"
     """How often to check the SLO metrics"""
 
     span: servo.types.Duration = None
@@ -652,11 +652,11 @@ class FastFailConfiguration(pydantic.BaseSettings):
     treat_zero_as_missing: bool = False
     """Whether or not to treat zero values as missing per certain metric systems"""
 
+    @pydantic.validator("span", pre=True, always=True)
+    def span_defaults_to_interval(cls, v, *, values, **kwargs):
+        if v is None:
+            return values["interval"]
+        return v
+
     class Config:
         extra = pydantic.Extra.forbid
-
-    @pydantic.validator("span", pre=True, always=True)
-    def span_defaults_to_period(cls, v, *, values, **kwargs):
-        if v is None:
-            return values["period"]
-        return v

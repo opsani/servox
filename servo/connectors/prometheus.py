@@ -984,7 +984,7 @@ class PrometheusConnector(servo.BaseConnector):
                 asyncio.create_task(progress.watch(self.observe)),
                 asyncio.create_task(
                     fast_fail_progress.watch(
-                        fast_fail_observer.observe, every=self.config.fast_fail.period
+                        fast_fail_observer.observe, every=self.config.fast_fail.interval
                     )
                 ),
             ]
