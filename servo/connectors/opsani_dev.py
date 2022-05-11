@@ -436,16 +436,18 @@ class BaseOpsaniDevChecks(servo.BaseChecks, abc.ABC):
         for resource in servo.connectors.kubernetes.Resource.values():
             current_state = None
             container_requirements = container.get_resource_requirements(resource)
-            get_requirements = getattr(self.config, resource).get
-            for requirement in get_requirements:
-                current_state = container_requirements.get(requirement)
-                if current_state:
-                    break
 
-            assert current_state, (
-                f"{self.controller_type_name} {self.config_controller_name} target container {self.config.container} spec does not define the resource {resource}. "
-                f"At least one of the following must be specified: {', '.join(map(lambda req: req.resources_key, get_requirements))}"
-            )
+            if getattr(self.config, resource) is not None:
+                get_requirements = getattr(self.config, resource).get
+                for requirement in get_requirements:
+                    current_state = container_requirements.get(requirement)
+                    if current_state:
+                        break
+
+                assert current_state, (
+                    f"{self.controller_type_name} {self.config_controller_name} target container {self.config.container} spec does not define the resource {resource}. "
+                    f"At least one of the following must be specified: {', '.join(map(lambda req: req.resources_key, get_requirements))}"
+                )
 
     @servo.checks.require("Target container resources fall within optimization range")
     async def check_target_container_resources_within_limits(self) -> None:
@@ -473,53 +475,63 @@ class BaseOpsaniDevChecks(servo.BaseChecks, abc.ABC):
 
         # Get resource requirements from container
         # TODO: This needs to reuse the logic from CanaryOptimization class (tuning_cpu, tuning_memory, etc properties)
-        cpu_resource_requirements = target_container.get_resource_requirements("cpu")
-        cpu_resource_value = cpu_resource_requirements.get(
-            next(
-                filter(
-                    lambda r: cpu_resource_requirements[r] is not None,
-                    self.config.cpu.get,
-                ),
-                None,
+        if self.config.cpu is not None:
+            cpu_resource_requirements = target_container.get_resource_requirements(
+                "cpu"
             )
-        )
-        container_cpu_value = servo.connectors.kubernetes.Core.parse(cpu_resource_value)
-
-        memory_resource_requirements = target_container.get_resource_requirements(
-            "memory"
-        )
-        memory_resource_value = memory_resource_requirements.get(
-            next(
-                filter(
-                    lambda r: memory_resource_requirements[r] is not None,
-                    self.config.memory.get,
-                ),
-                None,
+            cpu_resource_value = cpu_resource_requirements.get(
+                next(
+                    filter(
+                        lambda r: cpu_resource_requirements[r] is not None,
+                        self.config.cpu.get,
+                    ),
+                    None,
+                )
             )
-        )
-        container_memory_value = servo.connectors.kubernetes.ShortByteSize.validate(
-            memory_resource_value
-        )
+            container_cpu_value = servo.connectors.kubernetes.Core.parse(
+                cpu_resource_value
+            )
 
-        # Get config values
-        config_cpu_min = self.config.cpu.min
-        config_cpu_max = self.config.cpu.max
-        config_memory_min = self.config.memory.min
-        config_memory_max = self.config.memory.max
+            # Get config values
+            config_cpu_min = self.config.cpu.min
+            config_cpu_max = self.config.cpu.max
 
-        # Check values against config.
-        assert (
-            container_cpu_value >= config_cpu_min
-        ), f"target container CPU value {container_cpu_value.human_readable()} must be greater than optimizable minimum {config_cpu_min.human_readable()}"
-        assert (
-            container_cpu_value <= config_cpu_max
-        ), f"target container CPU value {container_cpu_value.human_readable()} must be less than optimizable maximum {config_cpu_max.human_readable()}"
-        assert (
-            container_memory_value >= config_memory_min
-        ), f"target container Memory value {container_memory_value.human_readable()} must be greater than optimizable minimum {config_memory_min.human_readable()}"
-        assert (
-            container_memory_value <= config_memory_max
-        ), f"target container Memory value {container_memory_value.human_readable()} must be less than optimizable maximum {config_memory_max.human_readable()}"
+            # Check values against config.
+            assert (
+                container_cpu_value >= config_cpu_min
+            ), f"target container CPU value {container_cpu_value.human_readable()} must be greater than optimizable minimum {config_cpu_min.human_readable()}"
+            assert (
+                container_cpu_value <= config_cpu_max
+            ), f"target container CPU value {container_cpu_value.human_readable()} must be less than optimizable maximum {config_cpu_max.human_readable()}"
+
+        if self.config.memory is not None:
+            memory_resource_requirements = target_container.get_resource_requirements(
+                "memory"
+            )
+            memory_resource_value = memory_resource_requirements.get(
+                next(
+                    filter(
+                        lambda r: memory_resource_requirements[r] is not None,
+                        self.config.memory.get,
+                    ),
+                    None,
+                )
+            )
+            container_memory_value = servo.connectors.kubernetes.ShortByteSize.validate(
+                memory_resource_value
+            )
+
+            # Get config values
+            config_memory_min = self.config.memory.min
+            config_memory_max = self.config.memory.max
+
+            # Check values against config.
+            assert (
+                container_memory_value >= config_memory_min
+            ), f"target container Memory value {container_memory_value.human_readable()} must be greater than optimizable minimum {config_memory_min.human_readable()}"
+            assert (
+                container_memory_value <= config_memory_max
+            ), f"target container Memory value {container_memory_value.human_readable()} must be less than optimizable maximum {config_memory_max.human_readable()}"
 
     @servo.require(
         '{self.controller_type_name} "{self.config_controller_name}"  is ready'

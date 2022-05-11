@@ -3972,25 +3972,6 @@ class CanaryOptimization(BaseOptimization):
             container_config
         )
 
-        # Autoset CPU and memory range based on resources
-        if not container_config.cpu:
-            cpu_resource = Core(
-                main_container.get_resource_requirements("cpu").get(
-                    ResourceRequirement.request
-                )
-            )
-            cpu_autoset = autoset_resource_range("cpu", value=cpu_resource)
-            container_config.cpu = cpu_autoset
-
-        if not container_config.memory:
-            memory_resource = ShortByteSize.validate(
-                main_container.get_resource_requirements("memory").get(
-                    ResourceRequirement.request
-                )
-            )
-            memory_autoset = autoset_resource_range("memory", value=memory_resource)
-            container_config.memory = memory_autoset
-
         name = (
             deployment_or_rollout_config.strategy.alias
             if isinstance(
@@ -5333,16 +5314,17 @@ class KubernetesChecks(servo.BaseChecks):
             for resource in Resource.values():
                 current_state = None
                 container_requirements = container.get_resource_requirements(resource)
-                get_requirements = getattr(cont_config, resource).get
-                for requirement in get_requirements:
-                    current_state = container_requirements.get(requirement)
-                    if current_state:
-                        break
+                if getattr(cont_config, resource) is not None:
+                    get_requirements = getattr(cont_config, resource).get
+                    for requirement in get_requirements:
+                        current_state = container_requirements.get(requirement)
+                        if current_state:
+                            break
 
-                assert current_state, (
-                    f"{type(target_controller).__name__} {target_config.name} target container {cont_config.name} spec does not define the resource {resource}. "
-                    f"At least one of the following must be specified: {', '.join(map(lambda req: req.resources_key, get_requirements))}"
-                )
+                    assert current_state, (
+                        f"{type(target_controller).__name__} {target_config.name} target container {cont_config.name} spec does not define the resource {resource}. "
+                        f"At least one of the following must be specified: {', '.join(map(lambda req: req.resources_key, get_requirements))}"
+                    )
 
     @servo.multicheck(
         'Containers in the "{item.name}" Deployment have resource requirements'
@@ -5404,6 +5386,44 @@ class KubernetesChecks(servo.BaseChecks):
 )
 class KubernetesConnector(servo.BaseConnector):
     config: KubernetesConfiguration
+
+    @servo.on_event()
+    async def startup(self) -> None:
+
+        # Autoset CPU and memory range based on resources
+        for deployment_or_rollout_config in (self.config.deployments or []) + (
+            self.config.rollouts or []
+        ):
+            read_args = (
+                deployment_or_rollout_config.name,
+                cast(str, deployment_or_rollout_config.namespace),
+            )
+            deployment_or_rollout = await Deployment.read(*read_args)
+            container_config = deployment_or_rollout_config.containers[0]
+            main_container = await deployment_or_rollout.get_target_container(
+                container_config
+            )
+
+            if not container_config.cpu:
+                cpu_resources = main_container.get_resource_requirements("cpu")
+                # Set requests = limits if not specified
+                if (cpu_request := cpu_resources[ResourceRequirement.request]) is None:
+                    cpu_request = cpu_resources[ResourceRequirement.limit]
+
+                cpu_resource = Core(cpu_request)
+                cpu_autoset = autoset_resource_range("cpu", value=cpu_resource)
+                container_config.cpu = cpu_autoset
+
+            if not container_config.memory:
+                memory_resources = main_container.get_resource_requirements("memory")
+                if (
+                    memory_request := memory_resources[ResourceRequirement.request]
+                ) is None:
+                    memory_request = memory_resources[ResourceRequirement.limit]
+
+                memory_resource = ShortByteSize.validate(memory_request)
+                memory_autoset = autoset_resource_range("memory", value=memory_resource)
+                container_config.memory = memory_autoset
 
     @servo.on_event()
     async def attach(self, servo_: servo.Servo) -> None:
@@ -5783,30 +5803,32 @@ def set_container_resource_defaults_from_config(
     container: Container, config: ContainerConfiguration
 ) -> None:
     for resource in Resource.values():
-        # NOTE: cpu/memory stanza in container config
-        resource_config = getattr(config, resource)
-        requirements = container.get_resource_requirements(resource)
-        servo.logger.debug(
-            f"Loaded resource requirements for '{resource}': {requirements}"
-        )
-        for requirement in ResourceRequirement:
-            # Use the request/limit from the container.[cpu|memory].[request|limit] as default/override
-            if resource_value := getattr(resource_config, requirement.name):
-                if (existing_resource_value := requirements.get(requirement)) is None:
-                    servo.logger.debug(
-                        f"Setting default value for {resource}.{requirement} to: {resource_value}"
-                    )
-                else:
-                    servo.logger.debug(
-                        f"Overriding existing value for {resource}.{requirement} ({existing_resource_value}) to: {resource_value}"
-                    )
+        # NOTE: cpu/memory stanza in container config (if set)
+        if (resource_config := getattr(config, resource)) is not None:
+            requirements = container.get_resource_requirements(resource)
+            servo.logger.debug(
+                f"Loaded resource requirements for '{resource}': {requirements}"
+            )
+            for requirement in ResourceRequirement:
+                # Use the request/limit from the container.[cpu|memory].[request|limit] as default/override
+                if resource_value := getattr(resource_config, requirement.name):
+                    if (
+                        existing_resource_value := requirements.get(requirement)
+                    ) is None:
+                        servo.logger.debug(
+                            f"Setting default value for {resource}.{requirement} to: {resource_value}"
+                        )
+                    else:
+                        servo.logger.debug(
+                            f"Overriding existing value for {resource}.{requirement} ({existing_resource_value}) to: {resource_value}"
+                        )
 
-                requirements[requirement] = resource_value
+                    requirements[requirement] = resource_value
 
-        servo.logger.debug(
-            f"Setting resource requirements for '{resource}' to: {requirements}"
-        )
-        container.set_resource_requirements(resource, requirements)
+            servo.logger.debug(
+                f"Setting resource requirements for '{resource}' to: {requirements}"
+            )
+            container.set_resource_requirements(resource, requirements)
 
 
 def autoset_resource_range(
@@ -5825,7 +5847,7 @@ def autoset_resource_range(
     if resource_type == Resource.cpu:
 
         resource_autoset = CPU(
-            min=Core(resource_min), max=Core(resource_max), step="250m"
+            min=Core(resource_min), max=Core(resource_max), step="125m"
         )
 
     elif resource_type == Resource.memory:
@@ -5833,7 +5855,7 @@ def autoset_resource_range(
         resource_autoset = Memory(
             min=ShortByteSize.validate(str(resource_min)),
             max=ShortByteSize.validate(str(resource_max)),
-            step="256 MiB",
+            step="128 MiB",
         )
 
     servo.logger.info(f"Autosetting {resource_type} range to: {resource_autoset}")
