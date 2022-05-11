@@ -255,7 +255,7 @@ jobs:
         id: cached-poetry
         with:
           path: ~/.local
-          key: poetry-${{ runner.os }}-1.1.7a-python-${{ steps.setup-python.outputs.python-version }}
+          key: poetry-${{ runner.os }}-1.1.13-python-${{ steps.setup-python.outputs.python-version }}
       - name: Ensure Poetry is on GITHUB_PATH
         run: |
           echo "$HOME/.local/bin" >> $GITHUB_PATH
