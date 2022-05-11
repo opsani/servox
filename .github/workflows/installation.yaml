@@ -9,44 +9,44 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v2
-      with:
+      - uses: actions/checkout@v2
+        with:
           fetch-depth: 1
-    - name: Output Python version
-      id: python-version
-      run: |
-        echo "::set-output name=python-version::$(cat .python-version)"
-    - name: Cache pyenv versions
-      uses: actions/cache@v2.1.1
-      id: cached-pyenvs
-      with:
-        path: /opt/hostedtoolcache/pyenv_root
-        key: ${{ runner.os }}-pyenv
-    - name: Install pyenv versions
-      uses: gabrielfalcao/pyenv-action@v9
-      with:
-        default: ${{ steps.python-version.outputs.python-version }}
-      # if: steps.cached-pyenvs.outputs.cache-hit != 'true'
-    - name: Install Poetry
-      run: |
-        curl -sSL https://raw.githubusercontent.com/python-poetry/poetry/master/get-poetry.py | python
-        source $HOME/.poetry/env
-        pyenv install -s
-        poetry config virtualenvs.in-project true
-        poetry env info
-        poetry env use `cat .python-version`
-    - name: Cache dependencies
-      uses: actions/cache@v2.1.1
-      id: cached-poetry-dependencies
-      with:
-        path: .venv
-        key: venv-${{ runner.os }}-poetry-${{ hashFiles('**/poetry.lock') }}
-    - name: Install dependencies
-      run: |
-        source $HOME/.poetry/env
-        poetry install
-      if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
-    - name: Run tests
-      run: |
-        source $HOME/.poetry/env
-        poetry run pytest
+      - name: Output Python version
+        id: python-version
+        run: |
+          echo "::set-output name=python-version::$(cat .python-version)"
+      - name: Cache pyenv versions
+        uses: actions/cache@v2.1.1
+        id: cached-pyenvs
+        with:
+          path: /opt/hostedtoolcache/pyenv_root
+          key: ${{ runner.os }}-pyenv
+      - name: Install pyenv versions
+        uses: blakewatters/pyenv-action@v9
+        with:
+          default: ${{ steps.python-version.outputs.python-version }}
+        # if: steps.cached-pyenvs.outputs.cache-hit != 'true'
+      - name: Install Poetry
+        run: |
+          curl -sSL https://raw.githubusercontent.com/python-poetry/poetry/master/get-poetry.py | python
+          source $HOME/.poetry/env
+          pyenv install -s
+          poetry config virtualenvs.in-project true
+          poetry env info
+          poetry env use `cat .python-version`
+      - name: Cache dependencies
+        uses: actions/cache@v2.1.1
+        id: cached-poetry-dependencies
+        with:
+          path: .venv
+          key: venv-${{ runner.os }}-poetry-${{ hashFiles('**/poetry.lock') }}
+      - name: Install dependencies
+        run: |
+          source $HOME/.poetry/env
+          poetry install
+        if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
+      - name: Run tests
+        run: |
+          source $HOME/.poetry/env
+          poetry run pytest
