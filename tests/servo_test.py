@@ -12,10 +12,17 @@ import yaml
 from pydantic import Extra, ValidationError
 
 import servo as servox
-from servo import BaseServoConfiguration, Duration, __cryptonym__, __version__
+from servo import (
+    BaseServoConfiguration,
+    Duration,
+    ErrorSeverity,
+    __cryptonym__,
+    __version__,
+)
 from servo.assembly import Assembly
 from servo.configuration import (
     BaseConfiguration,
+    ChecksConfiguration,
     CommonConfiguration,
     Optimizer,
     Timeouts,
@@ -699,6 +706,12 @@ class TestAssembly:
                         },
                     ],
                 },
+                "checks": {
+                    "allOf": [{"$ref": "#/definitions/ChecksConfiguration"}],
+                    "description": "Configuration of Checks behavior",
+                    "env_names": ["SERVO_CHECKS"],
+                    "title": "Checks",
+                },
                 "connectors": {
                     "title": "Connectors",
                     "description": (
@@ -975,6 +988,97 @@ class TestAssembly:
                     },
                     "additionalProperties": False,
                 },
+                "ChecksConfiguration": {
+                    "additionalProperties": False,
+                    "description": "ChecksConfiguration models configuration for behavior of the checks flow, such as\nwhether to automatically apply remedies.",
+                    "properties": {
+                        "check_halting": {
+                            "default": False,
+                            "description": "Halt to wait for each checks success",
+                            "env_names": ["CHECKS_CHECK_HALTING"],
+                            "title": "Check Halting",
+                            "type": "boolean",
+                        },
+                        "connectors": {
+                            "description": "Connectors to check",
+                            "env_names": ["CHECKS_CONNECTORS"],
+                            "items": {"type": "string"},
+                            "title": "Connectors",
+                            "type": "array",
+                        },
+                        "delay": {
+                            "default": "10s",
+                            "description": "Delay duration. Requires --wait",
+                            "env_names": ["CHECKS_DELAY"],
+                            "title": "Delay",
+                            "type": "string",
+                        },
+                        "halt_on": {
+                            "allOf": [{"$ref": "#/definitions/ErrorSeverity"}],
+                            "default": "critical",
+                            "description": "Halt running on failure severity",
+                            "env_names": ["CHECKS_HALT_ON"],
+                        },
+                        "id": {
+                            "description": "Filter by ID",
+                            "env_names": ["CHECKS_ID"],
+                            "items": {"type": "string"},
+                            "title": "Id",
+                            "type": "array",
+                        },
+                        "name": {
+                            "description": "Filter by name",
+                            "env_names": ["CHECKS_NAME"],
+                            "items": {"type": "string"},
+                            "title": "Name",
+                            "type": "array",
+                        },
+                        "progressive": {
+                            "default": True,
+                            "description": "Execute checks and emit output progressively",
+                            "env_names": ["CHECKS_PROGRESSIVE"],
+                            "title": "Progressive",
+                            "type": "boolean",
+                        },
+                        "quiet": {
+                            "default": False,
+                            "description": "Do not echo generated output to stdout",
+                            "env_names": ["CHECKS_QUIET"],
+                            "title": "Quiet",
+                            "type": "boolean",
+                        },
+                        "remedy": {
+                            "default": True,
+                            "description": "Automatically apply remedies to failed checks if detected",
+                            "env_names": ["CHECKS_REMEDY"],
+                            "title": "Remedy",
+                            "type": "boolean",
+                        },
+                        "tag": {
+                            "description": "Filter by tag",
+                            "env_names": ["CHECKS_TAG"],
+                            "items": {"type": "string"},
+                            "title": "Tag",
+                            "type": "array",
+                        },
+                        "verbose": {
+                            "default": False,
+                            "description": "Display verbose output",
+                            "env_names": ["CHECKS_VERBOSE"],
+                            "title": "Verbose",
+                            "type": "boolean",
+                        },
+                        "wait": {
+                            "default": "30m",
+                            "description": "Wait for checks to pass",
+                            "env_names": ["CHECKS_WAIT"],
+                            "title": "Wait",
+                            "type": "string",
+                        },
+                    },
+                    "title": "Checks Connector Configuration Schema",
+                    "type": "object",
+                },
                 "CommonConfiguration": {
                     "title": "Common Connector Configuration Schema",
                     "description": (
@@ -1045,6 +1149,12 @@ class TestAssembly:
                         },
                     },
                     "additionalProperties": False,
+                },
+                "ErrorSeverity": {
+                    "description": "ErrorSeverity is an enumeration the describes the severity of an error\nand establishes semantics about how it should be handled.",
+                    "enum": ["warning", "common", "critical"],
+                    "title": "ErrorSeverity",
+                    "type": "string",
                 },
                 "TargetFormat": {
                     "title": "TargetFormat",
@@ -1800,6 +1910,22 @@ def test_backoff_context() -> None:
     assert config.backoff["__default__"].max_time is not None
     assert config.backoff["__default__"].max_time == Duration("10m")
     assert config.backoff["__default__"].max_tries is None
+
+
+def test_checks_defaults() -> None:
+    checks_config = ChecksConfiguration()
+    assert checks_config
+    assert checks_config.name is None
+    assert checks_config.id is None
+    assert checks_config.tag is None
+    assert checks_config.quiet == False
+    assert checks_config.verbose == False
+    assert checks_config.progressive == True
+    assert checks_config.wait == Duration("30m")
+    assert checks_config.delay == Duration("10s")
+    assert checks_config.halt_on == ErrorSeverity.critical
+    assert checks_config.remedy == True
+    assert checks_config.check_halting == False
 
 
 @pytest.mark.parametrize(

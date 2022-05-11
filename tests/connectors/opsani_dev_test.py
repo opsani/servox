@@ -1572,6 +1572,143 @@ class TestServiceMultiport:
             )
 
 
+@pytest.mark.applymanifests(
+    "../manifests/opsani_dev",
+    files=[
+        "deployment.yaml",
+        "service.yaml",
+        "prometheus.yaml",
+    ],
+)
+@pytest.mark.integration
+@pytest.mark.usefixtures("kubeconfig", "kubernetes_asyncio_config")
+class TestCheckHalting:
+    @pytest.fixture(autouse=True)
+    async def load_manifests(
+        self,
+        kube,
+        kubeconfig,
+        kubernetes_asyncio_config,
+    ) -> None:
+        kube.wait_for_registered()
+
+        # Fake out the servo metadata in the environment
+        # These env vars are set by our manifests
+        deployment = kube.get_deployments()["servo"]
+        pod = deployment.get_pods()[0]
+        try:
+            os.environ["POD_NAME"] = pod.name
+            os.environ["POD_NAMESPACE"] = kube.namespace
+
+            yield
+
+        finally:
+            os.environ.pop("POD_NAME", None)
+            os.environ.pop("POD_NAMESPACE", None)
+
+    @pytest.mark.namespace(create=False, name="test-checks")
+    async def test_checks_do_not_halt(
+        self,
+        kube,
+        kubetest_teardown,
+        checks: servo.connectors.opsani_dev.OpsaniDevChecks,
+        kube_port_forward: Callable[[str, int], AsyncContextManager[str]],
+        load_generator: Callable[[], "LoadGenerator"],
+        tmp_path: pathlib.Path,
+    ) -> None:
+        servo.logging.set_level("INFO")
+
+        async with kube_port_forward("deploy/servo", 9090) as prometheus_base_url:
+            # Connect the checks to our port forward interface
+            checks.config.prometheus_base_url = prometheus_base_url
+
+            deployment = await servo.connectors.kubernetes.Deployment.read(
+                checks.config.deployment, checks.config.namespace
+            )
+            assert (
+                deployment
+            ), f"failed loading deployment '{checks.config.deployment}' in namespace '{checks.config.namespace}'"
+
+            async def loop_checks() -> None:
+                while True:
+                    results = await checks.run_all()
+                    failures = list(filter(lambda r: r.success is False, results))
+                    servo.logger.info(f"{failures}")
+                    if failures:
+                        for failure in failures:
+
+                            await _remedy_check(
+                                failure.id,
+                                config=checks.config,
+                                deployment=deployment,
+                                kube_port_forward=kube_port_forward,
+                                load_generator=load_generator,
+                                checks=checks,
+                            )
+                    else:
+                        break
+
+            await asyncio.wait_for(loop_checks(), timeout=75.0)
+
+        servo.logger.success("🥷 Opsani Dev is now deployed.")
+        servo.logger.critical(
+            "🔥 Now witness the firepower of this fully ARMED and OPERATIONAL battle station!"
+        )
+
+    @pytest.mark.namespace(create=False, name="test-checks")
+    @pytest.mark.xfail(
+        reason="Remedy flow does not complete in time with check halting"
+    )
+    async def test_checks_timeout_with_halt(
+        self,
+        kube,
+        kubetest_teardown,
+        checks: servo.connectors.opsani_dev.OpsaniDevChecks,
+        kube_port_forward: Callable[[str, int], AsyncContextManager[str]],
+        load_generator: Callable[[], "LoadGenerator"],
+        tmp_path: pathlib.Path,
+    ) -> None:
+        servo.logging.set_level("INFO")
+
+        async with kube_port_forward("deploy/servo", 9090) as prometheus_base_url:
+            # Connect the checks to our port forward interface
+            checks.config.prometheus_base_url = prometheus_base_url
+
+            deployment = await servo.connectors.kubernetes.Deployment.read(
+                checks.config.deployment, checks.config.namespace
+            )
+            assert (
+                deployment
+            ), f"failed loading deployment '{checks.config.deployment}' in namespace '{checks.config.namespace}'"
+
+            async def loop_checks() -> None:
+                while True:
+                    results = await checks.run_all()
+                    failures = list(filter(lambda r: r.success is False, results))
+                    if failures:
+                        for failure in failures:
+                            await _remedy_check(
+                                failure.id,
+                                config=checks.config,
+                                deployment=deployment,
+                                kube_port_forward=kube_port_forward,
+                                load_generator=load_generator,
+                                checks=checks,
+                            )
+
+                            # Replicate check-halting behavior, loop breaking on each failure
+                            break
+                    else:
+                        break
+
+            await asyncio.wait_for(loop_checks(), timeout=75.0)
+
+        servo.logger.success("🥷 Opsani Dev is now deployed.")
+        servo.logger.critical(
+            "🔥 Now witness the firepower of this fully ARMED and OPERATIONAL battle station!"
+        )
+
+
 ##
 # FIXME: Migrate these assertions into a better home and fix the line number mess
 
@@ -1925,10 +2062,17 @@ async def wait_for_check_to_pass(
 
 
 async def _remedy_check(
-    id: str, *, config, deployment, kube_port_forward, load_generator, checks
+    id: str,
+    *,
+    config,
+    deployment,
+    kube_port_forward,
+    load_generator,
+    checks,
 ) -> None:
     envoy_proxy_port = servo.connectors.opsani_dev.ENVOY_SIDECAR_DEFAULT_PORT
     servo.logger.warning(f"Remedying failing check '{id}'...")
+
     if id == "check_controller_annotations":
         ## Step 1
         servo.logger.critical("Step 1 - Annotate the Deployment PodSpec")

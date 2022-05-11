@@ -361,7 +361,9 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
     def running(self) -> bool:
         return self._running
 
-    def run(self, *, poll: bool = True, interactive: bool = False) -> None:
+    def run(
+        self, *, poll: bool = True, interactive: bool = False, debug: bool = False
+    ) -> None:
         """Asynchronously run all servos active within the assembly.
 
         Running the assembly takes over the current event loop and schedules a `ServoRunner` instance for each servo active in the assembly.
@@ -379,7 +381,10 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
                 s, lambda s=s: asyncio.create_task(self._shutdown(loop, signal=s))
             )
 
-        loop.set_exception_handler(self._handle_exception)
+        if not debug:
+            loop.set_exception_handler(self._handle_exception)
+        else:
+            loop.set_exception_handler(None)
 
         # Setup logging
         async def _report_progress(**kwargs) -> None:

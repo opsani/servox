@@ -10,8 +10,10 @@ __all__ = (
     "AdjustmentRejectedError",
     "BaseError",
     "ConnectorError",
+    "ConnectorNotFoundError",
     "EventAbortedError",
     "EventCancelledError",
+    "EventHandlersNotFoundError",
     "EventError",
     "MeasurementFailedError",
     "ServoError",
@@ -87,12 +89,20 @@ class ServoError(BaseError):
         return self._servo
 
 
+class ConnectorNotFoundError(ServoError):
+    """A mission critical attempt to locate a connector by name or ID has failed"""
+
+
 class ConnectorError(ServoError):
     """An error occurred within a connector."""
 
     @property
-    def connector(self) -> servo.Connector:
+    def connector(self) -> servo.connector.BaseConnector:
         return self._connector
+
+
+class EventHandlersNotFoundError(ConnectorError):
+    """None of the currently assembled connectors implement handlers for the Event being checked"""
 
 
 class EventError(ConnectorError):
@@ -112,7 +122,7 @@ class EventCancelledError(EventError):
 
 
 class MeasurementFailedError(EventError):
-    """A failure occurred while attempting to perform an measurement.
+    """A failure occurred while attempting to perform a measurement.
 
     Measurement failures are potentially recoverable errors in which the
     measurement was not fully collected due to a transient failure, lost
@@ -142,6 +152,6 @@ class AdjustmentRejectedError(AdjustmentFailedError):
 class EventAbortedError(EventError):
     """Abort the currently running event
 
-    During long running measurements (and, optionally, adjustments) it is often
-    neccessary to complete the operation early eg. if there are sustained SLO violations.
+    During long-running measurements (and, optionally, adjustments) it is often
+    necessary to complete the operation early e.g. if there are sustained SLO violations.
     """
