@@ -30,8 +30,8 @@ any Python package management system should work.
 
 * Clone the repo: `git clone git@github.com:opsani/servox`
 * Install required Python: `cd servox && pyenv install`
-* Install Poetry: `curl -sSL https://raw.githubusercontent.com/python-poetry/poetry/master/get-poetry.py |
-  python`
+* Install Poetry: `curl -sSL https://install.python-poetry.org | python3 -`
+* Add Poetry to your path: `echo "export PATH=\"\$HOME/.local/bin:\$PATH\"" >> ~/.zshrc`
 * Link Poetry with pyenv version: ``poetry env use `cat .python-version` ``
 * Install dependencies: `poetry install`
 * Activate the venv: `poetry shell`
@@ -394,15 +394,18 @@ entries in the `pyproject.toml` file under the
 `[tool.poetry.plugins."servo.connectors"]` stanza.
 
 If you're writing your own connector in an external package, you need to include
+
 ```yaml
 [tool.poetry.plugins."servo.connectors"]
 "my_connector" = "my_project.foo:MyConnector"
 ```
+
 in your `pyproject.toml` to add your connector as an entry point.
-and you _must_ name your connector `class MyConnector(servo.BaseConnector):` to have it discoverable.
+and you *must* name your connector `class MyConnector(servo.BaseConnector):` to have it discoverable.
 Discovery is performed via the `servo.connector:_name_for_connector_class()` function. It matches
 the `My` in the connector class name to the top level connector key in the `servo.yaml`.
 So, for example, your `servo.yaml` could be as follows:
+
 ```yaml
 ...
 my:
