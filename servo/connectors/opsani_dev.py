@@ -134,9 +134,9 @@ class OpsaniDevConfiguration(servo.BaseConfiguration):
 
             # Just load defaults when create_tuning_pod is False - these values aren't used and just hold the pinned setting
             if not self.cpu:
-                self.cpu = (CPU(min="250m", max="3000m"),)
+                self.cpu = CPU(min="250m", max="3000m")
             if not self.memory:
-                self.memory = (Memory(min="256 MiB", max="3.0 GiB"),)
+                self.memory = Memory(min="256 MiB", max="3.0 GiB")
 
             self.cpu.pinned = True
             self.memory.pinned = True
