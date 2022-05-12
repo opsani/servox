@@ -116,6 +116,7 @@ class OpsaniDevConfiguration(servo.BaseConfiguration):
         ] = servo.connectors.kubernetes.DefaultOptimizationStrategyConfiguration()
 
         if self.create_tuning_pod:
+
             strategy = (
                 servo.connectors.kubernetes.CanaryOptimizationStrategyConfiguration(
                     type=servo.connectors.kubernetes.OptimizationStrategy.canary,
@@ -130,6 +131,13 @@ class OpsaniDevConfiguration(servo.BaseConfiguration):
         else:
             # NOTE: currently assuming we NEVER want to adjust the main deployment with the opsani_dev connector
             # TODO: Do we ever need to support opsani dev bootstrapping of non-canary adjusted optimization of deployments?
+
+            # Just load defaults when create_tuning_pod is False - these values aren't used and just hold the pinned setting
+            if not self.cpu:
+                self.cpu = (CPU(min="250m", max="3000m"),)
+            if not memory:
+                self.memory = (Memory(min="256 MiB", max="3.0 GiB"),)
+
             self.cpu.pinned = True
             self.memory.pinned = True
 
