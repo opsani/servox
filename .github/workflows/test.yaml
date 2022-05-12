@@ -144,7 +144,7 @@ jobs:
           ${{ hashFiles('**/poetry.lock', 'servo/**/*.py') }}"
     - name: Export coverage file
       run: |
-        echo "COVERAGE_FILE=.coverage.unit" >> $GITHUB_ENV
+        echo "COVERAGE_FILE=${{ github.workspace }}/.coverage.unit" >> $GITHUB_ENV
     - name: Run tests
       run: |
         source .venv/bin/activate
@@ -158,7 +158,7 @@ jobs:
       uses: actions/upload-artifact@v3
       with:
         name: coverage-unit
-        path: .coverage-unit
+        path: ${{ github.workspace }}/.coverage-unit
     - uses: actions/upload-artifact@v2
       with:
         name: unit-test-reports
@@ -228,7 +228,7 @@ jobs:
       uses: prepor/action-aws-iam-authenticator@master
     - name: Export coverage file
       run: |
-        echo "COVERAGE_FILE=.coverage.integration" >> $GITHUB_ENV
+        echo "COVERAGE_FILE=${{ github.workspace }}/.coverage.integration" >> $GITHUB_ENV
     - name: Run integration tests
       run: |
         source .venv/bin/activate
@@ -242,7 +242,7 @@ jobs:
       uses: actions/upload-artifact@v3
       with:
         name: coverage-integration
-        path: .coverage-integration
+        path: ${{ github.workspace }}/.coverage-integration
     - uses: actions/upload-artifact@v2
       with:
         name: integration-test-reports
