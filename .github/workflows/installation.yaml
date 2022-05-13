@@ -30,7 +30,6 @@ jobs:
       - name: Install Poetry
         run: |
           curl -sSL https://install.python-poetry.org | python3 -
-          export PATH="$HOME/.local/bin:$PATH"
           pyenv install -s
           poetry config virtualenvs.in-project true
           poetry env info
@@ -43,10 +42,8 @@ jobs:
           key: venv-${{ runner.os }}-poetry-${{ hashFiles('**/poetry.lock') }}
       - name: Install dependencies
         run: |
-          export PATH="$HOME/.local/bin:$PATH"
           poetry install
         if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
       - name: Run tests
         run: |
-          export PATH="$HOME/.local/bin:$PATH"
           poetry run pytest
