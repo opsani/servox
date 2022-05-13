@@ -224,8 +224,11 @@ jobs:
       shell: bash
       env:
         KUBE_CONFIG_DATA: ${{ secrets.KUBE_CONFIG_DATA }}
-    - name: Install AWS IAM Authenticator
-      uses: prepor/action-aws-iam-authenticator@master
+    - name: Install aws-iam-authenticator
+      # Note: pin to v0.5.7
+      run: |
+       curl -o ${{ github.workspace }}/bin/aws-iam-authenticator -LO "https://github.com/kubernetes-sigs/aws-iam-authenticator/releases/download/v0.5.7/aws-iam-authenticator_0.5.7_linux_amd64"
+       chmod 0755 ${{ github.workspace }}/bin/aws-iam-authenticator
     - name: Export coverage file
       run: |
         echo "COVERAGE_FILE=${{ github.workspace }}/.coverage.integration" >> $GITHUB_ENV
