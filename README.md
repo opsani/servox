@@ -30,8 +30,8 @@ any Python package management system should work.
 
 * Clone the repo: `git clone git@github.com:opsani/servox`
 * Install required Python: `cd servox && pyenv install`
-* Install Poetry: `curl -sSL https://raw.githubusercontent.com/python-poetry/poetry/master/get-poetry.py |
-  python`
+* Install Poetry: `curl -sSL https://install.python-poetry.org | python3 -`
+* Add Poetry to your path: `echo "export PATH=\"\$HOME/.local/bin:\$PATH\"" >> ~/.zshrc`
 * Link Poetry with pyenv version: ``poetry env use `cat .python-version` ``
 * Install dependencies: `poetry install`
 * Activate the venv: `poetry shell`
