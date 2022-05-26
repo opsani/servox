@@ -64,7 +64,12 @@ class OpsaniDevConfiguration(servo.BaseConfiguration):
     service: str
     port: Optional[Union[pydantic.StrictInt, str]] = None
     cpu: Optional[CPU]
+    cpu_autoset_multiplier: pydantic.conlist(float, min_items=2, max_items=2) = [4, 3]
     memory: Optional[Memory]
+    memory_autoset_multiplier: pydantic.conlist(float, min_items=2, max_items=2) = [
+        4,
+        3,
+    ]
     env: Optional[servo.EnvironmentSettingList]
     static_environment_variables: Optional[Dict[str, str]]
     prometheus_base_url: str = PROMETHEUS_SIDECAR_BASE_URL
@@ -152,7 +157,9 @@ class OpsaniDevConfiguration(servo.BaseConfiguration):
                     name=self.container,
                     alias="main",
                     cpu=self.cpu,
+                    cpu_autoset_multiplier=self.cpu_autoset_multiplier,
                     memory=self.memory,
+                    memory_autoset_multiplier=self.memory_autoset_multiplier,
                     static_environment_variables=self.static_environment_variables,
                     env=self.env,
                 )

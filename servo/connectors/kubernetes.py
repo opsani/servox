@@ -4929,7 +4929,9 @@ class ContainerConfiguration(servo.BaseConfiguration):
     alias: Optional[ContainerTagName]
     command: Optional[str]  # TODO: create model...
     cpu: Optional[CPU]
+    cpu_autoset_multiplier: pydantic.conlist(float, min_items=2, max_items=2)
     memory: Optional[Memory]
+    memory_autoset_multiplier: pydantic.conlist(float, min_items=2, max_items=2)
     env: Optional[servo.EnvironmentSettingList]
     static_environment_variables: Optional[Dict[str, str]]
 
@@ -5410,8 +5412,12 @@ class KubernetesConnector(servo.BaseConnector):
                 if (cpu_request := cpu_resources[ResourceRequirement.request]) is None:
                     cpu_request = cpu_resources[ResourceRequirement.limit]
 
-                cpu_resource = Core(cpu_request)
-                cpu_autoset = autoset_resource_range("cpu", value=cpu_resource)
+                cpu_resource = Core.parse(cpu_request).__opsani_repr__()
+                cpu_autoset = autoset_resource_range(
+                    "cpu",
+                    value=cpu_resource,
+                    multiplier=container_config.cpu_autoset_multiplier,
+                )
                 container_config.cpu = cpu_autoset
 
             if not container_config.memory:
@@ -5422,7 +5428,11 @@ class KubernetesConnector(servo.BaseConnector):
                     memory_request = memory_resources[ResourceRequirement.limit]
 
                 memory_resource = ShortByteSize.validate(memory_request)
-                memory_autoset = autoset_resource_range("memory", value=memory_resource)
+                memory_autoset = autoset_resource_range(
+                    "memory",
+                    value=memory_resource,
+                    multiplier=container_config.memory_autoset_multiplier,
+                )
                 container_config.memory = memory_autoset
 
     @servo.on_event()
@@ -5832,12 +5842,11 @@ def set_container_resource_defaults_from_config(
 
 
 def autoset_resource_range(
-    resource_type: Resource,
-    value: Union[Core, ShortByteSize],
+    resource_type: Resource, value: float, multiplier: list[float]
 ) -> Union[CPU, Memory]:
 
-    min_multiplier = 4
-    max_multiplier = 3
+    min_multiplier = multiplier[0]
+    max_multiplier = multiplier[1]
 
     servo.logger.trace(f"Retrieved {resource_type} defined resource: {value}")
 
