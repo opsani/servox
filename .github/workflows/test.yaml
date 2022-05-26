@@ -144,7 +144,7 @@ jobs:
           ${{ hashFiles('**/poetry.lock', 'servo/**/*.py') }}"
     - name: Export coverage file
       run: |
-        echo "COVERAGE_FILE=${{ github.workspace }}/.coverage-unit" >> $GITHUB_ENV
+        echo "COVERAGE_FILE=${{ github.workspace }}/.coverage-unit-temp" >> $GITHUB_ENV
     - name: Run tests
       run: |
         source .venv/bin/activate
@@ -157,8 +157,8 @@ jobs:
     - name: Upload coverage file
       uses: actions/upload-artifact@v3
       with:
-        name: coverage-unit
-        path: ${{ github.workspace }}/.coverage-unit
+        name: coverage-unit-temp
+        path: ${{ github.workspace }}/.coverage-unit-temp
     - uses: actions/upload-artifact@v2
       with:
         name: unit-test-reports
@@ -232,7 +232,7 @@ jobs:
        chmod 0755 ${{ github.workspace }}/bin/aws-iam-authenticator
     - name: Export coverage file
       run: |
-        echo "COVERAGE_FILE=${{ github.workspace }}/.coverage-integration" >> $GITHUB_ENV
+        echo "COVERAGE_FILE=${{ github.workspace }}/.coverage-integration-temp" >> $GITHUB_ENV
     - name: Run integration tests
       run: |
         source .venv/bin/activate
@@ -245,8 +245,8 @@ jobs:
     - name: Upload coverage file
       uses: actions/upload-artifact@v3
       with:
-        name: coverage-integration
-        path: ${{ github.workspace }}/.coverage-integration
+        name: coverage-integration-temp
+        path: ${{ github.workspace }}/.coverage-integration-temp
     - uses: actions/upload-artifact@v2
       with:
         name: integration-test-reports
@@ -291,11 +291,11 @@ jobs:
     - name: Download unit coverage
       uses: actions/download-artifact@v3
       with:
-        name: coverage-unit
+        name: coverage-unit-temp
     - name: Download integration coverage
       uses: actions/download-artifact@v3
       with:
-        name: coverage-integration
+        name: coverage-integration-temp
     - name: Combine coverage reports
       run: |
         source .venv/bin/activate
@@ -305,6 +305,11 @@ jobs:
       with:
         name: combined-coverage-report
         path: artifacts/
+    - uses: geekyeggo/delete-artifact@v1
+      with:
+        name: |
+          coverage-unit-temp
+          coverage-integration-temp
 
   system:
     name: Run System Tests
