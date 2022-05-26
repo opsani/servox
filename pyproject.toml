@@ -38,7 +38,6 @@ curlify2 = "^1.0.0"
 kubernetes_asyncio = "^12.1.2"
 aiofiles = "^0.8.0"
 python-dateutil = "^2.8.2"
-coverage = "^6.3.3"
 
 [tool.poetry.dev-dependencies]
 pytest = "^6.2.4"
@@ -93,6 +92,7 @@ types-toml = "^0.10.3"
 types-aiofiles = "^0.8.3"
 types-tabulate = "^0.8.5"
 black = "^22.3.0"
+coverage = "^6.4"
 
 [tool.poetry.scripts]
 servo = "servo.entry_points:run_cli"
