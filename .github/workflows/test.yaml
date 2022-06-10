@@ -220,7 +220,6 @@ jobs:
       run: |
         mkdir ~/.kube
         echo "$KUBE_CONFIG_DATA" | base64 --decode > $HOME/.kube/config
-#        sed -i -e 's/v1alpha1/v1beta1/' $HOME/.kube/config
         kubectl config view --minify --flatten > tests/kubeconfig
       shell: bash
       env:
