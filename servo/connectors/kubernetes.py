@@ -3755,19 +3755,29 @@ class DeploymentOptimization(BaseOptimization):
 
     @classmethod
     async def create(
-        cls, config: "DeploymentConfiguration", **kwargs
+        cls,
+        config: Union["DeploymentConfiguration", "StatefulSetConfiguration"],
+        **kwargs,
     ) -> "DeploymentOptimization":
-        deployment = await Deployment.read(config.name, config.namespace)
+        # TODO switch for type of config
+        if isinstance(config, DeploymentConfiguration):
+            workload = await Deployment.read(config.name, config.namespace)
+        elif isinstance(config, StatefulSetConfiguration):
+            workload = await StatefulSet.read(config.name, config.namespace)
+        else:
+            raise ValueError(
+                f"Unrecognized workload for configuration type of {config.__class__.__name__}"
+            )
 
         replicas = config.replicas.copy()
-        replicas.value = deployment.replicas
+        replicas.value = workload.replicas
 
         # FIXME: Currently only supporting one container
         for container_config in config.containers:
-            container = deployment.find_container(container_config.name)
+            container = workload.find_container(container_config.name)
             if not container:
                 names = servo.utilities.strings.join_to_series(
-                    list(map(lambda c: c.name, deployment.containers))
+                    list(map(lambda c: c.name, workload.containers))
                 )
                 raise ValueError(
                     f'no container named "{container_config.name}" exists in the Pod (found {names})'
@@ -3779,12 +3789,12 @@ class DeploymentOptimization(BaseOptimization):
                 )
 
             name = container_config.alias or (
-                f"{deployment.name}/{container.name}" if container else deployment.name
+                f"{workload.name}/{container.name}" if container else workload.name
             )
             return cls(
                 name=name,
                 deployment_config=config,
-                deployment=deployment,
+                deployment=workload,
                 container_config=container_config,
                 container=container,
                 **kwargs,
@@ -4803,9 +4813,8 @@ class KubernetesOptimizations(pydantic.BaseModel, servo.logging.Mixin):
         runtime_ids = {}
         pod_tmpl_specs = {}
 
-        for deployment_or_rollout_config in (config.deployments or []) + (
-            config.rollouts or []
-        ):
+        # TODO rename varname to workload_configs
+        for deployment_or_rollout_config in config.workloads:
             if deployment_or_rollout_config.strategy == OptimizationStrategy.default:
                 if isinstance(deployment_or_rollout_config, RolloutConfiguration):
                     raise NotImplementedError(
@@ -4818,6 +4827,10 @@ class KubernetesOptimizations(pydantic.BaseModel, servo.logging.Mixin):
                 deployment_or_rollout = optimization.deployment
                 container = optimization.container
             elif deployment_or_rollout_config.strategy == OptimizationStrategy.canary:
+                if isinstance(deployment_or_rollout_config, RolloutConfiguration):
+                    raise NotImplementedError(
+                        "Canary mode not currently supported on StatefulSets"
+                    )
                 optimization = await CanaryOptimization.create(
                     deployment_or_rollout_config,
                     timeout=deployment_or_rollout_config.timeout,
@@ -5271,6 +5284,18 @@ class KubernetesConfiguration(BaseKubernetesConfiguration):
     rollouts: Optional[List[RolloutConfiguration]] = pydantic.Field(
         description="Argo rollouts to be optimized.",
     )
+
+    @property
+    def workloads(
+        self,
+    ) -> list[
+        Union[StatefulSetConfiguration, DeploymentConfiguration, RolloutConfiguration]
+    ]:
+        return (
+            (self.deployments or [])
+            + (self.rollouts or [])
+            + (self.stateful_sets or [])
+        )
 
     @pydantic.root_validator
     def check_deployment_and_rollout(cls, values):
