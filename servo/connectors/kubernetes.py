@@ -1784,9 +1784,11 @@ class Deployment(KubernetesModel):
     async def refresh(self) -> None:
         """Refresh the underlying Kubernetes Deployment resource."""
         async with self.api_client() as api_client:
-            self.obj = await self.read(
-                name=self.name,
-                namespace=self.namespace,
+            self.obj = (
+                await self.read(
+                    name=self.name,
+                    namespace=self.namespace,
+                )
             ).obj
 
     async def rollback(self) -> None:
