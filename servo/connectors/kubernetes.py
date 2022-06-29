@@ -20,9 +20,11 @@ import re
 from typing import (
     Any,
     AsyncIterator,
+    AsyncContextManager,
     Callable,
     ClassVar,
     Collection,
+    Coroutine,
     Dict,
     Generator,
     Iterable,
@@ -1633,6 +1635,61 @@ class Deployment(KubernetesModel):
         "apps/v1beta1": kubernetes_asyncio.client.AppsV1beta1Api,
         "apps/v1beta2": kubernetes_asyncio.client.AppsV1beta2Api,
     }
+    status_type: Type = kubernetes_asyncio.client.V1DeploymentStatus
+
+    @contextlib.asynccontextmanager
+    async def create_method(
+        self,
+    ) -> AsyncContextManager:
+        async with self.api_client() as api_client:
+            yield api_client.create_namespaced_deployment
+
+    @contextlib.asynccontextmanager
+    async def patch_method(
+        self,
+        api_client_default_headers: Optional[dict[str, str]] = {
+            "content-type": "application/strategic-merge-patch+json"
+        },
+    ) -> AsyncContextManager:
+        async with self.api_client() as api_client:
+            # TODO: move up to baser class helper method
+            for k, v in (api_client_default_headers or {}).values():
+                api_client.api_client.set_default_header(k, v)
+
+            yield api_client.patch_namespaced_deployment
+
+    @contextlib.asynccontextmanager
+    async def replace_method(
+        self,
+    ) -> AsyncContextManager:
+        async with self.api_client() as api_client:
+            yield api_client.replace_namespaced_deployment
+
+    @contextlib.asynccontextmanager
+    async def delete_method(self) -> AsyncContextManager:
+        async with self.api_client() as api_client:
+            yield api_client.delete_namespaced_deployment
+
+    @classmethod
+    def list_method(cls, api_client) -> Coroutine:
+        # TODO maybe refactor to use self.api_client like other methods
+        # NOTE I'm resisting the urge to refactor rollout(). Lets keep the instability surface minimal
+        return api_client.delete_namespaced_deployment
+
+    # Moved up additional props being shadowed for clarity
+    @property
+    def status(self) -> kubernetes_asyncio.client.V1DeploymentStatus:
+        """Return the status of the Deployment.
+
+        Returns:
+            The status of the Deployment.
+        """
+        return cast(kubernetes_asyncio.client.V1DeploymentStatus, self.obj.status)
+
+    @property
+    def unavailable_replicas(self) -> int:
+        # NOTE this field is N/A for StatefulSets unless the MaxUnavailableStatefulSet flag is enabled
+        return self.status.unavailable_replicas
 
     async def create(self, namespace: str = None) -> None:
         """Create the Deployment under the given namespace.
@@ -1646,12 +1703,13 @@ class Deployment(KubernetesModel):
         if namespace is None:
             namespace = self.namespace
 
+        # TODO: add debug or trace loggers to other CRUD methods
         self.logger.info(
-            f'creating deployment "{self.name}" in namespace "{self.namespace}"'
+            f'creating {self.__class__.__name__} "{self.name}" in namespace "{self.namespace}"'
         )
 
-        async with self.api_client() as api_client:
-            self.obj = await api_client.create_namespaced_deployment(
+        async with self.create_method() as create_method:
+            self.obj = await create_method(
                 namespace=namespace,
                 body=self.obj,
             )
@@ -1667,22 +1725,21 @@ class Deployment(KubernetesModel):
 
         async with cls.preferred_client() as api_client:
             obj = await api_client.read_namespaced_deployment(name, namespace)
-            return Deployment(obj)
+            return Deployment(
+                obj
+            )  # TODO, dont always need to construct whole class from a read method
 
     async def patch(self) -> None:
         """Update the changed attributes of the Deployment."""
-        async with self.api_client() as api_client:
-            api_client.api_client.set_default_header(
-                "content-type", "application/strategic-merge-patch+json"
-            )
-            self.obj = await api_client.patch_namespaced_deployment(
+        async with self.patch_method() as patch_method:
+            self.obj = await patch_method(
                 name=self.name, namespace=self.namespace, body=self.obj
             )
 
     async def replace(self) -> None:
         """Update the changed attributes of the Deployment."""
-        async with self.api_client() as api_client:
-            self.obj = await api_client.replace_namespaced_deployment(
+        async with self.replace_method() as replace_method:
+            self.obj = await replace_method(
                 name=self.name, namespace=self.namespace, body=self.obj
             )
 
@@ -1704,11 +1761,11 @@ class Deployment(KubernetesModel):
         if options is None:
             options = kubernetes_asyncio.client.V1DeleteOptions()
 
-        self.logger.info(f'deleting deployment "{self.name}"')
+        self.logger.info(f'deleting  {self.__class__.__name__} "{self.name}"')
         self.logger.debug(f"delete options: {options}")
 
-        async with self.api_client() as api_client:
-            return await api_client.delete_namespaced_deployment(
+        async with self.delete_method() as delete_method:
+            return await delete_method(
                 name=self.name,
                 namespace=self.namespace,
                 body=options,
@@ -1727,10 +1784,10 @@ class Deployment(KubernetesModel):
     async def refresh(self) -> None:
         """Refresh the underlying Kubernetes Deployment resource."""
         async with self.api_client() as api_client:
-            self.obj = await api_client.read_namespaced_deployment_status(
+            self.obj = await self.read(
                 name=self.name,
                 namespace=self.namespace,
-            )
+            ).obj
 
     async def rollback(self) -> None:
         """Roll back an unstable Deployment revision to a previous version."""
@@ -1742,7 +1799,9 @@ class Deployment(KubernetesModel):
                 body=self.obj,
             )
 
-    async def get_status(self) -> kubernetes_asyncio.client.V1DeploymentStatus:
+    async def get_status(
+        self,
+    ) -> kubernetes_asyncio.client.V1DeploymentStatus:  # TODO is actually self.status_type
         """Get the status of the Deployment.
 
         Returns:
@@ -1753,7 +1812,7 @@ class Deployment(KubernetesModel):
         await self.refresh()
 
         # return the status from the deployment
-        return cast(kubernetes_asyncio.client.V1DeploymentStatus, self.obj.status)
+        return cast(self.status_type, self.obj.status)
 
     async def get_pods(self) -> List[Pod]:
         """Get the pods for the Deployment.
@@ -1761,7 +1820,7 @@ class Deployment(KubernetesModel):
         Returns:
             A list of pods that belong to the deployment.
         """
-        self.logger.debug(f'getting pods for deployment "{self.name}"')
+        self.logger.debug(f'getting pods for {self.__class__.__name__} "{self.name}"')
 
         async with Pod.preferred_client() as api_client:
             label_selector = self.match_labels
@@ -1781,7 +1840,9 @@ class Deployment(KubernetesModel):
         Returns:
             A list of pods that belong to the latest deployment replicaset.
         """
-        self.logger.trace(f'getting replicaset for deployment "{self.name}"')
+        self.logger.trace(
+            f'getting replicaset for  {self.__class__.__name__} "{self.name}"'
+        )
         async with self.api_client() as api_client:
             label_selector = self.obj.spec.selector.match_labels
             rs_list: kubernetes_asyncio.client.V1ReplicasetList = (
@@ -1832,15 +1893,6 @@ class Deployment(KubernetesModel):
                 for ownRef in pod.obj.metadata.owner_references
             )
         ]
-
-    @property
-    def status(self) -> kubernetes_asyncio.client.V1DeploymentStatus:
-        """Return the status of the Deployment.
-
-        Returns:
-            The status of the Deployment.
-        """
-        return cast(kubernetes_asyncio.client.V1DeploymentStatus, self.obj.status)
 
     @property
     def resource_version(self) -> str:
@@ -1897,6 +1949,7 @@ class Deployment(KubernetesModel):
         """
         return next(filter(lambda c: c.name == name, self.containers), None)
 
+    # TODO 86 this function
     async def get_target_container(
         self, config: ContainerConfiguration
     ) -> Optional[Container]:
@@ -1905,6 +1958,7 @@ class Deployment(KubernetesModel):
 
     def set_container(self, name: str, container: Container) -> None:
         """Set the container with the given name to a new value."""
+        # TODO make this pythonic and support append use case
         index = next(
             filter(
                 lambda i: self.containers[i].name == name, range(len(self.containers))
@@ -1978,6 +2032,7 @@ class Deployment(KubernetesModel):
         """Return a deep copy of the pod template spec. Eg. for creation of a tuning pod"""
         return copy.deepcopy(self.pod_template_spec)
 
+    # TODO remove this boilerplate that arose from the... interesting demands that arose during code review
     def update_pod(
         self, pod: kubernetes_asyncio.client.models.V1Pod
     ) -> kubernetes_asyncio.client.models.V1Pod:
@@ -1990,6 +2045,7 @@ class Deployment(KubernetesModel):
         """Return the pod spec for instances of the Deployment."""
         return self.pod_template_spec.spec
 
+    # TODO figure out what triggered the need for backoff and fix it more elegantly
     @backoff.on_exception(
         backoff.expo, kubernetes_asyncio.client.exceptions.ApiException, max_tries=3
     )
@@ -2038,7 +2094,7 @@ class Deployment(KubernetesModel):
             map(operator.attrgetter("container_port"), container_ports)
         ):
             raise ValueError(
-                f"Port conflict: Deployment '{self.name}' already exposes port {service_port} through an existing container"
+                f"Port conflict: {self.__class__.__name__} '{self.name}' already exposes port {service_port} through an existing container"
             )
 
         # lookup the port on the target service
@@ -2179,7 +2235,7 @@ class Deployment(KubernetesModel):
         desired_replicas = self.replicas
 
         self.logger.info(
-            f"applying adjustments to Deployment '{self.name}' and rolling out to cluster"
+            f"applying adjustments to {self.__class__.__name__} '{self.name}' and rolling out to cluster"
         )
 
         # Yield to let the changes be made
@@ -2188,19 +2244,19 @@ class Deployment(KubernetesModel):
         # Return fast if nothing was changed
         if self.resource_version == resource_version:
             self.logger.info(
-                f"adjustments applied to Deployment '{self.name}' made no changes, continuing"
+                f"adjustments applied to {self.__class__.__name__} '{self.name}' made no changes, continuing"
             )
             return
 
         # Create a Kubernetes watch against the deployment under optimization to track changes
         self.logger.debug(
-            f"watching deployment Using label_selector={self.label_selector}, resource_version={resource_version}"
+            f"watching {self.__class__.__name__} Using label_selector={self.label_selector}, resource_version={resource_version}"
         )
 
         async with kubernetes_asyncio.client.api_client.ApiClient() as api:
             v1 = kubernetes_asyncio.client.AppsV1Api(api)
             async with kubernetes_asyncio.watch.Watch().stream(
-                v1.list_namespaced_deployment,
+                self.list_method(v1),  # TODO list method getter
                 namespace=self.namespace,
                 field_selector=self.field_selector,
                 label_selector=self.label_selector,
@@ -2210,12 +2266,11 @@ class Deployment(KubernetesModel):
                     # NOTE: Event types are ADDED, DELETED, MODIFIED, ERROR
                     # TODO: Create an enum...
                     event_type, deployment = event["type"], event["object"]
-                    status: kubernetes_asyncio.client.V1DeploymentStatus = (
-                        deployment.status
-                    )
+                    status: self.status_type = deployment.status
 
                     self.logger.debug(
-                        f"deployment watch yielded event: {event_type} {deployment.kind} {deployment.metadata.name} in {deployment.metadata.namespace}: {status}"
+                        f"{self.__class__.__name__} watch yielded event: {event_type} {deployment.kind} {deployment.metadata.name}"
+                        f" in {deployment.metadata.namespace}: {status}"
                     )
 
                     if event_type == "ERROR":
@@ -2225,7 +2280,7 @@ class Deployment(KubernetesModel):
                             str(deployment), reason="start-failed"
                         )
 
-                    # Check that the conditions aren't reporting a failure
+                    # Check that the conditions aren't reporting a failure, raises exception if failure detected
                     if status.conditions:
                         self._check_conditions(status.conditions)
 
@@ -2238,10 +2293,10 @@ class Deployment(KubernetesModel):
 
                     # Check the replica counts. Once available, updated, and ready match
                     # our expected count and the unavailable count is zero we are rolled out
-                    if status.unavailable_replicas:
+                    if unavailable_count := self.unavailable_replicas:
                         self.logger.debug(
                             "found unavailable replicas, continuing watch",
-                            status.unavailable_replicas,
+                            unavailable_count,
                         )
                         continue
 
@@ -2254,7 +2309,7 @@ class Deployment(KubernetesModel):
                     if replica_counts.count(desired_replicas) == len(replica_counts):
                         # We are done: all the counts match. Stop the watch and return
                         self.logger.success(
-                            f"adjustments to Deployment '{self.name}' rolled out successfully",
+                            f"adjustments to {self.__class__.__name__} '{self.name}' rolled out successfully",
                             status,
                         )
                         stream.stop()
@@ -2264,7 +2319,13 @@ class Deployment(KubernetesModel):
             raise WatchTimeoutError()
 
     def _check_conditions(
-        self, conditions: List[kubernetes_asyncio.client.V1DeploymentCondition]
+        self,
+        conditions: List[
+            # TODO update type hint in refactor
+            # NOTE the only variation from StatefulSet is last_update_time being present exclusively on DeploymentStatus but
+            #   said property is not used in the condition checking logic
+            kubernetes_asyncio.client.V1DeploymentCondition
+        ],
     ) -> None:
         for condition in conditions:
             if condition.type == "Available":
@@ -2291,7 +2352,9 @@ class Deployment(KubernetesModel):
             elif condition.type == "Progressing":
                 if condition.status in ("True", "Unknown"):
                     # Still working
-                    self.logger.debug("Deployment update is progressing", condition)
+                    self.logger.debug(
+                        "{self.__class__.__name__} update is progressing", condition
+                    )
                     break
                 elif condition.status == "False":
                     raise servo.AdjustmentRejectedError(
@@ -2300,7 +2363,7 @@ class Deployment(KubernetesModel):
                     )
                 else:
                     raise servo.AdjustmentFailedError(
-                        f"unknown deployment status condition: {condition.status}"
+                        f"unknown {self.__class__.__name__} status condition: {condition.status}"
                     )
 
     async def raise_for_status(
@@ -2308,12 +2371,12 @@ class Deployment(KubernetesModel):
     ) -> None:
         # NOTE: operate off of current state, assuming you have checked is_ready()
         status = self.obj.status
-        self.logger.trace(f"current deployment status is {status}")
+        self.logger.trace(f"current {self.__class__.__name__} status is {status}")
         if status is None:
-            raise RuntimeError(f"No such deployment: {self.name}")
+            raise RuntimeError(f"No such {self.__class__.__name__}: {self.name}")
 
         if not status.conditions:
-            raise RuntimeError(f"Deployment is not running: {self.name}")
+            raise RuntimeError(f"{self.__class__.__name__} is not running: {self.name}")
 
         # Check for failure conditions
         self._check_conditions(status.conditions)
@@ -2323,9 +2386,11 @@ class Deployment(KubernetesModel):
 
         # Catchall
         self.logger.trace(
-            f"unable to map deployment status to exception. Deployment: {self.obj}"
+            f"unable to map {self.__class__.__name__} status to exception. Deployment: {self.obj}"
         )
-        raise RuntimeError(f"Unknown Deployment status for '{self.name}': {status}")
+        raise RuntimeError(
+            f"Unknown {self.__class__.__name__} status for '{self.name}': {status}"
+        )
 
     async def raise_for_failed_pod_adjustments(
         self, adjustments: List[servo.Adjustment], include_container_logs=False
@@ -2362,7 +2427,7 @@ class Deployment(KubernetesModel):
                 pod_messages.append(f"{pod.obj.metadata.name} - {'; '.join(cond_msgs)}")
 
             raise servo.AdjustmentRejectedError(
-                f"{len(unschedulable_pods)} pod(s) could not be scheduled for deployment {self.name}: {', '.join(pod_messages)}",
+                f"{len(unschedulable_pods)} pod(s) could not be scheduled for {self.__class__.__name__} {self.name}: {', '.join(pod_messages)}",
                 reason="unschedulable",
             )
 
@@ -2427,7 +2492,7 @@ class Deployment(KubernetesModel):
                 )
             )
             raise servo.AdjustmentRejectedError(
-                f"Deployment {self.name} pod(s) crash restart detected: {pod_message}",
+                f"{self.__class__.__name__} {self.name} pod(s) crash restart detected: {pod_message}",
                 reason="unstable",
             )
 
@@ -2481,6 +2546,78 @@ class Deployment(KubernetesModel):
                     raise error
 
         return count
+
+
+class StatefulSet(Deployment):
+
+    obj: kubernetes_asyncio.client.V1StatefulSet
+    api_clients: ClassVar[Dict[str, Type]] = {
+        "preferred": kubernetes_asyncio.client.AppsV1Api,
+        "apps/v1": kubernetes_asyncio.client.AppsV1Api,
+    }
+    status_type: Type = kubernetes_asyncio.client.V1DeploymentStatus
+
+    @contextlib.asynccontextmanager
+    async def create_method(
+        self,
+    ) -> Callable:  # TODO google the boilerplatey af proper typing for this return type
+        async with self.api_client() as api_client:
+            yield api_client.create_namespaced_stateful_set
+
+    # TODO placeholder thingy
+    @contextlib.asynccontextmanager
+    async def patch_method(
+        self,
+        api_client_default_headers: Optional[dict[str, str]] = {
+            "content-type": "application/strategic-merge-patch+json"
+        },
+    ) -> AsyncContextManager:
+        async with self.api_client() as api_client:
+            # TODO: move up to baser class helper method
+            for k, v in (api_client_default_headers or {}).values():
+                api_client.api_client.set_default_header(k, v)
+
+            yield api_client.patch_namespaced_stateful_set
+
+    @contextlib.asynccontextmanager
+    async def replace_method(
+        self,
+    ) -> AsyncContextManager:
+        async with self.api_client() as api_client:
+            yield api_client.replace_namespaced_stateful_set
+
+    @contextlib.asynccontextmanager
+    async def delete_method(self) -> AsyncContextManager:
+        async with self.api_client() as api_client:
+            yield api_client.delete_namespaced_stateful_set
+
+    @classmethod
+    def list_method(cls, api_client) -> Coroutine:
+        # TODO maybe refactor to use self.api_client like other methods
+        # NOTE I'm resisting the urge to refactor rollout(). Lets keep the instability surface minimal
+        return api_client.list_namespaced_stateful_set
+
+    # Moved up additional props being shadowed for clarity
+    @property
+    def status(self) -> kubernetes_asyncio.client.V1DeploymentStatus:
+        """Return the status of the Deployment.
+
+        Returns:
+            The status of the Deployment.
+        """
+        return cast(kubernetes_asyncio.client.V1StatefulSetStatus, self.obj.status)
+
+    @property
+    def unavailable_replicas(self) -> int:
+        # NOTE this field is N/A for StatefulSets unless the MaxUnavailableStatefulSet flag is enabled
+        # TODO long term config support for the above caveat
+        return 0
+
+    @classmethod
+    async def read(cls, name: str, namespace: str) -> "StatefulSet":
+        async with cls.preferred_client() as api_client:
+            obj = await api_client.read_namespaced_stateful_set(name, namespace)
+            return StatefulSet(obj)
 
 
 # Workarounds to allow use of api_client.deserialize() public method instead of private api_client._ApiClient__deserialize
@@ -3598,14 +3735,19 @@ class BaseOptimization(abc.ABC, pydantic.BaseModel, servo.logging.Mixin):
         arbitrary_types_allowed = True
 
 
+# TODO: Update class name, saturation mode optimization is not specific to Deployment workloads
 class DeploymentOptimization(BaseOptimization):
     """
     The DeploymentOptimization class implements an optimization strategy based on directly reconfiguring a Kubernetes
     Deployment and its associated containers.
     """
 
-    deployment_config: "DeploymentConfiguration"
-    deployment: Deployment
+    deployment_config: Optional["DeploymentConfiguration"]
+    stateful_set_config: Optional["StatefulSetConfiguration"]
+
+    deployment: Optional[Deployment]
+    stateful_set: Optional[StatefulSet]
+
     container_config: "ContainerConfiguration"
     container: Container
 
@@ -5091,6 +5233,10 @@ class DeploymentConfiguration(BaseKubernetesConfiguration):
     replicas: servo.Replicas
 
 
+class StatefulSetConfiguration(DeploymentConfiguration):
+    pass
+
+
 class RolloutConfiguration(BaseKubernetesConfiguration):
     """
     The RolloutConfiguration class models the configuration of an optimizable Argo Rollout.
@@ -5108,6 +5254,12 @@ class KubernetesConfiguration(BaseKubernetesConfiguration):
     permissions: List[PermissionSet] = pydantic.Field(
         STANDARD_PERMISSIONS,
         description="Permissions required by the connector to operate in Kubernetes.",
+    )
+
+    # TODO streamlining with a 'workloads' property name as the these three are used for the same purpose. Their
+    # differences are a k8s implementation detail, not relevant to servox beyond the variance in API calls
+    stateful_sets: Optional[List[StatefulSetConfiguration]] = pydantic.Field(
+        description="StatefulSets to be optimized.",
     )
 
     deployments: Optional[List[DeploymentConfiguration]] = pydantic.Field(
