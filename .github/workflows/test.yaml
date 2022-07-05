@@ -32,12 +32,16 @@ jobs:
     if: needs.pre_job.outputs.should_skip != 'true'
     outputs:
       python-version: ${{ steps.python-version.outputs.python-version }}
+      kubectl-version: ${{ steps.kubectl-version.outputs.kubectl-version }}
+      aws-iam-auth-version: ${{ steps.aws-iam-auth-version.outputs.aws-iam-auth-version }}
     steps:
       - uses: actions/checkout@master
-      - name: Output Python version
-        id: python-version
+      - name: Output versions into env vars for various artifacts
+        id: artifact-versions
         run: |
           echo "::set-output name=python-version::$(cat .python-version)"
+          echo "::set-output name=kubectl-version::$(cat .kubectl-version)"
+          echo "::set-output name=aws-iam-auth-version::$(cat .aws-iam-auth-version)"
       - uses: actions/setup-python@v2.1.3
         id: setup-python
         with:
@@ -196,12 +200,12 @@ jobs:
         tar xfz vegeta_12.8.4_linux_amd64.tar.gz
         sudo mv vegeta /usr/local/bin/vegeta
     - name: Install Kubectl
-      # Note: pin to v1.23.6
       run: |
-       mkdir -p ${{ github.workspace }}/bin
-       curl -o ${{ github.workspace }}/bin/kubectl -LO "https://dl.k8s.io/release/v1.23.6/bin/linux/amd64/kubectl"
-       echo "${{ github.workspace }}/bin" >> $GITHUB_PATH
-       chmod +x ${{ github.workspace }}/bin/kubectl
+        KUBECTL_RELEASE="https://dl.k8s.io/release/v${{ needs.setup_build.outputs.kubectl-version }}/bin/linux/amd64/kubectl"
+        mkdir -p ${{ github.workspace }}/bin
+        curl -o ${{ github.workspace }}/bin/kubectl -fLO $KUBECTL_RELEASE
+        echo "${{ github.workspace }}/bin" >> $GITHUB_PATH
+        chmod +x ${{ github.workspace }}/bin/kubectl
     - name: Set up root + dependencies cache
       uses: actions/cache@v2
       id: cached-project
@@ -226,10 +230,10 @@ jobs:
       env:
         KUBE_CONFIG_DATA: ${{ secrets.KUBE_CONFIG_DATA }}
     - name: Install aws-iam-authenticator
-      # Note: pin to v0.5.7
       run: |
-       curl -o ${{ github.workspace }}/bin/aws-iam-authenticator -LO "https://github.com/kubernetes-sigs/aws-iam-authenticator/releases/download/v0.5.7/aws-iam-authenticator_0.5.7_linux_amd64"
-       chmod 0755 ${{ github.workspace }}/bin/aws-iam-authenticator
+        AWS_AUTH_RELEASE="https://github.com/kubernetes-sigs/aws-iam-authenticator/releases/download/v${{ needs.setup_build.outputs.aws-iam-auth-version }}/aws-iam-authenticator_${{ needs.setup_build.outputs.aws-iam-auth-version }}_linux_amd64"
+        curl -o ${{ github.workspace }}/bin/aws-iam-authenticator -fLO $AWS_AUTH_RELEASE
+        chmod 0755 ${{ github.workspace }}/bin/aws-iam-authenticator
     - name: Export coverage file
       run: |
         echo "COVERAGE_FILE=${{ github.workspace }}/.coverage-integration-temp" >> $GITHUB_ENV
