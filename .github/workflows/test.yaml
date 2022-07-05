@@ -31,9 +31,9 @@ jobs:
     runs-on: ubuntu-latest
     if: needs.pre_job.outputs.should_skip != 'true'
     outputs:
-      python-version: ${{ steps.python-version.outputs.python-version }}
-      kubectl-version: ${{ steps.kubectl-version.outputs.kubectl-version }}
-      aws-iam-auth-version: ${{ steps.aws-iam-auth-version.outputs.aws-iam-auth-version }}
+      python-version: ${{ steps.artifact-versions.outputs.python-version }}
+      kubectl-version: ${{ steps.artifact-versions.outputs.kubectl-version }}
+      aws-iam-auth-version: ${{ steps.artifact-versions.outputs.aws-iam-auth-version }}
     steps:
       - uses: actions/checkout@master
       - name: Output versions into env vars for various artifacts
