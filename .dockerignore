@@ -21,3 +21,4 @@ logs
 servox.egg-info
 servo.yaml
 tests/
+.venv/

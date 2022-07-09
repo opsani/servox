@@ -18,6 +18,8 @@ import servo.types
 import servo.utilities
 from servo.logging import logs_path
 
+from authlib.integrations.base_client.errors import InvalidTokenError, MissingTokenError
+
 if TYPE_CHECKING:
     from pydantic.typing import DictStrAny
 
@@ -191,7 +193,10 @@ class Mixin(abc.ABC):
 
     def api_client(self, **kwargs) -> httpx.AsyncClient:
         """Return an asynchronous client for interacting with the Opsani API."""
-        return httpx.AsyncClient(**{**self.api_client_options, **kwargs})
+        if hasattr(self, "_api_client"):
+            return self._api_client
+        else:
+            return httpx.AsyncClient(**{**self.api_client_options, **kwargs})
 
     def api_client_sync(self, **kwargs) -> httpx.Client:
         """Return a synchronous client for interacting with the Opsani API."""
@@ -288,7 +293,19 @@ class Mixin(abc.ABC):
             )
 
             try:
-                response = await client.post("servo", data=event_request.json())
+                try:
+                    response = await client.post("servo", data=event_request.json())
+                except (InvalidTokenError, MissingTokenError) as e:
+                    self.logger.info("Fetching new oAuth token")
+                    base_url = self.config.optimizer.base_url
+                    tenant_id = self.config.optimizer.oauth2client.tenant_id
+                    token_url = f"{base_url}/auth/{tenant_id}/default/oauth2/token"
+                    token = await client.fetch_token(token_url)
+                    self.logger.info(
+                        f"Got new token, valid for {token['expires_in']} seconds"
+                    )
+                    response = await client.post("servo", data=event_request.json())
+
                 response.raise_for_status()
                 response_json = response.json()
                 self.logger.trace(

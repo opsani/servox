@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import abc
+import base64
 import enum
 import inspect
 import json
@@ -24,7 +25,6 @@ __all__ = [
 ]
 
 
-ORGANIZATION_REGEX = r"(?!-)([A-Za-z0-9-.]{5,50})"
 # Organization regex constraint to enforce that:
 # * Cannot contain a forward slash (/)
 # * Cannot solely consist of a single period (.) or double periods (..)
@@ -33,8 +33,13 @@ ORGANIZATION_REGEX = r"(?!-)([A-Za-z0-9-.]{5,50})"
 # * Must be between at least 5 characters long and no longer than 50
 # * Must match domain names but also allow non-domain names and names including no period (.)
 
-NAME_REGEX = r"[a-zA-Z\_\-\.0-9]{1,64}"
-OPTIMIZER_ID_REGEX = f"^{ORGANIZATION_REGEX}/{NAME_REGEX}$"
+WORKLOAD_ID_REGEX = f"^[A-Za-z\d+/]+$"
+
+
+class OAuth2Configuration(pydantic.BaseSettings):
+    client_id: str = pydantic.Field(alias="clientId")
+    client_secret: str = pydantic.Field(alias="clientSecret")
+    tenant_id: str = pydantic.Field(alias="tenantId")
 
 
 class Optimizer(pydantic.BaseSettings):
@@ -49,49 +54,16 @@ class Optimizer(pydantic.BaseSettings):
         token: An opaque access token for interacting with the Optimizer via HTTP Bearer Token authentication.
         base_url: The base URL for accessing the Opsani API. This field is typically only useful to Opsani developers or in the context
             of deployments with specific contractual, firewall, or security mandates that preclude access to the primary API.
-        __url__: An optional URL that overrides the computed URL for accessing the Opsani API. This option is utilized during development
-            and automated testing to bind the servo to a fixed URL.
     """
 
-    id: pydantic.constr(regex=OPTIMIZER_ID_REGEX)
-    token: pydantic.SecretStr
-    base_url: pydantic.AnyHttpUrl = "https://api.opsani.com"
-    _organization: str
-    _name: str
-    __url__: Optional[pydantic.AnyHttpUrl] = None
+    id: pydantic.constr(regex=WORKLOAD_ID_REGEX) = pydantic.Field(alias="workloadId")
 
-    def __init__(self, *, __url__: Optional[str] = None, **kwargs) -> None:
-        super().__init__(**kwargs)
-
-        organization, name = self.id.split("/")
-        self._organization = organization
-        self._name = name
-        self.__url__ = __url__
+    base_url: pydantic.AnyHttpUrl = pydantic.Field(alias="endpoint")
+    oauth2client: OAuth2Configuration
 
     @pydantic.validator("base_url")
     def _rstrip_slash(cls, url: str) -> str:
         return url.rstrip("/")
-
-    @property
-    def organization(self) -> str:
-        """Returns the organization component of the optimizer ID.
-
-        The domain name of the Organization tha the optimizer belongs to.
-
-        For example, a domain name of `awesome.com` might belong to Awesome, Inc and all optimizers would be
-        deployed under this domain name umbrella for easy access and autocompletion ergonomics.
-
-        """
-        return self._organization
-
-    @property
-    def name(self) -> str:
-        """Returns the name component of the optimizer ID.
-
-        The symbolic name of the application or service under optimization in a string of URL-safe characters
-        between 1 and 64 characters in length.
-        """
-        return self._name
 
     @property
     def url(self) -> str:
@@ -101,10 +73,8 @@ class Optimizer(pydantic.BaseSettings):
         An optional URL that overrides the computed URL for accessing the Opsani API. This option is utilized during development
         and automated testing to bind the servo to a fixed URL.
         """
-        return (
-            self.__url__
-            or f"{self.base_url}/accounts/{self.organization}/applications/{self.name}/"
-        )
+        workload_id = base64.b32encode(str.encode(self.id)).decode()
+        return f"{self.base_url}/ext/optimize/v1/workloads/{workload_id}"
 
     class Config:
         env_file = ".env"

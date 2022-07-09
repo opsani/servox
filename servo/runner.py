@@ -25,6 +25,8 @@ import servo.utilities.strings
 from servo.servo import _set_current_servo
 from servo.types import Adjustment, Control, Description, Duration, Measurement
 
+from authlib.integrations.httpx_client import AsyncOAuth2Client
+
 
 class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
     interactive: bool = False
@@ -33,6 +35,7 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
     _running: bool = pydantic.PrivateAttr(False)
     _main_loop_task: Optional[asyncio.Task] = pydantic.PrivateAttr(None)
     _diagnostics_loop_task: Optional[asyncio.Task] = pydantic.PrivateAttr(None)
+    _api_client: httpx.AsyncClient = pydantic.PrivateAttr(None)
 
     class Config:
         arbitrary_types_allowed = True
@@ -44,6 +47,11 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
         # initialize default servo options if not configured
         if self.config.settings is None:
             self.config.settings = servo.CommonConfiguration()
+
+        oauth_cfg = self.config.optimizer.oauth2client
+        self._api_client = AsyncOAuth2Client(
+            oauth_cfg.client_id, oauth_cfg.client_secret, **self.api_client_options
+        )
 
     @property
     def servo(self) -> servo.Servo:
