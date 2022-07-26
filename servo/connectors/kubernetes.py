@@ -1653,7 +1653,7 @@ class Deployment(KubernetesModel):
     ) -> AsyncContextManager:
         async with self.api_client() as api_client:
             # TODO: move up to baser class helper method
-            for k, v in (api_client_default_headers or {}).values():
+            for k, v in (api_client_default_headers or {}).items():
                 api_client.api_client.set_default_header(k, v)
 
             yield api_client.patch_namespaced_deployment
@@ -2576,7 +2576,7 @@ class StatefulSet(Deployment):
     ) -> AsyncContextManager:
         async with self.api_client() as api_client:
             # TODO: move up to baser class helper method
-            for k, v in (api_client_default_headers or {}).values():
+            for k, v in (api_client_default_headers or {}).items():
                 api_client.api_client.set_default_header(k, v)
 
             yield api_client.patch_namespaced_stateful_set
