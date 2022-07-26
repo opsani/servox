@@ -51,6 +51,17 @@ def config(kube) -> servo.connectors.opsani_dev.OpsaniDevConfiguration:
 
 
 @pytest.fixture
+def no_resources_config(kube) -> servo.connectors.opsani_dev.OpsaniDevConfiguration:
+    return servo.connectors.opsani_dev.OpsaniDevConfiguration(
+        namespace=kube.namespace,
+        deployment="fiber-http",
+        container="fiber-http",
+        service="fiber-http",
+        __optimizer__=servo.configuration.Optimizer(id="test.com/foo", token="12345"),
+    )
+
+
+@pytest.fixture
 def no_tuning_config(kube) -> servo.connectors.opsani_dev.OpsaniDevConfiguration:
     return servo.connectors.opsani_dev.OpsaniDevConfiguration(
         namespace=kube.namespace,
@@ -185,10 +196,24 @@ class TestConfig:
             0
         ].static_environment_variables == {"FOO": "BAR", "BAZ": "1"}
 
+    def test_generate_no_resources_config(self) -> None:
+        no_resources_config = servo.connectors.opsani_dev.OpsaniDevConfiguration(
+            namespace="test",
+            deployment="fiber-http",
+            container="fiber-http",
+            service="fiber-http",
+            __optimizer__=servo.configuration.Optimizer(
+                id="test.com/foo", token="12345"
+            ),
+        )
+        no_resources_k_config = no_resources_config.generate_kubernetes_config()
+        assert no_resources_k_config.deployments[0].containers[0].cpu is None
+        assert no_resources_k_config.deployments[0].containers[0].memory is None
+
     def test_generate_no_tuning_config(self) -> None:
         no_tuning_config = servo.connectors.opsani_dev.OpsaniDevConfiguration(
             namespace="test",
-            rollout="fiber-http",
+            deployment="fiber-http",
             container="fiber-http",
             service="fiber-http",
             cpu=servo.connectors.kubernetes.CPU(min="125m", max="4000m", step="125m"),
