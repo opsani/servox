@@ -1674,7 +1674,7 @@ class Deployment(KubernetesModel):
     def list_method(cls, api_client) -> Coroutine:
         # TODO maybe refactor to use self.api_client like other methods
         # NOTE I'm resisting the urge to refactor rollout(). Lets keep the instability surface minimal
-        return api_client.delete_namespaced_deployment
+        return api_client.list_namespaced_deployment
 
     # Moved up additional props being shadowed for clarity
     @property
@@ -2355,7 +2355,7 @@ class Deployment(KubernetesModel):
                 if condition.status in ("True", "Unknown"):
                     # Still working
                     self.logger.debug(
-                        "{self.__class__.__name__} update is progressing", condition
+                        f"{self.__class__.__name__} update is progressing", condition
                     )
                     break
                 elif condition.status == "False":
