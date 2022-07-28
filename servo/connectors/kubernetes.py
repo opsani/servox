@@ -4827,7 +4827,7 @@ class KubernetesOptimizations(pydantic.BaseModel, servo.logging.Mixin):
                 deployment_or_rollout = optimization.deployment
                 container = optimization.container
             elif deployment_or_rollout_config.strategy == OptimizationStrategy.canary:
-                if isinstance(deployment_or_rollout_config, RolloutConfiguration):
+                if isinstance(deployment_or_rollout_config, StatefulSetConfiguration):
                     raise NotImplementedError(
                         "Canary mode not currently supported on StatefulSets"
                     )
