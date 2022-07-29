@@ -3760,10 +3760,10 @@ class DeploymentOptimization(BaseOptimization):
         **kwargs,
     ) -> "DeploymentOptimization":
         # TODO switch for type of config
-        if isinstance(config, DeploymentConfiguration):
-            workload = await Deployment.read(config.name, config.namespace)
-        elif isinstance(config, StatefulSetConfiguration):
+        if isinstance(config, StatefulSetConfiguration):
             workload = await StatefulSet.read(config.name, config.namespace)
+        elif isinstance(config, DeploymentConfiguration):
+            workload = await Deployment.read(config.name, config.namespace)
         else:
             raise ValueError(
                 f"Unrecognized workload for configuration type of {config.__class__.__name__}"
@@ -5298,8 +5298,10 @@ class KubernetesConfiguration(BaseKubernetesConfiguration):
         )
 
     @pydantic.root_validator
-    def check_deployment_and_rollout(cls, values):
-        if (not values.get("deployments")) and (not values.get("rollouts")):
+    def check_workload(cls, values):
+        if (not values.get("deployments")) and (
+            not values.get("rollouts") and (not values.get("stateful_sets"))
+        ):
             raise ValueError("No optimization target(s) were specified")
         return values
 
