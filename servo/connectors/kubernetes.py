@@ -2258,7 +2258,7 @@ class Deployment(KubernetesModel):
         async with kubernetes_asyncio.client.api_client.ApiClient() as api:
             v1 = kubernetes_asyncio.client.AppsV1Api(api)
             async with kubernetes_asyncio.watch.Watch().stream(
-                self.list_method(v1),  # TODO list method getter
+                self.list_method(v1),
                 namespace=self.namespace,
                 field_selector=self.field_selector,
                 label_selector=self.label_selector,
@@ -2302,12 +2302,19 @@ class Deployment(KubernetesModel):
                         )
                         continue
 
-                    replica_counts = [
+                    replica_counts: list[int] = [
                         status.replicas,
-                        status.available_replicas,
                         status.ready_replicas,
                         status.updated_replicas,
                     ]
+                    # NOTE: available counts is not always present on StatefulSets, assumedly due to the
+                    #   beta status of minReadySeconds https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/#minimum-ready-seconds
+                    if (
+                        available_replicas := getattr(
+                            status, "available_replicas", None
+                        )
+                    ) is not None:
+                        replica_counts.append(available_replicas)
                     if replica_counts.count(desired_replicas) == len(replica_counts):
                         # We are done: all the counts match. Stop the watch and return
                         self.logger.success(
