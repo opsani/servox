@@ -2,6 +2,7 @@
 """
 
 from typing import Optional, Pattern, Sequence, Union
+import re
 
 
 def join_to_series(

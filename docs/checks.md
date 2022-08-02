@@ -304,80 +304,93 @@ class HaltOnFailed(str, enum.Enum):
 Selecting the appropriate `halt_on` value lets you decide how much feedback you
 want to gather in a given check run.
 
-### CLI upgrades
+### Configuration
 
 All of the above changes are pretty hard to utilize without an interface. As
-such, the servo CLI has been upgraded with some new tricks:
+such, configuration for checks can be done in the checks section of the `servo.yaml`,
+as defined by the [ChecksConfiguration](../servo/configuration.py#L468) class.
+The checks configuration is not required explicitly, and if not specified will
+run with default options. Below is an example with all configurable options
+specified explicitly
 
-```console
-$ servo check --help
-Usage: servo check [OPTIONS] [CONNECTORS]...
+```servo.yaml
+    opsani_dev:
+      namespace: bank-of-anthos-opsani
+      deployment: frontend
+      container: frontend
+      service: frontend
 
-  Check that the servo is ready to run
-
-Options:
-  [CONNECTORS]...                 Connectors to check
-  -n, --name TEXT                 Filter by name  [default: False]
-  -i, --id TEXT                   Filter by ID  [default: False]
-  -t, --tag TEXT                  Filter by tag  [default: False]
-  -h, --halt-on-failed [requirement|check|never]
-                                  Halt running checks on a failure condition
-                                  [default: requirement]
-
-  -v, --verbose                   Display verbose output  [default: False]
-  -q, --quiet                     Do not echo generated output to stdout
-                                  [default: False]
-
-  --help                          Show this message and exit.
+      envoy_sidecar_image: opsani/envoy-proxy:v1.20.1post1
+      cpu:
+        min: 250m
+        max: '3.0'
+      memory:
+        min: 128.0MiB
+        max: 3.0GiB
+    checks:
+      connectors: ['opsani-dev']
+      name: ['Connectivity to Kubernetes']
+      id: ['check_kubernetes_connectivity']
+      quiet: False
+      verbose: False
+      progressive: False
+      wait: 30m
+      delay: 10s
+      halt_on: critical
+      remedy: True
+      check_halting: False
+      
 ```
 
-Results get aggregated and summarized by connector:
+By default, checks and any associated remedies run asynchronously, but remedies
+can be applied sequentially upon check failure by setting `check_halting` to True
 
 ```console
-CONNECTOR    STATUS    ERRORS
-servo        X FAILED  (1/1) Opsani API connectivity: Response status code: 500
-prometheus   √ PASSED
-vegeta       √ PASSED
+    checks:
+      check_halting: True
+```
+
+Results from checks can be outputted into a table 
+```console
+    checks:
+      progressive: True
+```
+
+```console
+CONNECTOR                        STATUS    ERRORS
+opsani_dev                       √ PASSED
+opsani-dev:kubernetes            √ PASSED
+opsani-dev:prometheus            √ PASSED
+opsani-dev:kube-metrics          √ PASSED
 ```
 
 We can run a check by name:
 
 ```console
-$ servo check --name "Check throughput"
-CONNECTOR    STATUS    ERRORS
-prometheus   √ PASSED
+    checks:
+      name: ['Connectivity to Kubernetes']
 ```
 
 Or a set of IDs comma separated:
 
 ```console
-$ servo check -i "fae728a9, 09b17996" -v
-CONNECTOR    CHECK             ID        TAGS    STATUS    MESSAGE
-prometheus   Check throughput  fae728a9  -       √ PASSED  returned 1 TimeSeries readings
-             Check error_rate  09b17996  -       √ PASSED  returned 0 TimeSeries readings
+    checks:
+      id: ['check_kubernetes_connectivity']
 ```
 
 Or every check that contains "exec" (strings in slashes "/like this/" are
 compiled as regex):
 
 ```console
-$ servo check -n "/.*exec.+/" -v
-CONNECTOR    CHECK             ID               TAGS    STATUS    MESSAGE
-vegeta       Vegeta execution  check_execution  -       √ PASSED  Vegeta exit code: 0
+    checks:
+      name: ["/.*exec.+/"]
 ```
 
 And set the halting behavior in the face of failures:
 
 ```console
-$ servo check --halt-on-failed=requirement prometheus
-
-CONNECTOR    STATUS    ERRORS
-prometheus   X FAILED  (1/2) Check throughput: caught exception: ConnectError(OSError("Multiple exceptions: [Errno 61] Connect call failed ('::1', 9091, 0, 0), [Errno 61] Connect call failed ('127.0.0.1', 9091)"))
-                       (2/2) Check error_rate: caught exception: ConnectError(OSError("Multiple exceptions: [Errno 61] Connect call failed ('::1', 9091, 0, 0), [Errno 61] Connect call failed ('127.0.0.1', 9091)"))
-
-$ servo check --halt-on-failed=check prometheus
-CONNECTOR    STATUS    ERRORS
-prometheus   X FAILED  (1/1) Check throughput: caught exception: ConnectError(OSError("Multiple exceptions: [Errno 61] Connect call failed ('::1', 9091, 0, 0), [Errno 61] Connect call failed ('127.0.0.1', 9091)"))
+    checks:
+      halt_on: common
 ```
 
 ### Creating Checks from an Iterable
