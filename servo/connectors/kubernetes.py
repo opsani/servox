@@ -2628,6 +2628,11 @@ class StatefulSet(Deployment):
             obj = await api_client.read_namespaced_stateful_set(name, namespace)
             return StatefulSet(obj)
 
+    async def get_latest_pods(self) -> List[Pod]:
+        # TODO proper docstring
+        # TODO podManagementPolicy: Parallel might leverage replicasets like Deployments do
+        return await self.get_pods()
+
 
 # Workarounds to allow use of api_client.deserialize() public method instead of private api_client._ApiClient__deserialize
 # TODO: is this workaround worth it just to avoid using the private method?
@@ -3754,8 +3759,10 @@ class DeploymentOptimization(BaseOptimization):
     deployment_config: Optional["DeploymentConfiguration"]
     stateful_set_config: Optional["StatefulSetConfiguration"]
 
-    deployment: Optional[Deployment]
-    stateful_set: Optional[StatefulSet]
+    # TODO currently shoehorning the statefulset support into the deployment property
+    #   which should likely be renamed to workload upon refactor
+    deployment: Optional[Union[Deployment, StatefulSet]]
+    # stateful_set: Optional[StatefulSet]
 
     container_config: "ContainerConfiguration"
     container: Container
