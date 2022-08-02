@@ -339,7 +339,6 @@ specified explicitly
       halt_on: critical
       remedy: True
       check_halting: False
-      
 ```
 
 By default, checks and any associated remedies run asynchronously, but remedies
