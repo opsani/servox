@@ -160,8 +160,8 @@ There are a few key components that form the foundation of the architecture:
   health of connector configuration and operations. They are designed to support
   a high throughput integration and debugging experience by providing feedback
   loop driven workflow. Checks are implemented on top of the events subsystem
-  and can be executed alongside an actual run via the `servo run --check` CLI command, 
-  or by themselves via `servo run --dry-run` The design of the checks subsystem 
+  and can be executed alongside an actual run via the `servo run --check` CLI command,
+  or by themselves via `servo run --dry-run` The design of the checks subsystem
   is covered in depth [in the docs](docs/checks.md).
 * **Assembly** - The Servo Assembly models the runtime environment of the servo
   outside of a particular configuration. The assembly is the parent of the servo

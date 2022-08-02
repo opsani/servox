@@ -350,7 +350,7 @@ can be applied sequentially upon check failure by setting `check_halting` to Tru
       check_halting: True
 ```
 
-Results from checks can be outputted into a table 
+Results from checks can be outputted into a table
 ```console
     checks:
       progressive: True
