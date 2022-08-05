@@ -310,8 +310,8 @@ All of the above changes are pretty hard to utilize without an interface. As
 such, configuration for checks can be done in the checks section of the `servo.yaml`,
 as defined by the [ChecksConfiguration](../servo/configuration.py#L468) class.
 The checks configuration is not required explicitly, and if not specified will
-run with default options. Below is an example with all configurable options
-specified explicitly
+run with default options. Below is an example of the checks configuration within
+a complete `servo.yaml` with all configurable options specified explicitly.
 
 ```servo.yaml
     opsani_dev:
@@ -349,17 +349,18 @@ can be applied sequentially upon check failure by setting `check_halting` to Tru
       check_halting: True
 ```
 
-Results from checks can be outputted into a table
+Results from checks can be output into a table
 ```console
     checks:
-      progressive: True
+      progressive: False
 ```
 
 ```console
 CONNECTOR                        STATUS    ERRORS
+test.optimizer.com/test          X FAILED  (1/1) Opsani API connectivity: ['Response status code: 404']
 opsani_dev                       √ PASSED
 opsani-dev:kubernetes            √ PASSED
-opsani-dev:prometheus            √ PASSED
+opsani-dev:prometheus            X FAILED  (1/1) Connect to "http://localhost:9090": ['caught exception (ConnectError): [Errno 61] Connection refused']
 opsani-dev:kube-metrics          √ PASSED
 ```
 
@@ -476,30 +477,3 @@ objects.
 The checks subsystem works really hard to make the easy thing delightful and the
 wrong impossible. There is extensive enforcement around type hint contracts to
 avoid typo bugs. The code is extensively documented and covered with tests.
-
-## Open Questions
-
-### Support parallel async checks
-
-The predictable execution path of the revised implementation opens the door to
-executing more checks in parallel. Right now check events for connectors are
-parallelized while individual checks are executed serially. Required checks
-effectively let you partition groups of checks and run them in parallel since
-you know that they have no interdependencies and their parent dependencies have
-already been met.
-
-### Promoting checks to a top-level concern like configuration
-
-```python
-class TopLevelExample(BaseConnector):
-    config: ExampleConfiguration
-    checks: ExampleChecks
-```
-
-The benefit is eliminating additional boilerplate with the trade-off that the
-design becomes de-facto more rigid and magical as most folks will never realize
-that checks built on top of eventing and can be directly customized with an
-event handler method.
-
-But if I have now covered the 80%+ of cases then most folks would never even
-need to know.

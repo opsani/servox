@@ -95,7 +95,7 @@ options under control. The init command will generate one for you.
 
 ```console
 # Check servo readiness
-❯ servo check
+❯ servo run --dry-run
 
 # Describe application state
 ❯ servo describe
