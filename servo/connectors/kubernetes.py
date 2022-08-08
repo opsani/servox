@@ -2379,7 +2379,7 @@ class Deployment(KubernetesModel):
         self, adjustments: List[servo.Adjustment], include_container_logs=False
     ) -> None:
         # NOTE: operate off of current state, assuming you have checked is_ready()
-        status = self.obj.status
+        status = self.status
         self.logger.trace(f"current {self.__class__.__name__} status is {status}")
         if status is None:
             raise RuntimeError(f"No such {self.__class__.__name__}: {self.name}")
@@ -4010,7 +4010,9 @@ class DeploymentOptimization(BaseOptimization):
                 # Patch the Deployment via the Kubernetes API
                 await deployment.patch()
         except WatchTimeoutError:
-            servo.logger.error(f"Timed out waiting for Deployment to become ready...")
+            servo.logger.error(
+                f"Timed out waiting for {self.deployment.__class__.__name__} to become ready..."
+            )
             await self.raise_for_status()
 
     async def is_ready(self) -> bool:
@@ -5644,49 +5646,62 @@ class KubernetesConnector(servo.BaseConnector):
         future = asyncio.create_task(state.apply(adjustments))
         future.add_done_callback(lambda _: progress.trigger())
 
-        await asyncio.gather(
-            future,
-            progress.watch(progress_logger),
-        )
-
-        # Handle settlement
-        settlement = control.settlement or self.config.settlement
-        if settlement:
-            self.logger.info(
-                f"Settlement duration of {settlement} requested, waiting for pods to settle..."
-            )
-            progress = servo.DurationProgress(settlement)
-            progress_logger = lambda p: self.logger.info(
-                p.annotate(f"waiting {settlement} for pods to settle...", False),
-                progress=p.progress,
+        # Catch-all for spaghettified non-EventError usage
+        try:
+            await asyncio.gather(
+                future,
+                progress.watch(progress_logger),
             )
 
-            async def readiness_monitor() -> None:
-                while not progress.finished:
-                    if not await state.is_ready():
-                        # Raise a specific exception if the optimization defines one
-                        try:
-                            await state.raise_for_status()
-                        except servo.AdjustmentRejectedError as e:
-                            # Update rejections with start-failed to indicate the initial rollout was successful
-                            if e.reason == "start-failed":
-                                e.reason = "unstable"
-                            raise
-
-                    await asyncio.sleep(servo.Duration("50ms").total_seconds())
-
-            await asyncio.gather(progress.watch(progress_logger), readiness_monitor())
-            if not await state.is_ready():
-                self.logger.warning("Rejection triggered without running error handler")
-                raise servo.AdjustmentRejectedError(
-                    "Optimization target became unready after adjustment settlement period (WARNING: error handler was not run)",
-                    reason="unstable",
+            # Handle settlement
+            settlement = control.settlement or self.config.settlement
+            if settlement:
+                self.logger.info(
+                    f"Settlement duration of {settlement} requested, waiting for pods to settle..."
                 )
-            self.logger.info(
-                f"Settlement duration of {settlement} has elapsed, resuming optimization."
-            )
+                progress = servo.DurationProgress(settlement)
+                progress_logger = lambda p: self.logger.info(
+                    p.annotate(f"waiting {settlement} for pods to settle...", False),
+                    progress=p.progress,
+                )
 
-        description = state.to_description()
+                async def readiness_monitor() -> None:
+                    while not progress.finished:
+                        if not await state.is_ready():
+                            # Raise a specific exception if the optimization defines one
+                            try:
+                                await state.raise_for_status()
+                            except servo.AdjustmentRejectedError as e:
+                                # Update rejections with start-failed to indicate the initial rollout was successful
+                                if e.reason == "start-failed":
+                                    e.reason = "unstable"
+                                raise
+
+                        await asyncio.sleep(servo.Duration("50ms").total_seconds())
+
+                await asyncio.gather(
+                    progress.watch(progress_logger), readiness_monitor()
+                )
+                if not await state.is_ready():
+                    self.logger.warning(
+                        "Rejection triggered without running error handler"
+                    )
+                    raise servo.AdjustmentRejectedError(
+                        "Optimization target became unready after adjustment settlement period (WARNING: error handler was not run)",
+                        reason="unstable",
+                    )
+                self.logger.info(
+                    f"Settlement duration of {settlement} has elapsed, resuming optimization."
+                )
+
+            description = state.to_description()
+        except servo.EventError:  # this is recognized by the runner
+            raise
+        except Exception as e:
+            # Convert generic errors AdjustmentFailed errors to be sent to the backend instead of shutting down servo
+            # NOTE the generic error raising is left as is due to being appropriate for other points in the driver lifecycle (eg. startup and checks)
+            raise servo.AdjustmentFailedError(str(e)) from e
+
         return description
 
     @servo.on_event()
