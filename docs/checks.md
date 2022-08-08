@@ -310,8 +310,8 @@ All of the above changes are pretty hard to utilize without an interface. As
 such, configuration for checks can be done in the checks section of the `servo.yaml`,
 as defined by the [ChecksConfiguration](../servo/configuration.py#L468) class.
 The checks configuration is not required explicitly, and if not specified will
-run with default options. Below is an example of the checks configuration within
-a complete `servo.yaml` with all configurable options specified explicitly.
+run with default options. Below is an example of the checks configuration with 
+all configurable options specified explicitly.
 
 ```servo.yaml
     ...
