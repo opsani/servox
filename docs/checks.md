@@ -314,19 +314,7 @@ run with default options. Below is an example of the checks configuration within
 a complete `servo.yaml` with all configurable options specified explicitly.
 
 ```servo.yaml
-    opsani_dev:
-      namespace: bank-of-anthos-opsani
-      deployment: frontend
-      container: frontend
-      service: frontend
-
-      envoy_sidecar_image: opsani/envoy-proxy:v1.20.1post1
-      cpu:
-        min: 250m
-        max: '3.0'
-      memory:
-        min: 128.0MiB
-        max: 3.0GiB
+    ...
     checks:
       connectors: ['opsani-dev']
       name: ['Connectivity to Kubernetes']
