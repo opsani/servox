@@ -2283,6 +2283,7 @@ class Deployment(KubernetesModel):
                         )
 
                     # Check that the conditions aren't reporting a failure, raises exception if failure detected
+                    # NOTE: conditions are never set on stateful_set
                     if status.conditions:
                         self._check_conditions(status.conditions)
 
@@ -2632,6 +2633,29 @@ class StatefulSet(Deployment):
         # TODO proper docstring
         # TODO podManagementPolicy: Parallel might leverage replicasets like Deployments do
         return await self.get_pods()
+
+    # Need custom raise_for_status because statefulsets do not set conditions
+    # https://github.com/kubernetes/kubernetes/issues/79606#issuecomment-594490746
+    async def raise_for_status(
+        self, adjustments: List[servo.Adjustment], include_container_logs=False
+    ) -> None:
+        # NOTE: operate off of current state, assuming you have checked is_ready()
+        status = self.status
+        self.logger.trace(f"current {self.__class__.__name__} status is {status}")
+        if status is None:
+            raise RuntimeError(f"No such {self.__class__.__name__}: {self.name}")
+
+        await self.raise_for_failed_pod_adjustments(
+            adjustments=adjustments, include_container_logs=include_container_logs
+        )
+
+        # Catchall
+        self.logger.trace(
+            f"unable to map {self.__class__.__name__} status to exception. StatefulSet: {self.obj}"
+        )
+        raise RuntimeError(
+            f"Unknown {self.__class__.__name__} status for '{self.name}' (likely due to no-op known error): {status}"
+        )
 
 
 # Workarounds to allow use of api_client.deserialize() public method instead of private api_client._ApiClient__deserialize
