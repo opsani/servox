@@ -1524,14 +1524,14 @@ class TestKubernetesConnectorIntegration:
         messages = []
         connector.logger.add(lambda m: messages.append(m.record["message"]), level=10)
 
-        with pytest.raises(kubernetes_asyncio.client.exceptions.ApiException) as error:
+        with pytest.raises(servo.AdjustmentFailedError) as error:
             await connector.adjust([adjustment])
 
         # Check logs
         assert "no tuning pod exists, ignoring destroy" in messages[-30:]
         # Check error
         assert "quantities must match the regular expression" in str(error.value)
-        assert error.value.status == 400
+        assert error.value.__cause__.status == 400
 
     async def test_adjust_tuning_cpu_with_settlement(
         self, tuning_config, namespace, kube
