@@ -1,3 +1,4 @@
+import aiohttp.client_exceptions
 import asyncio
 import pathlib
 import urllib3.exceptions
@@ -229,6 +230,7 @@ async def test_periodic_measure_no_requests(
         async with kubernetes_asyncio.client.ApiClient() as api:
             cust_obj_api = kubernetes_asyncio.client.CustomObjectsApi(api)
             while True:
+                await asyncio.sleep(1)
                 try:
                     result = await cust_obj_api.list_namespaced_custom_object(
                         label_selector=deployment.label_selector,
@@ -241,10 +243,25 @@ async def test_periodic_measure_no_requests(
                             for i in result["items"]
                         ):
                             break
-                except kubernetes_asyncio.client.exceptions.ApiException as e:
-                    if e.status == 503:
-                        continue  # Takes a bit to start in GH runners???
-                    raise
+                except (
+                    aiohttp.client_exceptions.ClientOSError,
+                    kubernetes_asyncio.client.exceptions.ApiException,
+                ) as e:
+                    servo.logger.warning(
+                        f" {e.__class__.__name__} encountered waiting for kube metrics scrape: {e}"
+                    )
+                    if (
+                        isinstance(e, aiohttp.client_exceptions.ClientOSError)
+                        and e.errno == 104
+                    ):
+                        continue
+                    elif (
+                        isinstance(e, kubernetes_asyncio.client.exceptions.ApiException)
+                        and e.status == 503
+                    ):
+                        continue
+                    else:
+                        raise
 
     await asyncio.wait_for(wait_for_scrape(), timeout=60)
 
