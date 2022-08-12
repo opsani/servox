@@ -95,7 +95,7 @@ options under control. The init command will generate one for you.
 
 ```console
 # Check servo readiness
-❯ servo check
+❯ servo run --dry-run
 
 # Describe application state
 ❯ servo describe
@@ -160,8 +160,9 @@ There are a few key components that form the foundation of the architecture:
   health of connector configuration and operations. They are designed to support
   a high throughput integration and debugging experience by providing feedback
   loop driven workflow. Checks are implemented on top of the events subsystem
-  and provide a rich interface via the `servo check` CLI command. The design of
-  the checks subsystem is covered in depth [in the docs](docs/checks.md).
+  and can be executed alongside an actual run via the `servo run --check` CLI command,
+  or by themselves via `servo run --dry-run` The design of the checks subsystem
+  is covered in depth [in the docs](docs/checks.md).
 * **Assembly** - The Servo Assembly models the runtime environment of the servo
   outside of a particular configuration. The assembly is the parent of the servo
   and is responsible for "assembling" it by instantiating connectors as
