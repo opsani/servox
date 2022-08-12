@@ -314,7 +314,8 @@ run with default options. Below is an example of the checks configuration with
 all configurable options specified explicitly.
 
 ```servo.yaml
-    ...
+    opsani_dev:
+      ...
     checks:
       connectors: ['opsani-dev']
       name: ['Connectivity to Kubernetes']
