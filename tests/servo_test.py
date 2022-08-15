@@ -5,6 +5,7 @@ import ssl
 from inspect import Signature
 from pathlib import Path
 from typing import List
+from httpcore import Origin
 
 import httpx
 import pytest
@@ -1945,7 +1946,9 @@ async def test_proxy_utilization(proxies) -> None:
     async with servo.api_client() as client:
         transport = client._transport_for_url(httpx.URL(optimizer.base_url))
         assert isinstance(transport, httpx.AsyncHTTPTransport)
-        assert transport._pool.proxy_origin == (b"http", b"localhost", 1234)
+        assert transport._pool._proxy_url.origin == Origin(
+            scheme=b"http", host=b"localhost", port=1234
+        )
 
 
 def test_codename() -> None:

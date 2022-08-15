@@ -75,7 +75,7 @@ def test_fiber_http_and_envoy(kube: kubetest.client.TestClient) -> None:
 @pytest.mark.applymanifests("manifests", files=["prometheus.yaml"])
 @pytest.mark.xfail(reason="kubetest doesn't support the ClusterRole yet")
 def test_prometheus(kube: kubetest.client.TestClient) -> None:
-    kube.wait_for_registered()
+    kube.wait_for_registered(timeout=300)
 
     deployments = kube.get_deployments()
     prom_deploy = deployments.get("prometheus-core")
