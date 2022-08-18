@@ -1413,6 +1413,18 @@ class ServoCLI(CLI):
                     )
                 )
 
+                aggregate_measurement = servo.types.Measurement.construct()
+                for result in results:
+                    measurement = result.value
+                    aggregate_measurement.readings.extend(measurement.readings)
+                    aggregate_measurement.annotations.update(measurement.annotations)
+
+                event_request = servo.api.Request(
+                    event=servo.api.Events.measure,
+                    param=aggregate_measurement.__opsani_repr__(),
+                )
+                servo.logger.info(event_request.json(indent=4))
+
                 # FIXME: The data that is crossing connector boundaries needs to be validated
                 aggregated_by_metric: dict[
                     servo.Metric,
