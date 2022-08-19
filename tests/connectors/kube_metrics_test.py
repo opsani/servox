@@ -76,44 +76,22 @@ async def _wait_for_scrape(namespace: str, deployment: Deployment):
         cust_obj_api = kubernetes_asyncio.client.CustomObjectsApi(api)
         while True:
             await asyncio.sleep(1)
-            try:
-                result = await cust_obj_api.list_namespaced_custom_object(
-                    label_selector=deployment.label_selector,
-                    namespace=namespace,
-                    **METRICS_CUSTOM_OJBECT_CONST_ARGS,
-                )
-                loguru.logger.info(f"Kubernetes metrics server result: {result}")
-                if result.get("items"):  # metrics items present and non-empty
-                    if any(  # TODO same container name always used, abstract into param if needed
-                        (
-                            any(c["name"] == "fiber-http" for c in i["containers"])
-                            and any(
-                                c["name"] == "opsani-envoy" for c in i["containers"]
-                            )
-                        )
-                        for i in result["items"]
-                    ):
-                        break
 
-            except (
-                aiohttp.client_exceptions.ClientOSError,
-                kubernetes_asyncio.client.exceptions.ApiException,
-            ) as e:
-                loguru.logger.warning(
-                    f" {e.__class__.__name__} encountered waiting for kube metrics scrape: {e}"
-                )
-                if (
-                    isinstance(e, aiohttp.client_exceptions.ClientOSError)
-                    and e.errno == 104
+            result = await cust_obj_api.list_namespaced_custom_object(
+                label_selector=deployment.label_selector,
+                namespace=namespace,
+                **METRICS_CUSTOM_OJBECT_CONST_ARGS,
+            )
+            loguru.logger.info(f"Kubernetes metrics server result: {result}")
+            if result.get("items"):  # metrics items present and non-empty
+                if any(  # TODO same container name always used, abstract into param if needed
+                    (
+                        any(c["name"] == "fiber-http" for c in i["containers"])
+                        and any(c["name"] == "opsani-envoy" for c in i["containers"])
+                    )
+                    for i in result["items"]
                 ):
-                    continue
-                elif (
-                    isinstance(e, kubernetes_asyncio.client.exceptions.ApiException)
-                    and e.status == 503
-                ):
-                    continue
-                else:
-                    raise
+                    break
 
             loguru.logger.info("Coninuing wait for scrape")
 
@@ -127,11 +105,7 @@ async def test_periodic_measure(
     kube: kubetest.client.TestClient,
     servo_runner: ServoRunner,
 ):
-    try:
-        kube.wait_for_registered()
-    except urllib3.exceptions.MaxRetryError as e:
-        pytest.xfail(f"Connection refused: {e}")
-
+    kube.wait_for_registered()
     datapoints_dicts: Dict[str, Dict[str, List[DataPoint]]] = defaultdict(
         lambda: defaultdict(list)
     )
@@ -172,11 +146,7 @@ async def test_periodic_measure_no_limits(
     kube: kubetest.client.TestClient,
     servo_runner: ServoRunner,
 ):
-    try:
-        kube.wait_for_registered()
-    except urllib3.exceptions.MaxRetryError as e:
-        pytest.xfail(f"Connection refused: {e}")
-
+    kube.wait_for_registered()
     datapoints_dicts: Dict[str, Dict[str, List[DataPoint]]] = defaultdict(
         lambda: defaultdict(list)
     )
@@ -218,11 +188,7 @@ async def test_periodic_measure_no_requests(
     kube: kubetest.client.TestClient,
     servo_runner: ServoRunner,
 ):
-    try:
-        kube.wait_for_registered()
-    except urllib3.exceptions.MaxRetryError as e:
-        pytest.xfail(f"Connection refused: {e}")
-
+    kube.wait_for_registered()
     datapoints_dicts: Dict[str, Dict[str, List[DataPoint]]] = defaultdict(
         lambda: defaultdict(list)
     )
