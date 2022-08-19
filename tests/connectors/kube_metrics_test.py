@@ -1,9 +1,6 @@
-import aiohttp.client_exceptions
 import asyncio
 import loguru
 import pathlib
-from typing import Callable
-import urllib3.exceptions
 
 import freezegun
 import kubetest.client
