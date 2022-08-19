@@ -93,7 +93,9 @@ class FastFailObserver(pydantic.BaseModel):
                 metric_value=metric_value, metric_readings=metric_readings
             )
 
-            if self.config.treat_zero_as_missing and float(metric_value) == 0:
+            if (
+                self.config.treat_zero_as_missing and float(metric_value) == 0
+            ) or metric_value.is_nan():
                 self._results[condition].append(
                     SloOutcome(**result_args, status=SloOutcomeStatus.missing_metric)
                 )
@@ -126,7 +128,9 @@ class FastFailObserver(pydantic.BaseModel):
                     threshold_readings=threshold_readings,
                 )
 
-                if self.config.treat_zero_as_missing and float(threshold_value) == 0:
+                if (
+                    self.config.treat_zero_as_missing and float(threshold_value) == 0
+                ) or threshold_value.is_nan():
                     self._results[condition].append(
                         SloOutcome(
                             **result_args, status=SloOutcomeStatus.missing_threshold
@@ -134,6 +138,8 @@ class FastFailObserver(pydantic.BaseModel):
                     )
                     continue
 
+                # NOTE config.treat_zero_as_missing does not apply to these checks as it is meant to account
+                #   for metrics systems in which absolute 0 is returned when no data is present for that metric
                 elif 0 <= metric_value <= condition.slo_metric_minimum:
                     self._results[condition].append(
                         SloOutcome(**result_args, status=SloOutcomeStatus.zero_metric)
@@ -147,12 +153,6 @@ class FastFailObserver(pydantic.BaseModel):
                         )
                     )
                     continue
-
-            if metric_value.is_nan() or threshold_value.is_nan():
-                self._results[condition].append(
-                    SloOutcome(**result_args, status=SloOutcomeStatus.missing_threshold)
-                )
-                continue
 
             # Check target against threshold
             check_passed_op = _get_keep_operator(condition.keep)
