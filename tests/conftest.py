@@ -536,10 +536,6 @@ async def minikube(request, subprocess, kubeconfig: pathlib.Path) -> str:
         print_output=True,
     )
     if exit_code != 0:
-        if exit_code in [50, 80]:
-            # https://github.com/kubernetes/minikube/issues/10357
-            pytest.xfail("Minikube failed start")
-
         raise RuntimeError(
             f"failed running minikube: exited with status code {exit_code}: {stderr}"
         )
@@ -549,13 +545,18 @@ async def minikube(request, subprocess, kubeconfig: pathlib.Path) -> str:
         yield profile
 
     finally:
-        exit_code, _, _ = await subprocess(
-            f"KUBECONFIG={kubeconfig} minikube stop -p {profile}", print_output=True
-        )
-        if exit_code != 0:
-            raise RuntimeError(
-                f"failed running minikube: exited with status code {exit_code}"
+        # TODO: add an option to not tear down the cluster
+        # Skip teardown on parallelized github runner due to session scope being non-functional with xdist and asyncio
+        # https://github.com/pytest-dev/pytest-asyncio/issues/75
+        # https://github.com/pytest-dev/pytest-xdist/issues/271
+        if not os.getenv("GITHUB_ACTIONS"):
+            exit_code, _, stderr = await subprocess(
+                f"KUBECONFIG={kubeconfig} minikube stop -p {profile}", print_output=True
             )
+            if exit_code != 0:
+                raise RuntimeError(
+                    f"failed to stop minikube: exited with status code {exit_code}: {stderr}"
+                )
 
 
 @pytest.fixture()
