@@ -17,6 +17,25 @@ based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/). Releases are
 versioned in accordance with [Semantic
 Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.1] "subtle rhapsody" - 2022-08-23
+
+### Added
+
+- Servox preliminary support for optimization of StatefulSets [439](https://github.com/opsani/servox/pull/439)
+
+### Changed
+
+- README.md and checks documentation updated to reflect changes to CLI executions of checks [445](https://github.com/opsani/servox/pull/445)
+
+### Fixed
+
+- Kubernetes metrics server connector returning tuning memory request/limit from main workload [449](https://github.com/opsani/servox/pull/449)
+- Invalid operation error when comparing NaN values against configured SLO mimimums [450](https://github.com/opsani/servox/pull/450)
+
+### Security
+
+- httpx updated to version 0.23.0 [446](https://github.com/opsani/servox/pull/446)
+
 ## [2.1.0] "subtle rhapsody" - 2022-07-25
 
 ### Added
