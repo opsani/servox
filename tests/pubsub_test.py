@@ -1618,7 +1618,7 @@ class TestMixin:
         await host_object._test_repeating_publisher_decorator()
         host_object.pubsub_exchange.start()
 
-        await asyncio.sleep(0.2)
+        await asyncio.sleep(0.4)
         assert len(notifications) > 10
         assert notifications[0:5] == [
             "Message #0 '{\"throughput\": \"31337rps\"}' (channel: 'metrics')",
