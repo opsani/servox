@@ -304,80 +304,82 @@ class HaltOnFailed(str, enum.Enum):
 Selecting the appropriate `halt_on` value lets you decide how much feedback you
 want to gather in a given check run.
 
-### CLI upgrades
+### Configuration
 
 All of the above changes are pretty hard to utilize without an interface. As
-such, the servo CLI has been upgraded with some new tricks:
+such, configuration for checks can be done in the checks section of the `servo.yaml`,
+as defined by the [ChecksConfiguration](../servo/configuration.py#L468) class.
+The checks configuration is not required explicitly, and if not specified will
+run with default options. Below is an example of the checks configuration with
+all configurable options specified explicitly.
 
-```console
-$ servo check --help
-Usage: servo check [OPTIONS] [CONNECTORS]...
-
-  Check that the servo is ready to run
-
-Options:
-  [CONNECTORS]...                 Connectors to check
-  -n, --name TEXT                 Filter by name  [default: False]
-  -i, --id TEXT                   Filter by ID  [default: False]
-  -t, --tag TEXT                  Filter by tag  [default: False]
-  -h, --halt-on-failed [requirement|check|never]
-                                  Halt running checks on a failure condition
-                                  [default: requirement]
-
-  -v, --verbose                   Display verbose output  [default: False]
-  -q, --quiet                     Do not echo generated output to stdout
-                                  [default: False]
-
-  --help                          Show this message and exit.
+```servo.yaml
+    opsani_dev:
+      ...
+    checks:
+      connectors: ['opsani-dev']
+      name: ['Connectivity to Kubernetes']
+      id: ['check_kubernetes_connectivity']
+      quiet: False
+      verbose: False
+      progressive: False
+      wait: 30m
+      delay: 10s
+      halt_on: critical
+      remedy: True
+      check_halting: False
 ```
 
-Results get aggregated and summarized by connector:
+By default, checks and any associated remedies run asynchronously, but remedies
+can be applied sequentially upon check failure by setting `check_halting` to True
 
 ```console
-CONNECTOR    STATUS    ERRORS
-servo        X FAILED  (1/1) Opsani API connectivity: Response status code: 500
-prometheus   √ PASSED
-vegeta       √ PASSED
+    checks:
+      check_halting: True
+```
+
+Results from checks can be output into a table
+```console
+    checks:
+      progressive: False
+```
+
+```console
+CONNECTOR                        STATUS    ERRORS
+test.optimizer.com/test          X FAILED  (1/1) Opsani API connectivity: ['Response status code: 404']
+opsani_dev                       √ PASSED
+opsani-dev:kubernetes            √ PASSED
+opsani-dev:prometheus            X FAILED  (1/1) Connect to "http://localhost:9090": ['caught exception (ConnectError): [Errno 61] Connection refused']
+opsani-dev:kube-metrics          √ PASSED
 ```
 
 We can run a check by name:
 
 ```console
-$ servo check --name "Check throughput"
-CONNECTOR    STATUS    ERRORS
-prometheus   √ PASSED
+    checks:
+      name: ['Connectivity to Kubernetes']
 ```
 
 Or a set of IDs comma separated:
 
 ```console
-$ servo check -i "fae728a9, 09b17996" -v
-CONNECTOR    CHECK             ID        TAGS    STATUS    MESSAGE
-prometheus   Check throughput  fae728a9  -       √ PASSED  returned 1 TimeSeries readings
-             Check error_rate  09b17996  -       √ PASSED  returned 0 TimeSeries readings
+    checks:
+      id: ['check_kubernetes_connectivity']
 ```
 
 Or every check that contains "exec" (strings in slashes "/like this/" are
 compiled as regex):
 
 ```console
-$ servo check -n "/.*exec.+/" -v
-CONNECTOR    CHECK             ID               TAGS    STATUS    MESSAGE
-vegeta       Vegeta execution  check_execution  -       √ PASSED  Vegeta exit code: 0
+    checks:
+      name: ["/.*exec.+/"]
 ```
 
 And set the halting behavior in the face of failures:
 
 ```console
-$ servo check --halt-on-failed=requirement prometheus
-
-CONNECTOR    STATUS    ERRORS
-prometheus   X FAILED  (1/2) Check throughput: caught exception: ConnectError(OSError("Multiple exceptions: [Errno 61] Connect call failed ('::1', 9091, 0, 0), [Errno 61] Connect call failed ('127.0.0.1', 9091)"))
-                       (2/2) Check error_rate: caught exception: ConnectError(OSError("Multiple exceptions: [Errno 61] Connect call failed ('::1', 9091, 0, 0), [Errno 61] Connect call failed ('127.0.0.1', 9091)"))
-
-$ servo check --halt-on-failed=check prometheus
-CONNECTOR    STATUS    ERRORS
-prometheus   X FAILED  (1/1) Check throughput: caught exception: ConnectError(OSError("Multiple exceptions: [Errno 61] Connect call failed ('::1', 9091, 0, 0), [Errno 61] Connect call failed ('127.0.0.1', 9091)"))
+    checks:
+      halt_on: common
 ```
 
 ### Creating Checks from an Iterable
@@ -464,30 +466,3 @@ objects.
 The checks subsystem works really hard to make the easy thing delightful and the
 wrong impossible. There is extensive enforcement around type hint contracts to
 avoid typo bugs. The code is extensively documented and covered with tests.
-
-## Open Questions
-
-### Support parallel async checks
-
-The predictable execution path of the revised implementation opens the door to
-executing more checks in parallel. Right now check events for connectors are
-parallelized while individual checks are executed serially. Required checks
-effectively let you partition groups of checks and run them in parallel since
-you know that they have no interdependencies and their parent dependencies have
-already been met.
-
-### Promoting checks to a top-level concern like configuration
-
-```python
-class TopLevelExample(BaseConnector):
-    config: ExampleConfiguration
-    checks: ExampleChecks
-```
-
-The benefit is eliminating additional boilerplate with the trade-off that the
-design becomes de-facto more rigid and magical as most folks will never realize
-that checks built on top of eventing and can be directly customized with an
-event handler method.
-
-But if I have now covered the 80%+ of cases then most folks would never even
-need to know.

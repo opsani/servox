@@ -17,6 +17,64 @@ based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/). Releases are
 versioned in accordance with [Semantic
 Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.1] "subtle rhapsody" - 2022-08-23
+
+### Added
+
+- Servox preliminary support for optimization of StatefulSets [439](https://github.com/opsani/servox/pull/439)
+
+### Changed
+
+- README.md and checks documentation updated to reflect changes to CLI executions of checks [445](https://github.com/opsani/servox/pull/445)
+
+### Fixed
+
+- Kubernetes metrics server connector returning tuning memory request/limit from main workload [449](https://github.com/opsani/servox/pull/449)
+- Invalid operation error when comparing NaN values against configured SLO mimimums [450](https://github.com/opsani/servox/pull/450)
+
+### Security
+
+- httpx updated to version 0.23.0 [446](https://github.com/opsani/servox/pull/446)
+
+## [2.1.0] "subtle rhapsody" - 2022-07-25
+
+### Added
+
+- Native MacOS support [422](https://github.com/opsani/servox/pull/422)
+- Container logs are now included in rejections caused by restarting pods [383](https://github.com/opsani/servox/pull/383)
+  - Test coverage for container logs [394](https://github.com/opsani/servox/pull/394/files)
+- Added [Black](https://github.com/psf/black) code formatter [398](https://github.com/opsani/servox/pull/398)
+- Added [MyPy](https://github.com/python/mypy) code scans and inline linting [402](https://github.com/opsani/servox/pull/402)
+- `no_tuning` configuratibility to allow external drivers to leverage Opsani Dev orchestration without being required to launch a Saturation or Tuning optimization [404](https://github.com/opsani/servox/pull/404)
+- Combined CI coverage reports from Unit tests and Integration tests [425](https://github.com/opsani/servox/pull/425)
+
+### Changed
+
+- Pinned certain dependencies for improved stability:
+  - Kubectl [425](https://github.com/opsani/servox/pull/425)
+  - aws-iam-authenticator [425](https://github.com/opsani/servox/pull/425)
+- Response bodies are now included in the logging of unretryable HTTP responses [400](https://github.com/opsani/servox/pull/400)
+- Updated dependencies:
+  - pyenv-action [403](https://github.com/opsani/servox/pull/403)
+  - black [415](https://github.com/opsani/servox/pull/415), [422](https://github.com/opsani/servox/pull/422)
+  - typer [422](https://github.com/opsani/servox/pull/422)
+  - pydantic [422](https://github.com/opsani/servox/pull/422)
+- Remedies from multiple failing checks are now applied in the same check iteration. Previous behavior was to apply a single remedy from the first failing check then rerun all checks, rinse and repeat until passing [411](https://github.com/opsani/servox/pull/411)
+- Fast Fail metric thresholds that are close to 0 will be skipped instead of counting as failures [412](https://github.com/opsani/servox/pull/412)
+- Updated kubernetes connector container `resources` logic to return `limits` in place of `requests` in cases where `requests` are not set [426](https://github.com/opsani/servox/pull/426)
+
+### Fixed
+
+- Improved CI test stability [388](https://github.com/opsani/servox/pull/388)
+- Resolved edge case where timeouts would run indefinitely if set to a duration of 0 [392](https://github.com/opsani/servox/pull/392)
+- Resolved error in connector logic that could have caused the wrong target resource to be referenced as the target or failed to locate the target resource altogether [422](https://github.com/opsani/servox/pull/422)
+
+
+### Removed
+
+- Private repository mirroring [389](https://github.com/opsani/servox/pull/389/files)
+- Eager Metrics Observer [397](https://github.com/opsani/servox/pull/397)
+
 ## [2.0.0] "electric orchestra" - 2021-12-18
 
 ### Added
