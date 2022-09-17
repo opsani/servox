@@ -1512,7 +1512,7 @@ class TestKubernetesConnectorIntegration:
             return_value=("memory", "256.0MiBGiB"),
         )
 
-        tuning_config.deployments[0].on_failure = FailureMode.rollback
+        tuning_config.deployments[0].on_failure = FailureMode.shutdown
         connector = KubernetesConnector(config=tuning_config)
         adjustment = Adjustment(
             component_name="fiber-http/fiber-http-tuning",

@@ -5,6 +5,7 @@ import os
 from typing import Dict, List, Optional, Union, Type
 
 import kubernetes_asyncio
+import kubernetes_asyncio.client
 import pydantic
 
 import servo
@@ -351,13 +352,13 @@ class BaseOpsaniDevChecks(servo.BaseChecks, abc.ABC):
 
     @servo.checks.require("Connectivity to Kubernetes")
     async def check_connectivity(self) -> None:
-        async with kubernetes_asyncio.client.api_client.ApiClient() as api:
+        async with kubernetes_asyncio.client.ApiClient() as api:
             v1 = kubernetes_asyncio.client.VersionApi(api)
             await v1.get_code()
 
     @servo.checks.warn("Kubernetes version")
     async def check_version(self) -> None:
-        async with kubernetes_asyncio.client.api_client.ApiClient() as api:
+        async with kubernetes_asyncio.client.ApiClient() as api:
             v1 = kubernetes_asyncio.client.VersionApi(api)
             version = await v1.get_code()
             assert int(version.major) >= 1
@@ -366,7 +367,7 @@ class BaseOpsaniDevChecks(servo.BaseChecks, abc.ABC):
 
     @servo.checks.require("Kubernetes permissions")
     async def check_permissions(self) -> None:
-        async with kubernetes_asyncio.client.api_client.ApiClient() as api:
+        async with kubernetes_asyncio.client.ApiClient() as api:
             v1 = kubernetes_asyncio.client.AuthorizationV1Api(api)
             for permission in self.required_permissions:
                 for resource in permission.resources:
@@ -611,11 +612,11 @@ class BaseOpsaniDevChecks(servo.BaseChecks, abc.ABC):
         config = None
         for name in names:
             try:
-                config = await servo.connectors.kubernetes.ConfigMap.read(
-                    name, namespace
-                )
-                if config:
-                    break
+                async with kubernetes_asyncio.client.ApiClient() as api:
+                    corev1 = kubernetes_asyncio.client.CoreV1Api(api)
+                    config = await corev1.read_namespaced_config_map(name, namespace)
+                    if config:
+                        break
             except kubernetes_asyncio.client.exceptions.ApiException as e:
                 if e.status != 404 or e.reason != "Not Found":
                     raise
@@ -655,6 +656,7 @@ class BaseOpsaniDevChecks(servo.BaseChecks, abc.ABC):
 
         container = pod.get_container("prometheus")
         assert container, "could not find a Prometheus sidecar container"
+        # TODO PodHelper.get_restart_count
         restart_count = await container.get_restart_count()
         assert (
             restart_count == 0
@@ -723,7 +725,7 @@ class BaseOpsaniDevChecks(servo.BaseChecks, abc.ABC):
             A list of servo pods in the configured namespace.
         """
         async with servo.connectors.kubernetes.Pod.preferred_client() as api_client:
-            label_selector = servo.connectors.kubernetes.selector_string(
+            label_selector = servo.connectors.kubernetes.dict_to_string(
                 {"app.kubernetes.io/name": "servo"}
             )
             pod_list: servo.connectors.kubernetes.client.V1PodList = (

@@ -659,7 +659,7 @@ class TestNoTuningIntegration:
 
             kubernetes_config = no_tuning_checks.config.generate_kubernetes_config()
             no_tuning_opt = (
-                await servo.connectors.kubernetes.DeploymentOptimization.create(
+                await servo.connectors.kubernetes.SaturationOptimization.create(
                     config=kubernetes_config.deployments[0],
                     timeout=kubernetes_config.timeout,
                 )

@@ -23,7 +23,7 @@ from servo.connectors.kubernetes import (
     Pod,
     ResourceRequirement,
     Rollout,
-    selector_string,
+    dict_to_string,
     ShortByteSize,
 )
 from servo.types import DataPoint, Metric, TimeSeries
@@ -171,7 +171,7 @@ class KubeMetricsChecks(servo.BaseChecks):
         async with kubernetes_asyncio.client.api_client.ApiClient() as api:
             cust_obj_api = kubernetes_asyncio.client.CustomObjectsApi(api_client=api)
             await cust_obj_api.list_namespaced_custom_object(
-                label_selector=selector_string(target_resource.match_labels),
+                label_selector=dict_to_string(target_resource.match_labels),
                 namespace=self.config.namespace,
                 **METRICS_CUSTOM_OJBECT_CONST_ARGS,
             )
@@ -365,7 +365,7 @@ class KubeMetricsConnector(servo.BaseConnector):
 
         async with kubernetes_asyncio.client.api_client.ApiClient() as api:
             cust_obj_api = kubernetes_asyncio.client.CustomObjectsApi(api_client=api)
-            label_selector_str = selector_string(target_resource.match_labels)
+            label_selector_str = dict_to_string(target_resource.match_labels)
             timestamp = datetime.now()
 
             if any((m in MAIN_METRICS_REQUIRE_CUST_OBJ for m in target_metrics)):
