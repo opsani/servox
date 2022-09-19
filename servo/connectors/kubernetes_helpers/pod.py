@@ -125,7 +125,7 @@ class PodHelper(BaseKubernetesHelper):
 
         if container_name:
             raise RuntimeError(
-                f"Unable to determine container status for {container_name}"
+                f"Unable to determine container status for {container_name} from pod {pod}"
             )
 
         return total

@@ -10,7 +10,7 @@ from kubernetes_asyncio.client import (
 )
 
 from servo.logging import logger
-from .base import BaseKubernetesWorkloadHelper
+from .base_workload import BaseKubernetesWorkloadHelper
 from .pod import PodHelper
 from .util import dict_to_string
 

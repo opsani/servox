@@ -188,14 +188,20 @@ class CPU(servo.CPU):
     # Kubernetes resource requirements
     request: Optional[Core]
     limit: Optional[Core]
-    get: pydantic.conlist(ResourceRequirement, min_items=1) = [
-        ResourceRequirement.request,
-        ResourceRequirement.limit,
-    ]
-    set: pydantic.conlist(ResourceRequirement, min_items=1) = [
-        ResourceRequirement.request,
-        ResourceRequirement.limit,
-    ]
+    get: list[ResourceRequirement] = pydantic.Field(
+        default=[
+            ResourceRequirement.request,
+            ResourceRequirement.limit,
+        ],
+        min_items=1,
+    )
+    set: list[ResourceRequirement] = pydantic.Field(
+        default=[
+            ResourceRequirement.request,
+            ResourceRequirement.limit,
+        ],
+        min_items=1,
+    )
 
     def __opsani_repr__(self) -> dict:
         o_dict = super().__opsani_repr__()
@@ -267,14 +273,20 @@ class Memory(servo.Memory):
     # Kubernetes resource requirements
     request: Optional[ShortByteSize]
     limit: Optional[ShortByteSize]
-    get: pydantic.conlist(ResourceRequirement, min_items=1) = [
-        ResourceRequirement.request,
-        ResourceRequirement.limit,
-    ]
-    set: pydantic.conlist(ResourceRequirement, min_items=1) = [
-        ResourceRequirement.request,
-        ResourceRequirement.limit,
-    ]
+    get: list[ResourceRequirement] = pydantic.Field(
+        default=[
+            ResourceRequirement.request,
+            ResourceRequirement.limit,
+        ],
+        min_items=1,
+    )
+    set: list[ResourceRequirement] = pydantic.Field(
+        default=[
+            ResourceRequirement.request,
+            ResourceRequirement.limit,
+        ],
+        min_items=1,
+    )
 
     def __opsani_repr__(self) -> dict:
         o_dict = super().__opsani_repr__()

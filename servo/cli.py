@@ -28,6 +28,7 @@ import bullet
 import click
 import devtools
 import kubernetes_asyncio
+import kubernetes_asyncio.config
 import loguru
 import pydantic
 import pygments
@@ -43,6 +44,8 @@ import servo
 import servo.runner
 import servo.utilities.yaml
 import servo.utilities.strings
+
+from servo.connectors.kubernetes_helpers import DeploymentHelper
 
 
 class Section(str, enum.Enum):
@@ -1557,34 +1560,21 @@ class ServoCLI(CLI):
 
             if target.startswith("deploy"):
                 deployment = run_async(
-                    servo.connectors.kubernetes.Deployment.read(
-                        target.split("/", 1)[1], namespace
-                    )
+                    DeploymentHelper.read(target.split("/", 1)[1], namespace)
                 )
                 run_async(
-                    deployment.inject_sidecar(
-                        "opsani-envoy", image, service=service, port=port
+                    DeploymentHelper.inject_sidecar(
+                        deployment, "opsani-envoy", image, service=service, port=port
                     )
                 )
                 typer.echo(
-                    f"Envoy sidecar injected to Deployment {deployment.name} in {namespace}"
+                    f"Envoy sidecar injected to Deployment {deployment.metadata.name} in {namespace}"
                 )
 
             elif target.startswith("rollout"):
-                rollout = run_async(
-                    servo.connectors.kubernetes.Rollout.read(
-                        target.split("/", 1)[1], namespace
-                    )
+                raise typer.BadParameter(
+                    "Rollout sidecar injection is not yet implemented"
                 )
-                run_async(
-                    rollout.inject_sidecar(
-                        "opsani-envoy", image, service=service, port=port
-                    )
-                )
-                typer.echo(
-                    f"Envoy sidecar injected to Rollout {rollout.name} in {namespace}"
-                )
-
             elif target.startswith("pod"):
                 raise typer.BadParameter("Pod sidecar injection is not yet implemented")
             else:

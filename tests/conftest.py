@@ -27,6 +27,7 @@ import fastapi
 import httpx
 import kubetest
 import kubetest.client
+import kubetest.objects
 import pytest
 import typer.testing
 import uvloop
@@ -667,11 +668,8 @@ def fastapi_app() -> fastapi.FastAPI:
 ForwardingTarget = Union[
     str,
     kubetest.objects.Pod,
-    servo.connectors.kubernetes.Pod,
     kubetest.objects.Deployment,
-    servo.connectors.kubernetes.Deployment,
     kubetest.objects.Service,
-    servo.connectors.kubernetes.Service,
 ]
 
 
@@ -709,18 +707,11 @@ async def kubectl_ports_forwarded(
     def _identifier_for_target(target: ForwardingTarget) -> str:
         if isinstance(target, str):
             return target
-        elif isinstance(
-            target, (kubetest.objects.Pod, servo.connectors.kubernetes.Pod)
-        ):
+        elif isinstance(target, kubetest.objects.Pod):
             return f"pod/{target.name}"
-        elif isinstance(
-            target,
-            (kubetest.objects.Deployment, servo.connectors.kubernetes.Deployment),
-        ):
+        elif isinstance(target, kubetest.objects.Deployment):
             return f"deployment/{target.name}"
-        elif isinstance(
-            target, (kubetest.objects.Service, servo.connectors.kubernetes.Service)
-        ):
+        elif isinstance(target, kubetest.objects.Service):
             return f"service/{target.name}"
         else:
             raise TypeError(f"unknown target: {repr(target)}")
@@ -763,7 +754,7 @@ async def kubectl_ports_forwarded(
 
 @pytest.fixture()
 async def kube_port_forward(
-    kube,
+    kube: kubetest.client.TestClient,
     unused_tcp_port_factory: Callable[[], int],
     kubeconfig,
     kubecontext: Optional[str],

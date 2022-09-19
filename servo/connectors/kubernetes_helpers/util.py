@@ -14,15 +14,20 @@ def dict_to_string(mapping: Mapping[str, str]) -> str:
     return ",".join(["=".join((k, v)) for k, v in mapping.items()])
 
 
+def get_containers(
+    workload: Union[V1Pod, V1PodTemplateSpec, V1StatefulSet, V1Deployment]
+) -> list[V1Container]:
+    if isinstance(workload, (V1Pod, V1PodTemplateSpec)):
+        return workload.spec.containers
+    else:
+        return workload.spec.template.spec.containers
+
+
 # NOTE this method may need to become async if other workload types need their container object deserialized
 #   by the kubernetes_asyncio.client
 def find_container(
     workload: Union[V1Pod, V1PodTemplateSpec, V1StatefulSet, V1Deployment], name: str
 ) -> Optional[V1Container]:
-    containers: list[V1Container]
-    if isinstance(workload, (V1Pod, V1PodTemplateSpec)):
-        containers = workload.spec.containers
-    else:
-        containers = workload.spec.template.spec.containers
-
-    return next(iter((c for c in containers if c.name == name)), None)
+    return next(
+        iter((c for c in get_containers(workload=workload) if c.name == name)), None
+    )
