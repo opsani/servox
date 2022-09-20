@@ -19,7 +19,6 @@ from servo.connectors.kube_metrics import (
     _get_target_resource_container,
     _name_to_metric,
 )
-from tests.connectors.kubernetes_test import namespace
 
 
 @pytest.fixture

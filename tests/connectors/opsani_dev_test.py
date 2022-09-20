@@ -22,6 +22,7 @@ from typing import (
 import devtools
 import httpx
 import kubernetes_asyncio
+from kubernetes_asyncio.client import V1Deployment, V1Service, V1Pod
 import kubetest.client
 import pydantic
 import pytest
@@ -87,7 +88,8 @@ class TestConfig:
         assert list(config.dict().keys()) == [
             "description",
             "namespace",
-            "deployment",
+            "workload_name",
+            "workload_kind",
             "container",
             "service",
             "port",
@@ -107,7 +109,7 @@ class TestConfig:
         config = servo.connectors.opsani_dev.OpsaniDevConfiguration.generate()
         assert config.yaml(exclude_unset=True) == (
             "namespace: default\n"
-            "deployment: app-deployment\n"
+            "workload_name: app-deployment\n"
             "container: main\n"
             "service: app\n"
             "cpu:\n"
@@ -1528,7 +1530,8 @@ async def add_labels_to_podspec_of_deployment(deployment, labels: List[str]) -> 
 
 
 @contextlib.asynccontextmanager
-async def change_to_resource(resource: servo.connectors.kubernetes.KubernetesModel):
+async def change_to_resource(resource: Union[V1Deployment, V1Service, V1Pod]):
+    # TODO
     if hasattr(resource, "observed_generation"):
         observed_generation_prepatch = resource.observed_generation
     metadata = resource.obj.metadata
