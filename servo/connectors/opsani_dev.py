@@ -70,7 +70,13 @@ class Memory(servo.connectors.kubernetes.Memory):
 class OpsaniDevConfiguration(servo.BaseConfiguration):
     namespace: str
     workload_name: str = pydantic.Field(
-        alias="deployment"
+        alias="deployment",
+        env=["deployment", "workload"],
+        title="Workload Name",
+        description=(
+            "Name of the targeted workload (NOTE: the workload_name key should be used for this config going"
+            " forward. The deployment key is supported for backwards compatibility)"
+        ),
     )  # alias to maintain backward compatibility
     workload_kind: str = pydantic.Field(
         default="Deployment",
@@ -96,6 +102,9 @@ class OpsaniDevConfiguration(servo.BaseConfiguration):
         True,
         description="Disable to prevent a canary strategy",
     )
+
+    class Config(servo.AbstractBaseConfiguration.Config):
+        allow_population_by_field_name = True
 
     @classmethod
     def generate(cls, **kwargs) -> "OpsaniDevConfiguration":

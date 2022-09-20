@@ -6,10 +6,12 @@ import freezegun
 import kubetest.client
 import pytest
 
+from kubernetes_asyncio.client import V1Deployment
+
 import servo
 from servo.runner import ServoRunner
 
-from servo.connectors.kubernetes import Deployment
+from servo.connectors.kubernetes_helpers import dict_to_string, DeploymentHelper
 from servo.connectors.kube_metrics import *
 from servo.connectors.kube_metrics import (
     _append_data_point,
@@ -68,14 +70,14 @@ MAIN_METRICS = [
 ]
 
 
-async def _wait_for_scrape(namespace: str, deployment: Deployment):
+async def _wait_for_scrape(namespace: str, deployment: V1Deployment):
     async with kubernetes_asyncio.client.ApiClient() as api:
         cust_obj_api = kubernetes_asyncio.client.CustomObjectsApi(api)
         while True:
             await asyncio.sleep(1)
 
             result = await cust_obj_api.list_namespaced_custom_object(
-                label_selector=deployment.label_selector,
+                label_selector=dict_to_string(deployment.spec.selector.match_labels),
                 namespace=namespace,
                 **METRICS_CUSTOM_OJBECT_CONST_ARGS,
             )
@@ -117,14 +119,13 @@ async def test_periodic_measure(
     )
 
     await connector.attach(servo_=servo_runner.servo)
-    deployment = await Deployment.read("fiber-http", kube.namespace)
+    deployment = await DeploymentHelper.read("fiber-http", kube.namespace)
 
     await asyncio.wait_for(
         _wait_for_scrape(namespace=kube.namespace, deployment=deployment), timeout=60
     )
 
     await connector.periodic_measure(
-        target_resource=deployment,
         target_metrics=MAIN_METRICS,
         datapoints_dicts=datapoints_dicts,
     )
@@ -158,14 +159,13 @@ async def test_periodic_measure_no_limits(
     )
 
     await connector.attach(servo_=servo_runner.servo)
-    deployment = await Deployment.read("fiber-http", kube.namespace)
+    deployment = await DeploymentHelper.read("fiber-http", kube.namespace)
 
     await asyncio.wait_for(
         _wait_for_scrape(namespace=kube.namespace, deployment=deployment), timeout=60
     )
 
     await connector.periodic_measure(
-        target_resource=deployment,
         target_metrics=MAIN_METRICS,
         datapoints_dicts=datapoints_dicts,
     )
@@ -200,14 +200,13 @@ async def test_periodic_measure_no_requests(
     )
 
     await connector.attach(servo_=servo_runner.servo)
-    deployment = await Deployment.read("fiber-http", kube.namespace)
+    deployment = await DeploymentHelper.read("fiber-http", kube.namespace)
 
     await asyncio.wait_for(
         _wait_for_scrape(namespace=kube.namespace, deployment=deployment), timeout=60
     )
 
     await connector.periodic_measure(
-        target_resource=deployment,
         target_metrics=MAIN_METRICS,
         datapoints_dicts=datapoints_dicts,
     )
@@ -285,7 +284,7 @@ async def test_get_target_resource_container(
     await kubernetes_asyncio.config.load_kube_config(
         config_file=str(kubeconfig), context=kubecontext
     )
-    deployment = await Deployment.read("fiber-http", kube.namespace)
+    deployment = await DeploymentHelper.read("fiber-http", kube.namespace)
     assert _get_target_resource_container(
         KubeMetricsConfiguration(
             name="fiber-http",
@@ -331,7 +330,7 @@ class TestKubeMetricsConnectorIntegration:
         kube_metrics_connector: KubeMetricsConnector,
     ) -> None:
         kube.wait_for_registered()
-        deployment = await Deployment.read("fiber-http", kube.namespace)
+        deployment = await DeploymentHelper.read("fiber-http", kube.namespace)
 
         await asyncio.wait_for(
             _wait_for_scrape(namespace=kube.namespace, deployment=deployment),

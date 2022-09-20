@@ -1,16 +1,24 @@
 from contextlib import asynccontextmanager
 import copy
+import itertools
+import operator
 from typing import Any, AsyncIterator, Optional
 
 from kubernetes_asyncio.client import (
     ApiClient,
+    ApiException,
     AppsV1Api,
+    V1Container,
+    V1ContainerPort,
     V1Deployment,
     V1DeploymentCondition,
+    V1EnvVar,
     V1ObjectMeta,
     V1Pod,
     V1PodTemplateSpec,
     V1ReplicaSet,
+    V1ResourceRequirements,
+    V1ServicePort,
 )
 from servo.connectors.kubernetes_helpers.pod import PodHelper
 
@@ -18,7 +26,8 @@ from servo.errors import ConnectorError, AdjustmentFailedError, AdjustmentReject
 from servo.logging import logger
 from .base_workload import BaseKubernetesWorkloadHelper
 from .replicaset import ReplicasetHelper
-from .util import dict_to_string
+from .service import ServiceHelper
+from .util import dict_to_string, get_containers
 
 
 class DeploymentHelper(BaseKubernetesWorkloadHelper):
@@ -114,7 +123,7 @@ class DeploymentHelper(BaseKubernetesWorkloadHelper):
         # NOTE Can skip checking owner references due to Deployment setting
         # pod-template-hash on its ReplicaSets
         return await PodHelper.list_pods_with_labels(
-            workload.metadata.name, latest_replicaset.spec.selector.matchlabels
+            workload.metadata.namespace, latest_replicaset.spec.selector.matchlabels
         )
 
     @classmethod
@@ -192,8 +201,6 @@ class DeploymentHelper(BaseKubernetesWorkloadHelper):
             index: The index at which to insert the sidecar container. When `None`, the sidecar is appended.
             service_port: The port to receive ingress traffic from an upstream service.
         """
-        # TODO
-        raise NotImplementedError("TODO")
         if not (service or port):
             raise ValueError(f"a service or port must be given")
 
@@ -201,27 +208,34 @@ class DeploymentHelper(BaseKubernetesWorkloadHelper):
             port = int(port)
 
         # check for a port conflict
-        container_ports = list(
-            itertools.chain(*map(operator.attrgetter("ports"), self.containers))
+        container_ports: list[V1ContainerPort] = list(
+            itertools.chain(
+                *map(operator.attrgetter("ports"), get_containers(workload=workload))
+            )
         )
         if service_port in list(
             map(operator.attrgetter("container_port"), container_ports)
         ):
             raise ValueError(
-                f"Port conflict: {self.__class__.__name__} '{self.name}' already exposes port {service_port} through an existing container"
+                f"Port conflict: {workload.kind} '{workload.metadata.name}' already exposes"
+                f" port {service_port} through an existing container"
             )
 
         # lookup the port on the target service
         if service:
             try:
-                service_obj = await Service.read(service, self.namespace)
-            except kubernetes_asyncio.client.exceptions.ApiException as error:
+                service_obj = await ServiceHelper.read(
+                    service, workload.metadata.namespace
+                )
+            except ApiException as error:
                 if error.status == 404:
                     raise ValueError(f"Unknown Service '{service}'") from error
                 else:
                     raise error
+            serv_port_list: list[V1ServicePort] = service_obj.spec.ports
+
             if not port:
-                port_count = len(service_obj.obj.spec.ports)
+                port_count = len(serv_port_list)
                 if port_count == 0:
                     raise ValueError(
                         f"Target Service '{service}' does not expose any ports"
@@ -230,21 +244,21 @@ class DeploymentHelper(BaseKubernetesWorkloadHelper):
                     raise ValueError(
                         f"Target Service '{service}' exposes multiple ports -- target port must be specified"
                     )
-                port_obj = service_obj.obj.spec.ports[0]
+                port_obj = serv_port_list[0]
             else:
                 if isinstance(port, int):
                     port_obj = next(
-                        filter(lambda p: p.port == port, service_obj.obj.spec.ports),
+                        filter(lambda p: p.port == port, serv_port_list),
                         None,
                     )
                 elif isinstance(port, str):
                     port_obj = next(
-                        filter(lambda p: p.name == port, service_obj.obj.spec.ports),
+                        filter(lambda p: p.name == port, serv_port_list),
                         None,
                     )
                 else:
                     raise TypeError(
-                        f"Unable to resolve port value of type {port.__class__} (port={port})"
+                        f"Unable to resolve port value of type {port.__class__.__name__} (port={port})"
                     )
 
                 if not port_obj:
@@ -254,7 +268,7 @@ class DeploymentHelper(BaseKubernetesWorkloadHelper):
 
             # resolve symbolic name in the service target port to a concrete container port
             if isinstance(port_obj.target_port, str):
-                container_port_obj = next(
+                container_port_obj: V1ContainerPort = next(
                     filter(lambda p: p.name == port_obj.target_port, container_ports),
                     None,
                 )
@@ -280,44 +294,38 @@ class DeploymentHelper(BaseKubernetesWorkloadHelper):
             container_port = container_port_obj.container_port
 
         # build the sidecar container
-        container = kubernetes_asyncio.client.V1Container(
+        container = V1Container(
             name=name,
             image=image,
             image_pull_policy="IfNotPresent",
-            resources=kubernetes_asyncio.client.V1ResourceRequirements(
+            resources=V1ResourceRequirements(
                 requests={"cpu": "125m", "memory": "128Mi"},
                 limits={"cpu": "250m", "memory": "256Mi"},
             ),
             env=[
-                kubernetes_asyncio.client.V1EnvVar(
+                V1EnvVar(
                     name="OPSANI_ENVOY_PROXY_SERVICE_PORT", value=str(service_port)
                 ),
-                kubernetes_asyncio.client.V1EnvVar(
+                V1EnvVar(
                     name="OPSANI_ENVOY_PROXIED_CONTAINER_PORT",
                     value=str(container_port),
                 ),
-                kubernetes_asyncio.client.V1EnvVar(
-                    name="OPSANI_ENVOY_PROXY_METRICS_PORT", value="9901"
-                ),
+                V1EnvVar(name="OPSANI_ENVOY_PROXY_METRICS_PORT", value="9901"),
             ],
             ports=[
-                kubernetes_asyncio.client.V1ContainerPort(
-                    name="opsani-proxy", container_port=service_port
-                ),
-                kubernetes_asyncio.client.V1ContainerPort(
-                    name="opsani-metrics", container_port=9901
-                ),
+                V1ContainerPort(name="opsani-proxy", container_port=service_port),
+                V1ContainerPort(name="opsani-metrics", container_port=9901),
             ],
         )
 
         # add the sidecar to the Deployment
         if index is None:
-            self.obj.spec.template.spec.containers.append(container)
+            workload.spec.template.spec.containers.append(container)
         else:
-            self.obj.spec.template.spec.containers.insert(index, container)
+            workload.spec.template.spec.containers.insert(index, container)
 
         # patch the deployment
-        await self.patch()
+        await cls.patch(workload=workload)
 
 
 # Run a dummy instantiation to detect missing ABC implementations

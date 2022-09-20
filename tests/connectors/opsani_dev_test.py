@@ -22,6 +22,7 @@ from typing import (
 import devtools
 import httpx
 import kubernetes_asyncio
+import kubetest.client
 import pydantic
 import pytest
 import pytz
@@ -39,7 +40,7 @@ import servo.connectors.prometheus
 def config(kube) -> servo.connectors.opsani_dev.OpsaniDevConfiguration:
     return servo.connectors.opsani_dev.OpsaniDevConfiguration(
         namespace=kube.namespace,
-        deployment="fiber-http",
+        workload_name="fiber-http",
         container="fiber-http",
         service="fiber-http",
         cpu=servo.connectors.kubernetes.CPU(min="125m", max="4000m", step="125m"),
@@ -54,7 +55,7 @@ def config(kube) -> servo.connectors.opsani_dev.OpsaniDevConfiguration:
 def no_tuning_config(kube) -> servo.connectors.opsani_dev.OpsaniDevConfiguration:
     return servo.connectors.opsani_dev.OpsaniDevConfiguration(
         namespace=kube.namespace,
-        deployment="fiber-http",
+        workload_name="fiber-http",
         container="fiber-http",
         service="fiber-http",
         cpu=servo.connectors.kubernetes.CPU(min="125m", max="4000m", step="125m"),
@@ -62,21 +63,6 @@ def no_tuning_config(kube) -> servo.connectors.opsani_dev.OpsaniDevConfiguration
             min="128 MiB", max="4.0 GiB", step="128 MiB"
         ),
         create_tuning_pod=False,
-        __optimizer__=servo.configuration.Optimizer(id="test.com/foo", token="12345"),
-    )
-
-
-@pytest.fixture
-def rollout_config(kube) -> servo.connectors.opsani_dev.OpsaniDevConfiguration:
-    return servo.connectors.opsani_dev.OpsaniDevConfiguration(
-        namespace=kube.namespace,
-        rollout="fiber-http",
-        container="fiber-http",
-        service="fiber-http",
-        cpu=servo.connectors.kubernetes.CPU(min="125m", max="4000m", step="125m"),
-        memory=servo.connectors.kubernetes.Memory(
-            min="128 MiB", max="4.0 GiB", step="128 MiB"
-        ),
         __optimizer__=servo.configuration.Optimizer(id="test.com/foo", token="12345"),
     )
 
@@ -95,13 +81,6 @@ def no_tuning_checks(
     return servo.connectors.opsani_dev.OpsaniDevChecks(config=no_tuning_config)
 
 
-@pytest.fixture
-def rollout_checks(
-    rollout_config: servo.connectors.opsani_dev.OpsaniDevConfiguration,
-) -> servo.connectors.opsani_dev.OpsaniDevRolloutChecks:
-    return servo.connectors.opsani_dev.OpsaniDevRolloutChecks(config=rollout_config)
-
-
 class TestConfig:
     def test_generate(self) -> None:
         config = servo.connectors.opsani_dev.OpsaniDevConfiguration.generate()
@@ -109,7 +88,6 @@ class TestConfig:
             "description",
             "namespace",
             "deployment",
-            "rollout",
             "container",
             "service",
             "port",
@@ -188,7 +166,7 @@ class TestConfig:
     def test_generate_no_tuning_config(self) -> None:
         no_tuning_config = servo.connectors.opsani_dev.OpsaniDevConfiguration(
             namespace="test",
-            rollout="fiber-http",
+            workload_name="fiber-http",
             container="fiber-http",
             service="fiber-http",
             cpu=servo.connectors.kubernetes.CPU(min="125m", max="4000m", step="125m"),
@@ -203,23 +181,6 @@ class TestConfig:
         no_tuning_k_config = no_tuning_config.generate_kubernetes_config()
         assert no_tuning_config.create_tuning_pod == False
         assert no_tuning_k_config.create_tuning_pod == False
-
-    def test_generate_rollout_config(self) -> None:
-        rollout_config = servo.connectors.opsani_dev.OpsaniDevConfiguration(
-            namespace="test",
-            rollout="fiber-http",
-            container="fiber-http",
-            service="fiber-http",
-            cpu=servo.connectors.kubernetes.CPU(min="125m", max="4000m", step="125m"),
-            memory=servo.connectors.kubernetes.Memory(
-                min="128 MiB", max="4.0 GiB", step="128 MiB"
-            ),
-            __optimizer__=servo.configuration.Optimizer(
-                id="test.com/foo", token="12345"
-            ),
-        )
-        k_config = rollout_config.generate_kubernetes_config()
-        assert k_config.rollouts[0].namespace == "test"  # validate config cascade
 
 
 @pytest.mark.applymanifests(
@@ -236,7 +197,10 @@ class TestIntegration:
     class TestChecksOriginalState:
         @pytest.fixture(autouse=True)
         async def load_manifests(
-            self, kube, checks: servo.connectors.opsani_dev.OpsaniDevChecks, kubeconfig
+            self,
+            kube: kubetest.client.TestClient,
+            checks: servo.connectors.opsani_dev.OpsaniDevChecks,
+            kubeconfig,
         ) -> None:
             kube.wait_for_registered()
             checks.config.namespace = kube.namespace
@@ -753,325 +717,6 @@ class TestResourceRequirementsIntegration:
 @pytest.mark.applymanifests(
     "../manifests/opsani_dev",
     files=[
-        "service.yaml",
-        "prometheus.yaml",
-    ],
-)
-@pytest.mark.integration
-@pytest.mark.usefixtures("kubeconfig", "kubernetes_asyncio_config")
-class TestRolloutIntegration:
-    @pytest.fixture(autouse=True)
-    async def load_manifests(
-        self,
-        kube,
-        rollout_checks: servo.connectors.opsani_dev.OpsaniDevRolloutChecks,
-        kubeconfig,
-        manage_rollout  # NOTE: rollout must be specified as a dependency, otherwise kube.wait_for_registered runs
-        #    indefinitely waiting for the service to have endpoints from a rollout that hasn't been deployed yet
-    ) -> None:
-        kube.wait_for_registered()
-        rollout_checks.config.namespace = kube.namespace
-
-        # Fake out the servo metadata in the environment
-        # These env vars are set by our manifests
-        pods = kube.get_pods(labels={"app.kubernetes.io/name": "servo"})
-        assert pods, "servo is not deployed"
-        try:
-            os.environ["POD_NAME"] = list(pods.keys())[0]
-            os.environ["POD_NAMESPACE"] = kube.namespace
-
-            yield
-
-        finally:
-            os.environ.pop("POD_NAME", None)
-            os.environ.pop("POD_NAMESPACE", None)
-
-    @pytest.mark.parametrize(
-        (),
-        [
-            pytest.param(
-                marks=pytest.mark.rollout_manifest.with_args(
-                    "tests/manifests/opsani_dev/argo_rollouts/rollout.yaml"
-                )
-            ),
-            pytest.param(
-                marks=pytest.mark.rollout_manifest.with_args(
-                    "tests/manifests/opsani_dev/argo_rollouts/rollout-workload-ref.yaml"
-                )
-            ),
-        ],
-    )
-    class TestChecksOriginalState:
-        @pytest.mark.parametrize("resource", ["controller", "container"])
-        async def test_rollout_resource_exists(
-            self,
-            resource: str,
-            rollout_checks: servo.connectors.opsani_dev.OpsaniDevRolloutChecks,
-        ) -> None:
-            result = await rollout_checks.run_one(
-                id=f"check_opsani_dev_kubernetes_{resource}"
-            )
-            assert result.success
-
-        async def test_rollout_check_rsrc_limits(
-            self,
-            kube,
-            rollout_checks: servo.connectors.opsani_dev.OpsaniDevRolloutChecks,
-            rollout_config: servo.connectors.opsani_dev.OpsaniDevConfiguration,
-        ) -> None:
-            rollout_config.cpu.min = "125m"
-            rollout_config.cpu.max = "2000m"
-            rollout_config.memory.min = "128MiB"
-            rollout_config.memory.max = "4GiB"
-            result = await rollout_checks.run_one(
-                id=f"check_target_container_resources_within_limits"
-            )
-            assert result.success, f"Expected success but got: {result}"
-
-        async def test_rollout_check_rsrc_limits_fails(
-            self,
-            kube,
-            rollout_checks: servo.connectors.opsani_dev.OpsaniDevRolloutChecks,
-            rollout_config: servo.connectors.opsani_dev.OpsaniDevConfiguration,
-        ) -> None:
-            rollout_config.cpu.max = "5000m"
-            rollout_config.cpu.min = "4000m"
-            rollout_config.memory.min = "2GiB"
-            rollout_config.memory.max = "4GiB"
-            result = await rollout_checks.run_one(
-                id=f"check_target_container_resources_within_limits"
-            )
-            assert result.exception
-
-        async def test_service_routes_traffic_to_rollout(
-            self,
-            kube,
-            rollout_checks: servo.connectors.opsani_dev.OpsaniDevRolloutChecks,
-        ) -> None:
-            result = await rollout_checks.run_one(
-                id=f"check_service_routes_traffic_to_controller"
-            )
-            assert result.success, f"Failed with message: {result.message}"
-
-        async def test_rollout_check_resource_requirements(
-            self, rollout_checks: servo.connectors.opsani_dev.OpsaniDevRolloutChecks
-        ) -> None:
-            result = await rollout_checks.run_one(id=f"check_resource_requirements")
-            assert result.success, f"Expected success but got: {result}"
-
-        async def test_check_rollout_selector_labels_pass(
-            self, rollout_checks: servo.connectors.opsani_dev.OpsaniDevRolloutChecks
-        ):
-            # simulate servo running outside of cluster
-            os.environ.pop("POD_NAME", None)
-            os.environ.pop("POD_NAMESPACE", None)
-
-            result = await rollout_checks.run_one(
-                id=f"check_rollout_selector_labels", skip_requirements=True
-            )
-            assert result.success, f"Expected success but got: {result}"
-
-    class TestChecksOriginalStateCustomManifests:
-        @pytest.mark.parametrize(
-            (),
-            [
-                pytest.param(
-                    marks=pytest.mark.rollout_manifest.with_args(
-                        "tests/manifests/opsani_dev/argo_rollouts/rollout_no_mem.yaml"
-                    )
-                ),
-                pytest.param(
-                    marks=pytest.mark.rollout_manifest.with_args(
-                        "tests/manifests/opsani_dev/argo_rollouts/rollout-workload-ref_no_mem.yaml"
-                    )
-                ),
-            ],
-        )
-        async def test_rollout_check_mem_requirements_fails(
-            self, rollout_checks: servo.connectors.opsani_dev.OpsaniDevRolloutChecks
-        ):
-            result = await rollout_checks.run_one(id=f"check_resource_requirements")
-            assert result.exception, f"Expected exception but got: {result}"
-
-        @pytest.mark.parametrize(
-            (),
-            [
-                pytest.param(
-                    marks=pytest.mark.rollout_manifest.with_args(
-                        "tests/manifests/opsani_dev/argo_rollouts/rollout_no_cpu_limit.yaml"
-                    )
-                ),
-                pytest.param(
-                    marks=pytest.mark.rollout_manifest.with_args(
-                        "tests/manifests/opsani_dev/argo_rollouts/rollout-workload-ref_no_cpu_limit.yaml"
-                    )
-                ),
-            ],
-        )
-        async def test_rollout_check_cpu_limit_fails(
-            self, rollout_checks: servo.connectors.opsani_dev.OpsaniDevRolloutChecks
-        ):
-            rollout_checks.config.cpu.get = [
-                servo.connectors.kubernetes.ResourceRequirement.limit
-            ]
-            result = await rollout_checks.run_one(id=f"check_resource_requirements")
-            assert result.exception, f"Expected exception but got: {result}"
-
-        @pytest.mark.parametrize(
-            (),
-            [
-                pytest.param(
-                    marks=pytest.mark.rollout_manifest.with_args(
-                        "tests/manifests/opsani_dev/argo_rollouts/rollout_no_selector.yaml"
-                    )
-                ),
-                pytest.param(
-                    marks=pytest.mark.rollout_manifest.with_args(
-                        "tests/manifests/opsani_dev/argo_rollouts/rollout-workload-ref_no_selector.yaml"
-                    )
-                ),
-            ],
-        )
-        async def test_check_rollout_selector_labels_fails(
-            self, rollout_checks: servo.connectors.opsani_dev.OpsaniDevRolloutChecks
-        ):
-            # simulate servo running outside of cluster
-            os.environ.pop("POD_NAME", None)
-            os.environ.pop("POD_NAMESPACE", None)
-
-            result = await rollout_checks.run_one(
-                id=f"check_rollout_selector_labels", skip_requirements=True
-            )
-            assert result.exception, f"Expected exception but got: {result}"
-
-        @pytest.mark.parametrize(
-            (),
-            [
-                pytest.param(
-                    marks=pytest.mark.rollout_manifest.with_args(
-                        "tests/manifests/opsani_dev/argo_rollouts/rollout_no_selector.yaml"
-                    )
-                ),
-                pytest.param(
-                    marks=pytest.mark.rollout_manifest.with_args(
-                        "tests/manifests/opsani_dev/argo_rollouts/rollout-workload-ref_no_selector.yaml"
-                    )
-                ),
-            ],
-        )
-        async def test_check_rollout_selector_in_cluster(
-            self, rollout_checks: servo.connectors.opsani_dev.OpsaniDevRolloutChecks
-        ):
-            # servo running in cluster, owner reference will be set on tuning pod
-            result = await rollout_checks.run_one(
-                id=f"check_rollout_selector_labels", skip_requirements=True
-            )
-            assert result.success, f"Expected success but got: {result}"
-
-        # NOTE: Prometheus checks are redundant in this case, covered by standard integration tests
-
-    @pytest.mark.parametrize(
-        (),
-        [
-            pytest.param(
-                marks=pytest.mark.rollout_manifest.with_args(
-                    "tests/manifests/opsani_dev/argo_rollouts/rollout.yaml"
-                )
-            ),
-            pytest.param(
-                marks=pytest.mark.rollout_manifest.with_args(
-                    "tests/manifests/opsani_dev/argo_rollouts/rollout-workload-ref.yaml"
-                )
-            ),
-        ],
-    )
-    class TestChecksUpdateState:
-        @pytest.fixture(autouse=True)
-        def set_kubeconfig_env_var(
-            self, kubeconfig: Union[pathlib.Path, pathlib.PurePath]
-        ) -> None:
-            with tests.helpers.environment_overrides({"KUBECONFIG": str(kubeconfig)}):
-                yield
-
-        @pytest.fixture()
-        async def port_forward_prometheus_sidecar(
-            self,
-            kube_port_forward: Callable[[str, int], AsyncContextManager[str]],
-            rollout_checks: servo.connectors.opsani_dev.OpsaniDevRolloutChecks,
-        ) -> None:
-            async with kube_port_forward("deploy/servo", 9090) as prometheus_base_url:
-                # Connect the checks to our port forward interface
-                rollout_checks.config.prometheus_base_url = prometheus_base_url
-                yield
-
-        async def test_rollout_check_annotations(
-            self,
-            rollout_checks: servo.connectors.opsani_dev.OpsaniDevRolloutChecks,
-            port_forward_prometheus_sidecar,
-        ) -> None:
-            servo.logging.set_level("TRACE")
-            result = await rollout_checks.run_one(id=f"check_controller_annotations")
-            assert result.exception, f"Expected exception but got: {result}"
-            assert (
-                result.remedy
-            ), f"Expected failed result to have remedy. Result: {result}"
-
-            rollout = await servo.connectors.kubernetes.Rollout.read(
-                rollout_checks.config.rollout, rollout_checks.config.namespace
-            )
-            # NOTE in workload ref case, deployment is patched which doesn't immediately update
-            #   the rollout's resource version causing change_to_resource to erroneously return early.
-            #   wait for the resource version update before exiting the context to prevent test flakiness
-            pre_patch_resource_version = rollout.obj.metadata.resource_version
-
-            async def wait_for_resource_version_update():
-                while True:
-                    await rollout.refresh()
-                    if (
-                        rollout.obj.metadata.resource_version
-                        != pre_patch_resource_version
-                    ):
-                        break
-
-            async with change_to_resource(rollout):
-                await _run_remedy_from_check(result)
-                try:
-                    await asyncio.wait_for(
-                        wait_for_resource_version_update(), timeout=5
-                    )
-                except asyncio.TimeoutError:
-                    pytest.xfail("Rollout controller needs refresh, WIP")
-
-            result = await rollout_checks.run_one(id=f"check_controller_annotations")
-            assert (
-                result.success
-            ), f"Expected success after remedy was run but got: {result}"
-
-        async def test_rollout_check_labels(
-            self, rollout_checks: servo.connectors.opsani_dev.OpsaniDevRolloutChecks
-        ) -> None:
-            result = await rollout_checks.run_one(
-                id=f"check_controller_labels", skip_requirements=True
-            )
-            assert result.exception, f"Expected exception but got: {result}"
-            assert (
-                result.remedy
-            ), f"Expected failed result to have remedy. Result: {result}"
-            await _run_remedy_from_check(result)
-
-            result = await rollout_checks.run_one(
-                id=f"check_controller_labels", skip_requirements=True
-            )
-            assert (
-                result.success
-            ), f"Expected success after remedy was run but got: {result}"
-
-    # TODO: port TestInstall class to rollouts by refactoring deployment specific helper code
-
-
-@pytest.mark.applymanifests(
-    "../manifests/opsani_dev",
-    files=[
         "deployment.yaml",
         "service.yaml",
         "prometheus.yaml",
@@ -1448,7 +1093,7 @@ class TestServiceMultiport:
                 kubernetes_config = checks.config.generate_kubernetes_config()
                 canary_opt = (
                     await servo.connectors.kubernetes.CanaryOptimization.create(
-                        deployment_or_rollout_config=kubernetes_config.deployments[0],
+                        workload_config=kubernetes_config.deployments[0],
                         timeout=kubernetes_config.timeout,
                     )
                 )
@@ -2158,7 +1803,7 @@ async def _remedy_check(
         servo.logger.critical("Step 7 - Bring tuning Pod online")
         kubernetes_config = config.generate_kubernetes_config()
         canary_opt = await servo.connectors.kubernetes.CanaryOptimization.create(
-            deployment_or_rollout_config=kubernetes_config.deployments[0],
+            workload_config=kubernetes_config.deployments[0],
             timeout=kubernetes_config.timeout,
         )
         await canary_opt.create_tuning_pod()
