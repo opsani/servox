@@ -1148,7 +1148,7 @@ class CanaryOptimization(BaseOptimization):
         return tuning_pod
 
     @contextlib.asynccontextmanager
-    async def temporary_tuning_pod(self) -> AsyncIterator[Pod]:
+    async def temporary_tuning_pod(self) -> AsyncIterator[V1Pod]:
         """Mostly used for testing where automatic teardown is not available"""
         try:
             tuning_pod = await self.create_tuning_pod()
@@ -1894,25 +1894,6 @@ class StatefulSetConfiguration(DeploymentConfiguration):
         return v
 
 
-class RolloutConfiguration(BaseKubernetesConfiguration):
-    """
-    The RolloutConfiguration class models the configuration of an optimizable Argo Rollout.
-    """
-
-    name: DNSSubdomainName
-    containers: List[ContainerConfiguration]
-    strategy: StrategyTypes = OptimizationStrategy.canary
-    replicas: servo.Replicas
-
-    @pydantic.validator("strategy")
-    def validate_strategy(cls, v):
-        if v == OptimizationStrategy.default:
-            raise NotImplementedError(
-                "Saturation mode is not currently supported on Argo Rollouts"
-            )
-        return v
-
-
 class KubernetesConfiguration(BaseKubernetesConfiguration):
     namespace: DNSSubdomainName = DNSSubdomainName("default")
     timeout: servo.Duration = "5m"
@@ -1931,21 +1912,11 @@ class KubernetesConfiguration(BaseKubernetesConfiguration):
         description="Deployments to be optimized.",
     )
 
-    rollouts: Optional[List[RolloutConfiguration]] = pydantic.Field(
-        description="Argo rollouts to be optimized.",
-    )
-
     @property
     def workloads(
         self,
-    ) -> list[
-        Union[StatefulSetConfiguration, DeploymentConfiguration, RolloutConfiguration]
-    ]:
-        return (
-            (self.deployments or [])
-            + (self.rollouts or [])
-            + (self.stateful_sets or [])
-        )
+    ) -> list[Union[StatefulSetConfiguration, DeploymentConfiguration]]:
+        return (self.deployments or []) + (self.stateful_sets or [])
 
     @pydantic.root_validator
     def check_workload(cls, values):
@@ -2132,26 +2103,30 @@ class KubernetesChecks(servo.BaseChecks):
 
     async def _check_container_resource_requirements(
         self,
-        target_controller: Union[Deployment, Rollout],
-        target_config: Union[DeploymentConfiguration, RolloutConfiguration],
+        target_controller: Union[V1Deployment, V1StatefulSet],
+        target_config: Union[DeploymentConfiguration, StatefulSetConfiguration],
     ) -> None:
         for cont_config in target_config.containers:
-            container = target_controller.find_container(cont_config.name)
+            container = find_container(target_controller, cont_config.name)
             assert (
                 container
             ), f"{type(target_controller).__name__} {target_config.name} has no container {cont_config.name}"
 
             for resource in Resource.values():
                 current_state = None
-                container_requirements = container.get_resource_requirements(resource)
-                get_requirements = getattr(cont_config, resource).get
+                container_requirements = ContainerHelper.get_resource_requirements(
+                    container, resource
+                )
+                get_requirements = cast(
+                    Union[CPU, Memory], getattr(cont_config, resource)
+                ).get
                 for requirement in get_requirements:
                     current_state = container_requirements.get(requirement)
                     if current_state:
                         break
 
                 assert current_state, (
-                    f"{type(target_controller).__name__} {target_config.name} target container {cont_config.name} spec does not define the resource {resource}. "
+                    f"{target_controller.kind} {target_config.name} target container {cont_config.name} spec does not define the resource {resource}. "
                     f"At least one of the following must be specified: {', '.join(map(lambda req: req.resources_key, get_requirements))}"
                 )
 
@@ -2164,46 +2139,58 @@ class KubernetesChecks(servo.BaseChecks):
         async def check_dep_resource_requirements(
             dep_config: DeploymentConfiguration,
         ) -> None:
-            deployment = await Deployment.read(dep_config.name, dep_config.namespace)
+            deployment = await DeploymentHelper.read(
+                dep_config.name, dep_config.namespace
+            )
             await self._check_container_resource_requirements(deployment, dep_config)
 
         return (self.config.deployments or []), check_dep_resource_requirements
 
     @servo.multicheck(
-        'Containers in the "{item.name}" Rollout have resource requirements'
+        'Containers in the "{item.name}" StatefulSet have resource requirements'
     )
-    async def check_kubernetes_rollout_resource_requirements(
+    async def check_kubernetes_stateful_set_resource_requirements(
         self,
     ) -> Tuple[Iterable, servo.CheckHandler]:
-        async def check_rol_resource_requirements(
-            rol_config: RolloutConfiguration,
+        async def check_ss_resource_requirements(
+            ss_config: StatefulSetConfiguration,
         ) -> None:
-            rollout = await Rollout.read(rol_config.name, rol_config.namespace)
-            await self._check_container_resource_requirements(rollout, rol_config)
+            stateful_set = await StatefulSetHelper.read(
+                ss_config.name, ss_config.namespace
+            )
+            await self._check_container_resource_requirements(stateful_set, ss_config)
 
-        return (self.config.rollouts or []), check_rol_resource_requirements
+        return (self.config.stateful_sets or []), check_ss_resource_requirements
 
     @servo.multicheck('Deployment "{item.name}" is ready')
     async def check_kubernetes_deployments_are_ready(
         self,
     ) -> Tuple[Iterable, servo.CheckHandler]:
         async def check_deployment(dep_config: DeploymentConfiguration) -> None:
-            deployment = await Deployment.read(dep_config.name, dep_config.namespace)
-            if not await deployment.is_ready():
-                raise RuntimeError(f'Deployment "{deployment.name}" is not ready')
+            deployment = await DeploymentHelper.read(
+                dep_config.name, dep_config.namespace
+            )
+            if not DeploymentHelper.is_ready(deployment):
+                raise RuntimeError(
+                    f'Deployment "{deployment.metadata.name}" is not ready'
+                )
 
         return (self.config.deployments or []), check_deployment
 
-    @servo.multicheck('Rollout "{item.name}" is ready')
-    async def check_kubernetes_rollouts_are_ready(
+    @servo.multicheck('StatefulSet "{item.name}" is ready')
+    async def check_kubernetes_stateful_sets_are_ready(
         self,
     ) -> Tuple[Iterable, servo.CheckHandler]:
-        async def check_rollout(rol_config: RolloutConfiguration) -> None:
-            rollout = await Rollout.read(rol_config.name, rol_config.namespace)
-            if not await rollout.is_ready():
-                raise RuntimeError(f'Rollout "{rollout.name}" is not ready')
+        async def check_stateful_set(ss_config: StatefulSetConfiguration) -> None:
+            stateful_set = await StatefulSetHelper.read(
+                ss_config.name, ss_config.namespace
+            )
+            if not StatefulSetHelper.is_ready(stateful_set):
+                raise RuntimeError(
+                    f'Rollout "{stateful_set.metadata.name}" is not ready'
+                )
 
-        return (self.config.rollouts or []), check_rollout
+        return (self.config.stateful_sets or []), check_stateful_set
 
 
 @servo.metadata(

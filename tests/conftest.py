@@ -544,6 +544,12 @@ async def minikube(request, subprocess, kubeconfig: pathlib.Path) -> str:
             # NOTE no point in even trying to recover from this due to asyncio xdist parallelization coordination hell
             pytest.xfail("Minikube failed start")
 
+        if exit_code == 80 and any(
+            "Exiting due to GUEST_START" in line for line in stderr
+        ):
+            # https://github.com/kubernetes/minikube/issues/13621
+            pytest.xfail("Minikube failed start (CA)")
+
         raise RuntimeError(
             f"failed running minikube: exited with status code {exit_code}: {stderr}"
         )
