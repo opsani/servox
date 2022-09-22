@@ -734,7 +734,7 @@ class SaturationOptimization(BaseOptimization):
                 self.workload_helper.wait_until_ready(self.workload),
                 timeout=self.timeout.total_seconds(),
             )
-        except TimeoutError:
+        except asyncio.exceptions.TimeoutError:
             servo.logger.error(
                 f"Timed out waiting for {self.workload.__class__.__name__} to become ready..."
             )
@@ -977,6 +977,7 @@ class CanaryOptimization(BaseOptimization):
             self.workload
         )
         pod_template_spec.metadata.name = self.tuning_pod_name
+        pod_template_spec.metadata.namespace = self.namespace
 
         if pod_template_spec.metadata.annotations is None:
             pod_template_spec.metadata.annotations = {}
@@ -1807,10 +1808,10 @@ STANDARD_PERMISSIONS = [
     ),
 ]
 
-ROLLOUT_PERMISSIONS = [
+STATEFULSET_PERMISSIONS = [
     PermissionSet(
-        group="argoproj.io",
-        resources=["rollouts", "rollouts/status"],
+        group="apps",
+        resources=["statefulsets"],
         verbs=["get", "list", "watch", "update", "patch"],
     ),
 ]
@@ -2053,8 +2054,8 @@ class KubernetesChecks(servo.BaseChecks):
         async with kubernetes_asyncio.client.api_client.ApiClient() as api:
             v1 = kubernetes_asyncio.client.AuthorizationV1Api(api)
             required_permissions = self.config.permissions
-            if self.config.rollouts:
-                required_permissions.extend(ROLLOUT_PERMISSIONS)
+            if self.config.stateful_sets:
+                required_permissions.extend(STATEFULSET_PERMISSIONS)
             # TODO stateful_set permissions
             for permission in required_permissions:
                 for resource in permission.resources:
@@ -2095,7 +2096,9 @@ class KubernetesChecks(servo.BaseChecks):
         return (self.config.deployments or []), check_dep
 
     @servo.multicheck('StatefulSet "{item.name}" is readable')
-    async def check_kubernetes_deployments(self) -> Tuple[Iterable, servo.CheckHandler]:
+    async def check_kubernetes_statefulsets(
+        self,
+    ) -> Tuple[Iterable, servo.CheckHandler]:
         async def check_ss(ss_config: StatefulSetConfiguration) -> None:
             await StatefulSetHelper.read(ss_config.name, ss_config.namespace)
 

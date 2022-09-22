@@ -22,11 +22,6 @@ from servo.connectors.kube_metrics import (
 
 
 @pytest.fixture
-def kubecontext() -> str:
-    return "metrics-server"
-
-
-@pytest.fixture
 def kube_metrics_config() -> KubeMetricsConfiguration:
     return KubeMetricsConfiguration.generate()
 
@@ -107,8 +102,6 @@ async def _wait_for_scrape(namespace: str, deployment: V1Deployment):
 @pytest.mark.usefixtures("kubernetes_asyncio_config")
 @pytest.mark.applymanifests("../manifests", files=["fiber-http-opsani-dev.yaml"])
 async def test_periodic_measure(
-    kubeconfig: str,
-    minikube: str,
     kube: kubetest.client.TestClient,
     servo_runner: ServoRunner,
 ):
@@ -121,8 +114,6 @@ async def test_periodic_measure(
             name="fiber-http",
             namespace=kube.namespace,
             container="fiber-http",
-            context=minikube,
-            kubeconfig=kubeconfig,
         )
     )
 
@@ -145,8 +136,6 @@ async def test_periodic_measure(
     "../manifests", files=["fiber-http-opsani-dev_no_resource_limits.yaml"]
 )
 async def test_periodic_measure_no_limits(
-    kubeconfig: str,
-    minikube: str,
     kube: kubetest.client.TestClient,
     servo_runner: ServoRunner,
 ):
@@ -159,8 +148,6 @@ async def test_periodic_measure_no_limits(
             name="fiber-http",
             namespace=kube.namespace,
             container="fiber-http",
-            context=minikube,
-            kubeconfig=kubeconfig,
         )
     )
 
@@ -184,8 +171,6 @@ async def test_periodic_measure_no_limits(
     "../manifests", files=["fiber-http-opsani-dev_no_resource_requests.yaml"]
 )
 async def test_periodic_measure_no_requests(
-    kubeconfig: str,
-    minikube: str,
     kube: kubetest.client.TestClient,
     servo_runner: ServoRunner,
 ):
@@ -198,8 +183,6 @@ async def test_periodic_measure_no_requests(
             name="fiber-http",
             namespace=kube.namespace,
             container="fiber-http",
-            context=minikube,
-            kubeconfig=kubeconfig,
         )
     )
 
@@ -259,20 +242,14 @@ def test_append_data_point():
 @pytest.mark.usefixtures("kubernetes_asyncio_config")
 @pytest.mark.applymanifests("../manifests", files=["fiber-http-opsani-dev.yaml"])
 # async def test_periodic_measure(kubeconfig: str, minikube: str, kube: kubetest.client.TestClient, servo_runner: ServoRunner):
-async def test_get_target_resource(
-    kubeconfig: str, kubecontext: str, minikube: str, kube: kubetest.client.TestClient
-):
+async def test_get_target_resource(kube: kubetest.client.TestClient):
     kube.wait_for_registered()
-    await kubernetes_asyncio.config.load_kube_config(
-        config_file=str(kubeconfig), context=kubecontext
-    )
+    await kubernetes_asyncio.config.load_kube_config()
     assert await _get_target_resource(
         KubeMetricsConfiguration(
             name="fiber-http",
             namespace=kube.namespace,
             container="fiber-http",
-            context=minikube,
-            kubeconfig=kubeconfig,
         )
     )
 
@@ -280,21 +257,15 @@ async def test_get_target_resource(
 @pytest.mark.integration
 @pytest.mark.usefixtures("kubernetes_asyncio_config")
 @pytest.mark.applymanifests("../manifests", files=["fiber-http-opsani-dev.yaml"])
-async def test_get_target_resource_container(
-    kubeconfig: str, kubecontext: str, minikube: str, kube: kubetest.client.TestClient
-):
+async def test_get_target_resource_container(kube: kubetest.client.TestClient):
     kube.wait_for_registered()
-    await kubernetes_asyncio.config.load_kube_config(
-        config_file=str(kubeconfig), context=kubecontext
-    )
+    await kubernetes_asyncio.config.load_kube_config()
     deployment = await DeploymentHelper.read("fiber-http", kube.namespace)
     assert _get_target_resource_container(
         KubeMetricsConfiguration(
             name="fiber-http",
             namespace=kube.namespace,
             container="fiber-http",
-            context=minikube,
-            kubeconfig=kubeconfig,
         ),
         target_resource=deployment,
     )
@@ -317,10 +288,6 @@ class TestKubeMetricsConnectorIntegration:
             name="fiber-http",
             container="fiber-http",
         )
-
-    @pytest.fixture
-    def kubecontext(self) -> str:
-        return None  # override file level fixture for EKS
 
     async def test_checks(self, kube_metrics_config: KubeMetricsConfiguration) -> None:
         checks = await KubeMetricsChecks.run(kube_metrics_config)

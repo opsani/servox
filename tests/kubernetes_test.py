@@ -1,16 +1,19 @@
 import asyncio
 import datetime
 import hashlib
+from typing import cast
 import re
 
 import kubernetes_asyncio
 import kubernetes_asyncio.client
+from kubernetes_asyncio.client import V1Container, V1OwnerReference
 import kubetest.client
 import pydantic
 import pytest
 
 import servo
 import servo.connectors.kubernetes
+from servo.connectors.kubernetes_helpers import DeploymentHelper, ServiceHelper
 import tests.helpers
 from servo.types.settings import _is_step_aligned, _suggest_step_aligned_values
 
@@ -122,123 +125,126 @@ def test_supports_nil_container_name() -> None:
 
 @pytest.mark.applymanifests("manifests", files=["fiber-http.yaml"])
 class TestSidecar:
-    async def test_inject_sidecar_by_port_number(self, kube) -> None:
-        deployment = await servo.connectors.kubernetes.Deployment.read(
-            "fiber-http", kube.namespace
-        )
-        assert len(deployment.containers) == 1
-        await deployment.inject_sidecar(
-            "whatever", "opsani/envoy-proxy:latest", port=8480
+    async def test_inject_sidecar_by_port_number(
+        self, kube: kubetest.client.TestClient
+    ) -> None:
+        deployment = await DeploymentHelper.read("fiber-http", kube.namespace)
+        assert len(deployment.spec.template.spec.containers) == 1
+        await DeploymentHelper.inject_sidecar(
+            deployment, "whatever", "opsani/envoy-proxy:latest", port=8480
         )
 
-        deployment_ = await servo.connectors.kubernetes.Deployment.read(
-            "fiber-http", kube.namespace
+        deployment_ = await DeploymentHelper.read("fiber-http", kube.namespace)
+        assert len(deployment_.spec.template.spec.containers) == 2
+
+    async def test_inject_sidecar_by_port_number_string(
+        self, kube: kubetest.client.TestClient
+    ) -> None:
+        deployment = await DeploymentHelper.read("fiber-http", kube.namespace)
+        assert len(deployment.spec.template.spec.containers) == 1
+        await DeploymentHelper.inject_sidecar(
+            deployment, "whatever", "opsani/envoy-proxy:latest", port="8480"
         )
+
+        deployment_ = await DeploymentHelper.read("fiber-http", kube.namespace)
         assert len(deployment_.containers) == 2
 
-    async def test_inject_sidecar_by_port_number_string(self, kube) -> None:
-        deployment = await servo.connectors.kubernetes.Deployment.read(
-            "fiber-http", kube.namespace
-        )
-        assert len(deployment.containers) == 1
-        await deployment.inject_sidecar(
-            "whatever", "opsani/envoy-proxy:latest", port="8480"
-        )
-
-        deployment_ = await servo.connectors.kubernetes.Deployment.read(
-            "fiber-http", kube.namespace
-        )
-        assert len(deployment_.containers) == 2
-
-    async def test_inject_sidecar_port_conflict(self, kube):
-        deployment = await servo.connectors.kubernetes.Deployment.read(
-            "fiber-http", kube.namespace
-        )
+    async def test_inject_sidecar_port_conflict(self, kube: kubetest.client.TestClient):
+        deployment = await DeploymentHelper.read("fiber-http", kube.namespace)
         with pytest.raises(
             ValueError,
             match="Port conflict: Deployment 'fiber-http' already exposes port 8480 through an existing container",
         ):
-            await deployment.inject_sidecar(
-                "whatever", "opsani/envoy-proxy:latest", port=8481, service_port=8480
+            await DeploymentHelper.inject_sidecar(
+                deployment,
+                "whatever",
+                "opsani/envoy-proxy:latest",
+                port=8481,
+                service_port=8480,
             )
 
-    async def test_inject_sidecar_by_service(self, kube) -> None:
-        deployment = await servo.connectors.kubernetes.Deployment.read(
-            "fiber-http", kube.namespace
+    async def test_inject_sidecar_by_service(
+        self, kube: kubetest.client.TestClient
+    ) -> None:
+        deployment = await DeploymentHelper.read("fiber-http", kube.namespace)
+
+        assert len(deployment.spec.template.spec.containers) == 1
+        await DeploymentHelper.inject_sidecar(
+            deployment, "whatever", "opsani/envoy-proxy:latest", service="fiber-http"
         )
 
-        assert len(deployment.containers) == 1
-        await deployment.inject_sidecar(
-            "whatever", "opsani/envoy-proxy:latest", service="fiber-http"
+        deployment_ = await DeploymentHelper.read("fiber-http", kube.namespace)
+        assert len(deployment_.spec.template.spec.containers) == 2
+
+    async def test_inject_sidecar_by_service_and_port_number(
+        self, kube: kubetest.client.TestClient
+    ) -> None:
+        deployment = await DeploymentHelper.read("fiber-http", kube.namespace)
+
+        assert len(deployment.spec.template.spec.containers) == 1
+        await DeploymentHelper.inject_sidecar(
+            deployment,
+            "whatever",
+            "opsani/envoy-proxy:latest",
+            service="fiber-http",
+            port=80,
         )
 
-        deployment_ = await servo.connectors.kubernetes.Deployment.read(
-            "fiber-http", kube.namespace
-        )
-        assert len(deployment_.containers) == 2
+        deployment_ = await DeploymentHelper.read("fiber-http", kube.namespace)
+        assert len(deployment_.spec.template.spec.containers) == 2
 
-    async def test_inject_sidecar_by_service_and_port_number(self, kube) -> None:
-        deployment = await servo.connectors.kubernetes.Deployment.read(
-            "fiber-http", kube.namespace
-        )
-
-        assert len(deployment.containers) == 1
-        await deployment.inject_sidecar(
-            "whatever", "opsani/envoy-proxy:latest", service="fiber-http", port=80
-        )
-
-        deployment_ = await servo.connectors.kubernetes.Deployment.read(
-            "fiber-http", kube.namespace
-        )
-        assert len(deployment_.containers) == 2
-
-    async def test_inject_sidecar_by_service_and_port_name(self, kube) -> None:
-        deployment = await servo.connectors.kubernetes.Deployment.read(
-            "fiber-http", kube.namespace
-        )
+    async def test_inject_sidecar_by_service_and_port_name(
+        self, kube: kubetest.client.TestClient
+    ) -> None:
+        deployment = await DeploymentHelper.read("fiber-http", kube.namespace)
         # NOTE: This can generate a 409 Conflict failure under CI
         for _ in range(3):
             try:
                 # change the container port so we don't conflict
-                deployment.obj.spec.template.spec.containers[0].ports[
+                deployment.spec.template.spec.containers[0].ports[
                     0
                 ].container_port = 9999
-                await deployment.replace()
+                await DeploymentHelper.patch(deployment)
                 break
 
             except kubernetes_asyncio.client.exceptions.ApiException as e:
                 if e.status == 409 and e.reason == "Conflict":
                     # If we have a conflict, just load the existing object and continue
-                    await deployment.refresh()
+                    deployment = await DeploymentHelper.read(
+                        "fiber-http", kube.namespace
+                    )
 
-        assert len(deployment.containers) == 1
-        await deployment.inject_sidecar(
-            "whatever", "opsani/envoy-proxy:latest", service="fiber-http", port="http"
+        assert len(deployment.spec.template.spec.containers) == 1
+        await DeploymentHelper.inject_sidecar(
+            deployment,
+            "whatever",
+            "opsani/envoy-proxy:latest",
+            service="fiber-http",
+            port="http",
         )
 
-        deployment_ = await servo.connectors.kubernetes.Deployment.read(
-            "fiber-http", kube.namespace
-        )
-        assert len(deployment_.containers) == 2
+        deployment_ = await DeploymentHelper.read("fiber-http", kube.namespace)
+        assert len(deployment_.spec.template.spec.containers) == 2
 
-    async def test_inject_sidecar_invalid_service_name(self, kube) -> None:
-        deployment = await servo.connectors.kubernetes.Deployment.read(
-            "fiber-http", kube.namespace
-        )
+    async def test_inject_sidecar_invalid_service_name(
+        self, kube: kubetest.client.TestClient
+    ) -> None:
+        deployment = await DeploymentHelper.read("fiber-http", kube.namespace)
         with pytest.raises(ValueError, match="Unknown Service 'invalid'"):
-            await deployment.inject_sidecar(
-                "whatever", "opsani/envoy-proxy:latest", service="invalid"
+            await DeploymentHelper.inject_sidecar(
+                deployment, "whatever", "opsani/envoy-proxy:latest", service="invalid"
             )
 
-    async def test_inject_sidecar_port_not_in_given_service(self, kube) -> None:
-        deployment = await servo.connectors.kubernetes.Deployment.read(
-            "fiber-http", kube.namespace
-        )
+    async def test_inject_sidecar_port_not_in_given_service(
+        self, kube: kubetest.client.TestClient
+    ) -> None:
+        deployment = await DeploymentHelper.read("fiber-http", kube.namespace)
         with pytest.raises(
             ValueError,
             match="Port 'invalid' does not exist in the Service 'fiber-http'",
         ):
-            await deployment.inject_sidecar(
+            await DeploymentHelper.inject_sidecar(
+                deployment,
                 "whatever",
                 "opsani/envoy-proxy:latest",
                 service="fiber-http",
@@ -407,16 +413,14 @@ class TestChecks:
         self, config: servo.connectors.kubernetes.KubernetesConfiguration, kube
     ) -> None:
         # Zero out the CPU setting for requests and Memory setting for limits
-        deployment = await servo.connectors.kubernetes.Deployment.read(
-            "fiber-http", kube.namespace
-        )
+        deployment = await DeploymentHelper.read("fiber-http", kube.namespace)
         assert deployment
-        container = deployment.containers[0]
+        container: V1Container = deployment.spec.template.spec.containers[0]
         container.resources = kubernetes_asyncio.client.V1ResourceRequirements(
             limits={"memory": None}, requests={"cpu": None}
         )
-        await deployment.patch()
-        await deployment.wait_until_ready()
+        await DeploymentHelper.patch(deployment)
+        await DeploymentHelper.wait_until_ready(deployment)
 
         # Update resource config to require limits for CPU and requests for memory
         config.deployments[0].containers[0].cpu.get = [
@@ -443,16 +447,14 @@ class TestChecks:
         self, config: servo.connectors.kubernetes.KubernetesConfiguration, kube
     ) -> None:
         # Zero out the CPU settings
-        deployment = await servo.connectors.kubernetes.Deployment.read(
-            "fiber-http", kube.namespace
-        )
+        deployment = await DeploymentHelper.read("fiber-http", kube.namespace)
         assert deployment
-        container = deployment.containers[0]
+        container: V1Container = deployment.spec.template.spec.containers[0]
         container.resources = kubernetes_asyncio.client.V1ResourceRequirements(
             limits={"cpu": None}, requests={"cpu": None}
         )
-        await deployment.patch()
-        await deployment.wait_until_ready()
+        await DeploymentHelper.patch(deployment)
+        await DeploymentHelper.wait_until_ready(deployment)
 
         # Fail the check because the CPU isn't limited
         results = await servo.connectors.kubernetes.KubernetesChecks.run(
@@ -475,16 +477,14 @@ class TestChecks:
         self, config: servo.connectors.kubernetes.KubernetesConfiguration, kube
     ) -> None:
         # Zero out the CPU setting for requests
-        deployment = await servo.connectors.kubernetes.Deployment.read(
-            "fiber-http", kube.namespace
-        )
+        deployment = await DeploymentHelper.read("fiber-http", kube.namespace)
         assert deployment
-        container = deployment.containers[0]
+        container: V1Container = deployment.spec.template.spec.containers[0]
         container.resources = kubernetes_asyncio.client.V1ResourceRequirements(
             requests={"cpu": None}
         )
-        await deployment.patch()
-        await deployment.wait_until_ready()
+        await DeploymentHelper.patch(deployment)
+        await DeploymentHelper.wait_until_ready(deployment)
 
         # Update resource config to require requests
         config.deployments[0].containers[0].cpu.get = [
@@ -512,16 +512,14 @@ class TestChecks:
         self, config: servo.connectors.kubernetes.KubernetesConfiguration, kube
     ) -> None:
         # Zero out the Memory setting for requests
-        deployment = await servo.connectors.kubernetes.Deployment.read(
-            "fiber-http", kube.namespace
-        )
+        deployment = await DeploymentHelper.read("fiber-http", kube.namespace)
         assert deployment
-        container = deployment.containers[0]
+        container: V1Container = deployment.spec.template.spec.containers[0]
         container.resources = kubernetes_asyncio.client.V1ResourceRequirements(
             requests={"memory": None}
         )
-        await deployment.patch()
-        await deployment.wait_until_ready()
+        await DeploymentHelper.patch(deployment)
+        await DeploymentHelper.wait_until_ready(deployment)
 
         # Update resource config to require requests
         config.deployments[0].containers[0].memory.get = [
@@ -546,20 +544,22 @@ class TestChecks:
         ), failed_message
 
     async def test_deployments_are_ready(
-        self, config: servo.connectors.kubernetes.KubernetesConfiguration, kube
+        self,
+        config: servo.connectors.kubernetes.KubernetesConfiguration,
+        kube: kubetest.client.TestClient,
     ) -> None:
         # Set the CPU request implausibly high to force it into pending
-        deployment = await servo.connectors.kubernetes.Deployment.read(
-            "fiber-http", kube.namespace
-        )
+        deployment = await DeploymentHelper.read("fiber-http", kube.namespace)
         assert deployment
-        container = deployment.containers[0]
+        container: V1Container = deployment.spec.template.spec.containers[0]
         container.resources = kubernetes_asyncio.client.V1ResourceRequirements(
             limits={"cpu": None}, requests={"cpu": "500"}
         )
-        await deployment.patch()
+        await DeploymentHelper.patch(deployment)
         try:
-            await asyncio.wait_for(deployment.wait_until_ready(), timeout=2.0)
+            await asyncio.wait_for(
+                DeploymentHelper.wait_until_ready(deployment), timeout=2.0
+            )
         except asyncio.TimeoutError:
             pass
 
@@ -583,30 +583,29 @@ class TestChecks:
 @pytest.mark.applymanifests("manifests", files=["fiber-http.yaml"])
 class TestService:
     @pytest.fixture(autouse=True)
-    async def wait(self, kube) -> None:
+    async def wait(self, kube: kubetest.client.TestClient) -> None:
         kube.wait_for_registered()
         await asyncio.sleep(0.0001)
 
     async def test_read_service(self, kube: kubetest.client.TestClient) -> None:
-        svc = await servo.connectors.kubernetes.Service.read(
-            "fiber-http", kube.namespace
-        )
+        svc = await ServiceHelper.read("fiber-http", kube.namespace)
         assert svc
-        assert svc.obj.metadata.name == "fiber-http"
-        assert svc.obj.metadata.namespace == kube.namespace
+        assert svc.metadata.name == "fiber-http"
+        assert svc.metadata.namespace == kube.namespace
 
-    async def test_patch_service(self, kube: kubetest.client.TestClient) -> None:
-        svc = await servo.connectors.kubernetes.Service.read(
-            "fiber-http", kube.namespace
-        )
-        assert svc
-        sentinel_value = hashlib.blake2b(
-            str(datetime.datetime.now()).encode("utf-8"), digest_size=4
-        ).hexdigest()
-        svc.obj.metadata.labels["testing.opsani.com"] = sentinel_value
-        await svc.patch()
-        await svc.refresh()
-        assert svc.obj.metadata.labels["testing.opsani.com"] == sentinel_value
+    # Tested code is unused/deprecated
+    # async def test_patch_service(self, kube: kubetest.client.TestClient) -> None:
+    #     svc = await servo.connectors.kubernetes.Service.read(
+    #         "fiber-http", kube.namespace
+    #     )
+    #     assert svc
+    #     sentinel_value = hashlib.blake2b(
+    #         str(datetime.datetime.now()).encode("utf-8"), digest_size=4
+    #     ).hexdigest()
+    #     svc.obj.metadata.labels["testing.opsani.com"] = sentinel_value
+    #     await svc.patch()
+    #     await svc.refresh()
+    #     assert svc.obj.metadata.labels["testing.opsani.com"] == sentinel_value
 
 
 @pytest.mark.applymanifests("manifests", files=["fiber-http.yaml"])
@@ -622,9 +621,7 @@ async def test_get_latest_pods(kube: kubetest.client.TestClient) -> None:
         kube_dep.name, kube_dep.namespace, kube_dep.obj
     )
 
-    servo_dep = await servo.connectors.kubernetes.Deployment.read(
-        "fiber-http", kube.namespace
-    )
+    servo_dep = await DeploymentHelper.read("fiber-http", kube.namespace)
 
     async def wait_for_new_replicaset():
         while len(kube.get_replicasets()) < 2:
@@ -633,10 +630,10 @@ async def test_get_latest_pods(kube: kubetest.client.TestClient) -> None:
     await asyncio.wait_for(wait_for_new_replicaset(), timeout=2)
 
     for _ in range(10):
-        latest_pods = await servo_dep.get_latest_pods()
+        latest_pods = await DeploymentHelper.get_latest_pods(servo_dep)
         # Check the latest pods aren't from the old replicaset
         for pod in latest_pods:
-            for ow in pod.obj.metadata.owner_references:
+            for ow in cast(list[V1OwnerReference], pod.metadata.owner_references):
                 assert ow.name != old_rset.obj.metadata.name
 
         await asyncio.sleep(0.1)

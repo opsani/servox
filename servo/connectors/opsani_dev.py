@@ -518,7 +518,7 @@ class OpsaniDevChecks(servo.BaseChecks):
         controller = await self.workload_helper.read(
             self.config.workload_name, self.config.namespace
         )
-        if not await self.workload_helper.is_ready(controller):
+        if not self.workload_helper.is_ready(controller):
             raise RuntimeError(
                 f'{self.config.workload_name} "{controller.metadata.name}" is not ready'
             )

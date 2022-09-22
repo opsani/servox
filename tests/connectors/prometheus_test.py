@@ -14,6 +14,7 @@ import pytz
 import respx
 import typer
 
+import servo
 import servo.connectors.kubernetes
 import servo.connectors.prometheus
 import servo.errors
@@ -653,7 +654,7 @@ class TestPrometheusIntegration:
         servo.logging.set_level("DEBUG")
         # Create a tuning instance
         canary_opt = await servo.connectors.kubernetes.CanaryOptimization.create(
-            deployment_or_rollout_config=tuning_config.deployments[0],
+            workload_config=tuning_config.deployments[0],
             timeout=tuning_config.timeout,
         )
         async with canary_opt.temporary_tuning_pod() as _:
@@ -765,7 +766,7 @@ class TestPrometheusIntegration:
         servo.logging.set_level("DEBUG")
         # Create a tuning instance
         canary_opt = await servo.connectors.kubernetes.CanaryOptimization.create(
-            deployment_or_rollout_config=tuning_config.deployments[0],
+            workload_config=tuning_config.deployments[0],
             timeout=tuning_config.timeout,
         )
 

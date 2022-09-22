@@ -33,6 +33,7 @@ import tests.helpers
 import servo
 import servo.cli
 import servo.connectors.kubernetes
+from servo.connectors.kubernetes_helpers import DeploymentHelper
 import servo.connectors.opsani_dev
 import servo.connectors.prometheus
 
@@ -407,12 +408,12 @@ class TestNoTuningIntegration:
             # Connect the checks to our port forward interface
             no_tuning_checks.config.prometheus_base_url = prometheus_base_url
 
-            deployment = await servo.connectors.kubernetes.Deployment.read(
-                no_tuning_checks.config.deployment, no_tuning_checks.config.namespace
+            deployment = await DeploymentHelper.read(
+                no_tuning_checks.config.workload_name, no_tuning_checks.config.namespace
             )
             assert (
                 deployment
-            ), f"failed loading deployment '{no_tuning_checks.config.deployment}' in namespace '{no_tuning_checks.config.namespace}'"
+            ), f"failed loading deployment '{no_tuning_checks.config.workload_name}' in namespace '{no_tuning_checks.config.namespace}'"
 
             prometheus_config = (
                 servo.connectors.prometheus.PrometheusConfiguration.generate(
@@ -882,12 +883,12 @@ class TestServiceMultiport:
                 # Connect the checks to our port forward interface
                 checks.config.prometheus_base_url = prometheus_base_url
 
-                deployment = await servo.connectors.kubernetes.Deployment.read(
-                    checks.config.deployment, checks.config.namespace
+                deployment = await DeploymentHelper.read(
+                    checks.config.workload_name, checks.config.namespace
                 )
                 assert (
                     deployment
-                ), f"failed loading deployment '{checks.config.deployment}' in namespace '{checks.config.namespace}'"
+                ), f"failed loading deployment '{checks.config.workload_name}' in namespace '{checks.config.namespace}'"
 
                 prometheus_config = (
                     servo.connectors.prometheus.PrometheusConfiguration.generate(
@@ -1183,12 +1184,12 @@ class TestServiceMultiport:
                 # Connect the checks to our port forward interface
                 checks.config.prometheus_base_url = prometheus_base_url
 
-                deployment = await servo.connectors.kubernetes.Deployment.read(
-                    checks.config.deployment, checks.config.namespace
+                deployment = await DeploymentHelper.read(
+                    checks.config.workload_name, checks.config.namespace
                 )
                 assert (
                     deployment
-                ), f"failed loading deployment '{checks.config.deployment}' in namespace '{checks.config.namespace}'"
+                ), f"failed loading deployment '{checks.config.workload_name}' in namespace '{checks.config.namespace}'"
 
                 async def loop_checks() -> None:
                     while True:
