@@ -103,8 +103,8 @@ async def _wait_for_scrape(namespace: str, deployment: V1Deployment):
             loguru.logger.info("Coninuing wait for scrape")
 
 
-# TODO group minikube fixture into file scope when xdist supports fixture scoping
-@pytest.mark.minikube_profile.with_args("metrics-server")
+@pytest.mark.integration
+@pytest.mark.usefixtures("kubernetes_asyncio_config")
 @pytest.mark.applymanifests("../manifests", files=["fiber-http-opsani-dev.yaml"])
 async def test_periodic_measure(
     kubeconfig: str,
@@ -139,7 +139,8 @@ async def test_periodic_measure(
         assert m in datapoints_dicts
 
 
-@pytest.mark.minikube_profile.with_args("metrics-server")
+@pytest.mark.integration
+@pytest.mark.usefixtures("kubernetes_asyncio_config")
 @pytest.mark.applymanifests(
     "../manifests", files=["fiber-http-opsani-dev_no_resource_limits.yaml"]
 )
@@ -177,7 +178,8 @@ async def test_periodic_measure_no_limits(
             assert m not in datapoints_dicts
 
 
-@pytest.mark.minikube_profile.with_args("metrics-server")
+@pytest.mark.integration
+@pytest.mark.usefixtures("kubernetes_asyncio_config")
 @pytest.mark.applymanifests(
     "../manifests", files=["fiber-http-opsani-dev_no_resource_requests.yaml"]
 )
@@ -253,7 +255,8 @@ def test_append_data_point():
     }
 
 
-@pytest.mark.minikube_profile.with_args("metrics-server")
+@pytest.mark.integration
+@pytest.mark.usefixtures("kubernetes_asyncio_config")
 @pytest.mark.applymanifests("../manifests", files=["fiber-http-opsani-dev.yaml"])
 # async def test_periodic_measure(kubeconfig: str, minikube: str, kube: kubetest.client.TestClient, servo_runner: ServoRunner):
 async def test_get_target_resource(
@@ -274,7 +277,8 @@ async def test_get_target_resource(
     )
 
 
-@pytest.mark.minikube_profile.with_args("metrics-server")
+@pytest.mark.integration
+@pytest.mark.usefixtures("kubernetes_asyncio_config")
 @pytest.mark.applymanifests("../manifests", files=["fiber-http-opsani-dev.yaml"])
 async def test_get_target_resource_container(
     kubeconfig: str, kubecontext: str, minikube: str, kube: kubetest.client.TestClient
@@ -304,7 +308,6 @@ def test_name_to_metric():
 
 @pytest.mark.integration
 @pytest.mark.usefixtures("kubernetes_asyncio_config")
-# @pytest.mark.applymanifests("../manifests/kube_metrics", files=["role.yaml", "role-binding.yaml"])
 @pytest.mark.applymanifests("../manifests", files=["fiber-http-opsani-dev.yaml"])
 class TestKubeMetricsConnectorIntegration:
     @pytest.fixture
