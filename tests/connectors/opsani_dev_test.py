@@ -33,7 +33,7 @@ import tests.helpers
 import servo
 import servo.cli
 import servo.connectors.kubernetes
-from servo.connectors.kubernetes_helpers import DeploymentHelper
+from servo.connectors.kubernetes_helpers import DeploymentHelper, ServiceHelper
 import servo.connectors.opsani_dev
 import servo.connectors.prometheus
 
@@ -229,7 +229,7 @@ class TestIntegration:
             self, resource: str, checks: servo.connectors.opsani_dev.OpsaniDevChecks
         ) -> None:
             result = await checks.run_one(id=f"check_opsani_dev_kubernetes_{resource}")
-            assert result.success
+            assert result.success, f"Expected success but got: {result}"
 
         async def test_target_container_resources_within_limits(
             self,
@@ -273,31 +273,31 @@ class TestIntegration:
             self, kube, checks: servo.connectors.opsani_dev.OpsaniDevChecks
         ) -> None:
             result = await checks.run_one(id=f"check_prometheus_config_map")
-            assert result.success
+            assert result.success, f"Expected success but got: {result}"
 
         async def test_prometheus_sidecar_exists(
             self, kube, checks: servo.connectors.opsani_dev.OpsaniDevChecks
         ) -> None:
             result = await checks.run_one(id=f"check_prometheus_sidecar_exists")
-            assert result.success
+            assert result.success, f"Expected success but got: {result}"
 
         async def test_prometheus_sidecar_is_ready(
             self, kube, checks: servo.connectors.opsani_dev.OpsaniDevChecks
         ) -> None:
             result = await checks.run_one(id=f"check_prometheus_sidecar_is_ready")
-            assert result.success
+            assert result.success, f"Expected success but got: {result}"
 
         async def test_check_prometheus_restart_count(
             self, kube, checks: servo.connectors.opsani_dev.OpsaniDevChecks
         ) -> None:
             result = await checks.run_one(id=f"check_prometheus_restart_count")
-            assert result.success
+            assert result.success, f"Expected success but got: {result}"
 
         async def test_check_prometheus_container_port(
             self, kube, checks: servo.connectors.opsani_dev.OpsaniDevChecks
         ) -> None:
             result = await checks.run_one(id=f"check_prometheus_container_port")
-            assert result.success
+            assert result.success, f"Expected success but got: {result}"
 
         @pytest.fixture
         def go_memstats_gc_sys_bytes(self) -> dict:
@@ -597,12 +597,11 @@ class TestNoTuningIntegration:
             )
 
             # Update the port to point to the sidecar
-            service = await servo.connectors.kubernetes.Service.read(
+            service = await ServiceHelper.read(
                 "fiber-http", no_tuning_checks.config.namespace
             )
-            service.ports[0].target_port = envoy_proxy_port
-            async with change_to_resource(service):
-                await service.patch()
+            service.spec.ports[0].target_port = envoy_proxy_port
+            await ServiceHelper.patch(service)
             await wait_for_check_to_pass(
                 functools.partial(no_tuning_checks.run_one, id=f"check_service_proxy")
             )
@@ -730,25 +729,27 @@ class TestResourceRequirementsIntegration:
 class TestServiceMultiport:
     @pytest.fixture
     async def multiport_service(
-        self, kube, checks: servo.connectors.opsani_dev.OpsaniDevChecks
+        self,
+        kube: kubetest.client.TestClient,
+        checks: servo.connectors.opsani_dev.OpsaniDevChecks,
     ) -> None:
         kube.wait_for_registered()
-        service = await servo.connectors.kubernetes.Service.read(
+        service = await ServiceHelper.read(
             checks.config.service, checks.config.namespace
         )
         assert service
-        assert len(service.ports) == 1
-        assert service.find_port("http")
+        assert len(service.spec.ports) == 1
+        assert ServiceHelper.find_port(service, "http")
 
         # Add a port
         port = kubernetes_asyncio.client.V1ServicePort(name="elite", port=31337)
-        service.obj.spec.ports.append(port)
+        service.spec.ports.append(port)
 
-        await service.patch()
+        service = await ServiceHelper.patch(service)
 
-        assert len(service.ports) == 2
-        assert service.find_port("http")
-        assert service.find_port("elite")
+        assert len(service.spec.ports) == 2
+        assert ServiceHelper.find_port(service, "http")
+        assert ServiceHelper.find_port(service, "elite")
 
         return service
 
@@ -774,7 +775,7 @@ class TestServiceMultiport:
     ) -> None:
         checks.config.port = "elite"
         result = await checks.run_one(id=f"check_opsani_dev_kubernetes_service_port")
-        assert result.success
+        assert result.success, f"Expected success but got: {result}"
         assert result.message == "Service Port: elite 31337:31337/TCP"
 
     async def test_resolve_port_by_number(
@@ -785,7 +786,7 @@ class TestServiceMultiport:
     ) -> None:
         checks.config.port = 80
         result = await checks.run_one(id=f"check_opsani_dev_kubernetes_service_port")
-        assert result.success
+        assert result.success, f"Expected success but got: {result}"
         assert result.message == "Service Port: http 80:8480/TCP"
 
     async def test_cannot_resolve_port_by_name(
@@ -1270,12 +1271,12 @@ class TestCheckHalting:
             # Connect the checks to our port forward interface
             checks.config.prometheus_base_url = prometheus_base_url
 
-            deployment = await servo.connectors.kubernetes.Deployment.read(
-                checks.config.deployment, checks.config.namespace
+            deployment = await DeploymentHelper.read(
+                checks.config.workload_name, checks.config.namespace
             )
             assert (
                 deployment
-            ), f"failed loading deployment '{checks.config.deployment}' in namespace '{checks.config.namespace}'"
+            ), f"failed loading deployment '{checks.config.workload_name}' in namespace '{checks.config.namespace}'"
 
             async def loop_checks() -> None:
                 while True:
@@ -1322,12 +1323,12 @@ class TestCheckHalting:
             # Connect the checks to our port forward interface
             checks.config.prometheus_base_url = prometheus_base_url
 
-            deployment = await servo.connectors.kubernetes.Deployment.read(
-                checks.config.deployment, checks.config.namespace
+            deployment = await DeploymentHelper.read(
+                checks.config.workload_name, checks.config.namespace
             )
             assert (
                 deployment
-            ), f"failed loading deployment '{checks.config.deployment}' in namespace '{checks.config.namespace}'"
+            ), f"failed loading deployment '{checks.config.workload_name}' in namespace '{checks.config.namespace}'"
 
             async def loop_checks() -> None:
                 while True:
@@ -1514,63 +1515,39 @@ async def add_annotations_to_podspec_of_deployment(
     servo.logger.info(
         f"adding annotations {annotations} to PodSpec of Deployment '{deployment.name}'"
     )
-    existing_annotations = deployment.pod_template_spec.metadata.annotations or {}
+    existing_annotations = deployment.spec.template.spec.metadata.annotations or {}
     existing_annotations.update(annotations)
-    deployment.pod_template_spec.metadata.annotations = existing_annotations
-    await deployment.patch()
+    deployment.spec.template.spec.metadata.annotations = existing_annotations
+    await DeploymentHelper.patch(deployment)
 
 
 async def add_labels_to_podspec_of_deployment(deployment, labels: List[str]) -> None:
     servo.logger.info(
         f"adding labels {labels} to PodSpec of Deployment '{deployment.name}'"
     )
-    existing_labels = deployment.pod_template_spec.metadata.labels or {}
+    existing_labels = deployment.spec.template.spec.metadata.labels or {}
     existing_labels.update(labels)
-    deployment.pod_template_spec.metadata.labels = existing_labels
-    await deployment.patch()
+    deployment.spec.template.spec.metadata.labels = existing_labels
+    await DeploymentHelper.patch(deployment)
 
 
 @contextlib.asynccontextmanager
-async def change_to_resource(resource: Union[V1Deployment, V1Service, V1Pod]):
-    # TODO
-    if hasattr(resource, "observed_generation"):
-        observed_generation_prepatch = resource.observed_generation
-    metadata = resource.obj.metadata
+async def change_to_resource(resource: V1Deployment):
+    metadata = resource.metadata
+    # allow the resource to be changed
+    yield
 
-    if isinstance(resource, servo.connectors.kubernetes.Deployment):
-        async with resource.rollout():
-            yield
-    else:
-        # allow the resource to be changed
-        yield
-
-    await resource.refresh()
+    resource = await DeploymentHelper.read(
+        resource.metadata.name, resource.metadata.namespace
+    )
 
     # early exit if nothing changed
-    if resource.obj.metadata.resource_version == metadata.resource_version:
+    if resource.metadata.resource_version == metadata.resource_version:
         servo.logger.debug(f"exiting early: metadata resource version has not changed")
         return
 
-    if hasattr(resource, "observed_generation"):
-        while observed_generation_prepatch == resource.observed_generation:
-            await resource.refresh()
-
     # wait for the change to roll out
-    if isinstance(
-        resource,
-        (
-            servo.connectors.kubernetes.Deployment,
-            servo.connectors.kubernetes.Rollout,
-            servo.connectors.kubernetes.Pod,
-        ),
-    ):
-        await resource.wait_until_ready()
-    elif isinstance(resource, servo.connectors.kubernetes.Service):
-        pass
-    else:
-        servo.logger.warning(
-            f"no change observation strategy for Kubernetes resource of type `{resource.__class__.__name__}`"
-        )
+    await asyncio.wait_for(DeploymentHelper.wait_until_ready(resource), timeout=300)
 
 
 class LoadGenerator(pydantic.BaseModel):
@@ -1713,11 +1690,11 @@ async def wait_for_check_to_pass(
 async def _remedy_check(
     id: str,
     *,
-    config,
-    deployment,
+    config: servo.connectors.opsani_dev.OpsaniDevConfiguration,
+    deployment: V1Deployment,
     kube_port_forward,
     load_generator,
-    checks,
+    checks: servo.connectors.opsani_dev.OpsaniDevChecks,
 ) -> None:
     envoy_proxy_port = servo.connectors.opsani_dev.ENVOY_SIDECAR_DEFAULT_PORT
     servo.logger.warning(f"Remedying failing check '{id}'...")
@@ -1756,10 +1733,13 @@ async def _remedy_check(
         servo.logger.critical("Step 3 - Inject Envoy sidecar container")
         async with change_to_resource(deployment):
             servo.logger.info(
-                f"injecting Envoy sidecar to Deployment {deployment.name} PodSpec"
+                f"injecting Envoy sidecar to Deployment {deployment.metadata.name} PodSpec"
             )
-            await deployment.inject_sidecar(
-                "opsani-envoy", "opsani/envoy-proxy:latest", service="fiber-http"
+            await DeploymentHelper.inject_sidecar(
+                deployment,
+                "opsani-envoy",
+                "opsani/envoy-proxy:latest",
+                service="fiber-http",
             )
 
     elif id in {
@@ -1796,12 +1776,9 @@ async def _remedy_check(
         servo.logger.critical("Step 6 - Proxy Service traffic through Envoy")
 
         # Update the port to point to the sidecar
-        service = await servo.connectors.kubernetes.Service.read(
-            "fiber-http", config.namespace
-        )
-        service.ports[0].target_port = envoy_proxy_port
-        async with change_to_resource(service):
-            await service.patch()
+        service = await ServiceHelper.read("fiber-http", config.namespace)
+        service.spec.ports[0].target_port = envoy_proxy_port
+        await ServiceHelper.patch(service)
 
     elif id == "check_tuning_is_running":
         servo.logger.critical("Step 7 - Bring tuning Pod online")

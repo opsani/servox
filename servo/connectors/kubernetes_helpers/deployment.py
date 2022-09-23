@@ -51,14 +51,17 @@ class DeploymentHelper(BaseKubernetesWorkloadHelper):
             "content-type": "application/strategic-merge-patch+json"
         },
     ) -> V1Deployment:
+        name = workload.metadata.name
+        namespace = workload.metadata.namespace
+        logger.debug(f'patching deployment "{name}" in namespace "{namespace}"')
         async with cls.api_client() as api_client:
             # TODO: move up to baser class helper method
             for k, v in (api_client_default_headers or {}).items():
                 api_client.api_client.set_default_header(k, v)
 
             return await api_client.patch_namespaced_deployment(
-                name=workload.metadata.name,
-                namespace=workload.metadata.namespace,
+                name=name,
+                namespace=namespace,
                 body=workload,
             )
 
@@ -128,13 +131,13 @@ class DeploymentHelper(BaseKubernetesWorkloadHelper):
 
     @classmethod
     async def get_latest_replicaset(cls, workload: V1Deployment) -> V1ReplicaSet:
-        rs_list = ReplicasetHelper.list_replicasets_with_labels(
+        rs_list = await ReplicasetHelper.list_replicasets_with_labels(
             workload.metadata.namespace, workload.spec.selector.match_labels
         )
         # Verify all returned RS have this deployment as an owner
         rs_list = [
             rs
-            for rs in rs_list.items
+            for rs in rs_list
             if rs.metadata.owner_references
             and any(
                 ownRef.kind == "Deployment" and ownRef.uid == workload.metadata.uid

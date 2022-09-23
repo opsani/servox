@@ -15,9 +15,31 @@ class ServiceHelper:
 
     @classmethod
     async def read(cls, name: str, namespace: str) -> V1Service:
-        logger.debug(f'reading service "{name}"')
+        logger.debug(f'reading service "{name}" in namespace {namespace}')
         async with cls.api_client() as api:
             return await api.read_namespaced_service(name=name, namespace=namespace)
+
+    @classmethod
+    async def patch(
+        cls,
+        workload: V1Service,
+        api_client_default_headers: dict[str, str] = {
+            "content-type": "application/strategic-merge-patch+json"
+        },
+    ) -> V1Service:
+        name = workload.metadata.name
+        namespace = workload.metadata.namespace
+        logger.debug(f'patching service "{name}" in namespace "{namespace}"')
+        async with cls.api_client() as api_client:
+            # TODO: move up to baser class helper method
+            for k, v in (api_client_default_headers or {}).items():
+                api_client.api_client.set_default_header(k, v)
+
+            return await api_client.patch_namespaced_service(
+                name=name,
+                namespace=namespace,
+                body=workload,
+            )
 
     @classmethod
     def find_port(

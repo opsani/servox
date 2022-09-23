@@ -38,14 +38,17 @@ class StatefulSetHelper(BaseKubernetesWorkloadHelper):
             "content-type": "application/strategic-merge-patch+json"
         },
     ) -> V1StatefulSet:
+        name = workload.metadata.name
+        namespace = workload.metadata.namespace
+        logger.debug(f'patching statefulset "{name}" in namespace "{namespace}"')
         async with cls.api_client() as api_client:
             # TODO: move up to baser class helper method
             for k, v in (api_client_default_headers or {}).items():
                 api_client.api_client.set_default_header(k, v)
 
             return await api_client.patch_namespaced_stateful_set(
-                name=workload.metadata.name,
-                namespace=workload.metadata.namespace,
+                name=name,
+                namespace=namespace,
                 body=workload,
             )
 

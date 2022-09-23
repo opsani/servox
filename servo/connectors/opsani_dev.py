@@ -629,7 +629,7 @@ class OpsaniDevChecks(servo.BaseChecks):
         if pod is None:
             raise servo.checks.CheckError(f"no servo pod was found")
 
-        if not await PodHelper.is_ready(pod):
+        if not PodHelper.is_ready(pod):
             raise servo.checks.CheckError(f"pod '{pod.metadata.name}' is not ready")
 
     @servo.checks.warn("Prometheus sidecar is stable")

@@ -13,7 +13,11 @@ import pytest
 
 import servo
 import servo.connectors.kubernetes
-from servo.connectors.kubernetes_helpers import DeploymentHelper, ServiceHelper
+from servo.connectors.kubernetes_helpers import (
+    get_containers,
+    DeploymentHelper,
+    ServiceHelper,
+)
 import tests.helpers
 from servo.types.settings import _is_step_aligned, _suggest_step_aligned_values
 
@@ -147,7 +151,7 @@ class TestSidecar:
         )
 
         deployment_ = await DeploymentHelper.read("fiber-http", kube.namespace)
-        assert len(deployment_.containers) == 2
+        assert len(get_containers(deployment_)) == 2
 
     async def test_inject_sidecar_port_conflict(self, kube: kubetest.client.TestClient):
         deployment = await DeploymentHelper.read("fiber-http", kube.namespace)
@@ -214,6 +218,7 @@ class TestSidecar:
                         "fiber-http", kube.namespace
                     )
 
+        deployment = await DeploymentHelper.read("fiber-http", kube.namespace)
         assert len(deployment.spec.template.spec.containers) == 1
         await DeploymentHelper.inject_sidecar(
             deployment,

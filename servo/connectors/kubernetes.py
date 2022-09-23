@@ -964,7 +964,7 @@ class CanaryOptimization(BaseOptimization):
                 raise
 
             self.logger.info(
-                f"Ignoring delete tuning Pod '{tuning_pod.metadata.name}' from namespace '{tuning_pod.metadata.namespace}' (pod not found)."
+                f"Ignoring delete tuning Pod '{self.tuning_pod_name}' from namespace '{self.namespace}' (pod not found)."
             )
             self.tuning_pod = None
             self.tuning_container = None
@@ -1375,7 +1375,7 @@ class CanaryOptimization(BaseOptimization):
         ]
 
     async def destroy(self, error: Optional[Exception] = None) -> None:
-        if not await self.delete_tuning_pod(raise_if_not_found=False) is None:
+        if await self.delete_tuning_pod(raise_if_not_found=False) is None:
             self.logger.debug(f"no tuning pod exists, ignoring destroy")
             return
 
