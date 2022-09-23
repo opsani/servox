@@ -126,7 +126,7 @@ class DeploymentHelper(BaseKubernetesWorkloadHelper):
         # NOTE Can skip checking owner references due to Deployment setting
         # pod-template-hash on its ReplicaSets
         return await PodHelper.list_pods_with_labels(
-            workload.metadata.namespace, latest_replicaset.spec.selector.matchlabels
+            workload.metadata.namespace, latest_replicaset.spec.selector.match_labels
         )
 
     @classmethod
