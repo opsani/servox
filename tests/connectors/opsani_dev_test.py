@@ -1515,9 +1515,9 @@ async def add_annotations_to_podspec_of_deployment(
     servo.logger.info(
         f"adding annotations {annotations} to PodSpec of Deployment '{deployment.metadata.name}'"
     )
-    existing_annotations = deployment.spec.template.spec.metadata.annotations or {}
+    existing_annotations = deployment.spec.template.metadata.annotations or {}
     existing_annotations.update(annotations)
-    deployment.spec.template.spec.metadata.annotations = existing_annotations
+    deployment.spec.template.metadata.annotations = existing_annotations
     await DeploymentHelper.patch(deployment)
 
 
@@ -1527,9 +1527,9 @@ async def add_labels_to_podspec_of_deployment(
     servo.logger.info(
         f"adding labels {labels} to PodSpec of Deployment '{deployment.metadata.name}'"
     )
-    existing_labels = deployment.spec.template.spec.metadata.labels or {}
+    existing_labels = deployment.spec.template.metadata.labels or {}
     existing_labels.update(labels)
-    deployment.spec.template.spec.metadata.labels = existing_labels
+    deployment.spec.template.metadata.labels = existing_labels
     await DeploymentHelper.patch(deployment)
 
 
