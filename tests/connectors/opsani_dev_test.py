@@ -1510,10 +1510,10 @@ async def assert_check(
 
 # TODO: Move these into library functions. Do we want replace/merge versions?
 async def add_annotations_to_podspec_of_deployment(
-    deployment, annotations: Dict[str, str]
+    deployment: V1Deployment, annotations: Dict[str, str]
 ) -> None:
     servo.logger.info(
-        f"adding annotations {annotations} to PodSpec of Deployment '{deployment.name}'"
+        f"adding annotations {annotations} to PodSpec of Deployment '{deployment.metadata.name}'"
     )
     existing_annotations = deployment.spec.template.spec.metadata.annotations or {}
     existing_annotations.update(annotations)
@@ -1521,9 +1521,11 @@ async def add_annotations_to_podspec_of_deployment(
     await DeploymentHelper.patch(deployment)
 
 
-async def add_labels_to_podspec_of_deployment(deployment, labels: List[str]) -> None:
+async def add_labels_to_podspec_of_deployment(
+    deployment: V1Deployment, labels: List[str]
+) -> None:
     servo.logger.info(
-        f"adding labels {labels} to PodSpec of Deployment '{deployment.name}'"
+        f"adding labels {labels} to PodSpec of Deployment '{deployment.metadata.name}'"
     )
     existing_labels = deployment.spec.template.spec.metadata.labels or {}
     existing_labels.update(labels)

@@ -1607,9 +1607,9 @@ class TestKubernetesConnectorIntegration:
             description = await connector.adjust([adjustment])
             debug(description)
 
-        deployment = await Deployment.read("fiber-http", kube.namespace)
+        deployment = await DeploymentHelper.read("fiber-http", kube.namespace)
         # check deployment was not scaled to 0 replicas (i.e., the outer-level 'shutdown' was overridden)
-        assert deployment.obj.spec.replicas != 0
+        assert deployment.spec.replicas != 0
 
     async def test_adjust_tuning_cpu_out_of_range(self, tuning_config):
         connector = KubernetesConnector(config=tuning_config)
@@ -2615,7 +2615,7 @@ class TestSidecarInjection:
         )
 
         # Examine new sidecar
-        deployment = await DeploymentHelper.read(deployment)
+        deployment = await DeploymentHelper.read("fiber-http", namespace)
         containers = get_containers(deployment)
         assert len(containers) == 2, "expected an injected container"
         sidecar_container = containers[1]
@@ -2701,7 +2701,7 @@ class TestSidecarInjection:
 
         # Examine new sidecar (if success is expected)
         if error is None:
-            deployment = await DeploymentHelper.read(deployment)
+            deployment = await DeploymentHelper.read("fiber-http", namespace)
             containers = get_containers(deployment)
             assert len(containers) == 2, "expected an injected container"
             sidecar_container = containers[1]
@@ -2779,7 +2779,7 @@ class TestSidecarInjection:
         )
 
         # Examine new sidecar
-        deployment = await DeploymentHelper.read(deployment)
+        deployment = await DeploymentHelper.read("fiber-http", namespace)
         containers = get_containers(deployment)
         assert len(containers) == 2, "expected an injected container"
         sidecar_container = containers[1]
