@@ -82,9 +82,7 @@ class BaseKubernetesWorkloadHelper(BaseKubernetesHelper):
             replica_counts.append(available_replicas)
         if replica_counts.count(desired_replicas) == len(replica_counts):
             # We are done: all the counts match. Stop the watch and return
-            logger.success(
-                f"adjustments to {workload.kind} '{workload.metadata.name}' rolled out successfully"
-            )
+            logger.debug(f"{workload.kind} '{workload.metadata.name}' is ready")
             return True
 
         logger.debug("Replica counts out of alignment, returning is_ready=false")

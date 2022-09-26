@@ -739,6 +739,9 @@ class SaturationOptimization(BaseOptimization):
                 f"Timed out waiting for {self.workload.__class__.__name__} to become ready..."
             )
             await self.raise_for_status()
+        servo.logger.success(
+            f"adjustments to {self.workload.kind} '{self.workload.metadata.name}' rolled out successfully"
+        )
 
     async def is_ready(self) -> bool:
         self.workload = await self.workload_helper.read(

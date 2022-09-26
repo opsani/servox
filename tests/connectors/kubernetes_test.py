@@ -1838,7 +1838,7 @@ class TestKubernetesConnectorIntegrationUnreadyCmd:
             (
                 "if [ $(cat /sys/fs/cgroup/memory/memory.limit_in_bytes) -gt 201326592 ]; "
                 "then /bin/fiber-http; "
-                "else (/bin/fiber-http &); sleep 10s; kill $(jobs -p '%/bin/fiber-http'); "
+                "else (/bin/fiber-http &); sleep 10s; "
                 "fi"
             ),
         ]
