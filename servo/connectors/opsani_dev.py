@@ -823,7 +823,9 @@ class OpsaniDevChecks(servo.BaseChecks):
                 pods_without_sidecars.append(pod)
 
         if pods_without_sidecars:
-            desc = ", ".join(map(operator.attrgetter("name"), pods_without_sidecars))
+            desc = ", ".join(
+                map(operator.attrgetter("metadata.name"), pods_without_sidecars)
+            )
             raise servo.checks.CheckError(
                 f"pods '{desc}' do not have envoy sidecar container ('opsani-envoy')"
             )
@@ -906,7 +908,7 @@ class OpsaniDevChecks(servo.BaseChecks):
         patch_json = json.dumps(patch, indent=None)
         command = f"kubectl --namespace {self.config.namespace} patch service {self.config.service} -p '{patch_json}'"
         raise servo.checks.CheckError(
-            f"service '{service.name}' is not routing traffic through Envoy sidecar on port {proxy_service_port}",
+            f"service '{service.metadata.name}' is not routing traffic through Envoy sidecar on port {proxy_service_port}",
             hint=f"Update target port via: `{command}`",
             remedy=lambda: _stream_remedy_command(command),
         )

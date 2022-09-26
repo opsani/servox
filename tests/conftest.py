@@ -736,11 +736,16 @@ async def kubectl_ports_forwarded(
 
     await event.wait()
 
-    # Check if the sockets are open
+    # Check the sockets can be connected to
+    # TODO/FIXME add fault tolerance for error upgrading connection: unable to upgrade connection: pod does not exist
     for local_port, _ in ports:
         a_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        if a_socket.connect_ex(("localhost", local_port)) != 0:
-            raise RuntimeError(f"port forwarding failed: port {local_port} is not open")
+        if (h_errno := a_socket.connect_ex(("localhost", local_port))) != 0:
+            if task.done():
+                debug(task.result())
+            raise RuntimeError(
+                f"port forwarding failed: port {local_port} connect failed (errno {h_errno})"
+            )
 
     try:
         if len(ports) == 1:

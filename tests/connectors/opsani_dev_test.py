@@ -991,7 +991,7 @@ class TestServiceMultiport:
                 )
                 async with change_to_resource(deployment):
                     servo.logger.info(
-                        f"injecting Envoy sidecar to Deployment {deployment.name} PodSpec"
+                        f"injecting Envoy sidecar to Deployment {deployment.metadata.name} PodSpec"
                     )
                     await DeploymentHelper.inject_sidecar(
                         deployment,
