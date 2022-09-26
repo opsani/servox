@@ -779,7 +779,7 @@ class OpsaniDevChecks(servo.BaseChecks):
                 remedy=lambda: _stream_remedy_command(command),
             )
 
-    @servo.checks.check("{self.controller_type_name} has Envoy sidecar container")
+    @servo.checks.check("{self.config.workload_kind} has Envoy sidecar container")
     async def check_controller_envoy_sidecars(self) -> None:
         controller = await self.workload_helper.read(
             self.config.workload_name, self.config.namespace
@@ -989,21 +989,6 @@ class OpsaniDevChecks(servo.BaseChecks):
             return f"pods/{pod_name}"
         else:
             return "deployment/servo"
-
-
-class OpsaniDevTodoChecks:
-    """Opsani dev checks against standard kubernetes Deployments"""
-
-    @property
-    def controller_type_name(self) -> str:
-        return "Deployment"
-
-    @property
-    def config_controller_name(self) -> str:
-        return self.config.deployment
-
-    async def _get_port_forward_target(self) -> str:
-        return f"deploy/{self.config.deployment}"
 
 
 @servo.metadata(
