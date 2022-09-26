@@ -453,6 +453,9 @@ class TestNoTuningIntegration:
             )
 
             # Fill in the missing annotations
+            deployment = await DeploymentHelper.read(
+                no_tuning_checks.config.workload_name, no_tuning_checks.config.namespace
+            )
             async with change_to_resource(deployment):
                 await add_annotations_to_podspec_of_deployment(
                     deployment,
@@ -475,6 +478,9 @@ class TestNoTuningIntegration:
                 ),
             )
 
+            deployment = await DeploymentHelper.read(
+                no_tuning_checks.config.workload_name, no_tuning_checks.config.namespace
+            )
             async with change_to_resource(deployment):
                 await add_labels_to_podspec_of_deployment(
                     deployment,
@@ -498,11 +504,15 @@ class TestNoTuningIntegration:
             )
 
             # servo.logging.set_level("DEBUG")
+            deployment = await DeploymentHelper.read(
+                no_tuning_checks.config.workload_name, no_tuning_checks.config.namespace
+            )
             async with change_to_resource(deployment):
                 servo.logger.info(
-                    f"injecting Envoy sidecar to Deployment {deployment.name} PodSpec"
+                    f"injecting Envoy sidecar to Deployment {deployment.metadata.name} PodSpec"
                 )
-                await deployment.inject_sidecar(
+                await DeploymentHelper.inject_sidecar(
+                    deployment,
                     "opsani-envoy",
                     "opsani/envoy-proxy:latest",
                     service="fiber-http",
@@ -601,13 +611,13 @@ class TestNoTuningIntegration:
                 "fiber-http", no_tuning_checks.config.namespace
             )
             service.spec.ports[0].target_port = envoy_proxy_port
-            await ServiceHelper.patch(service)
+            service = await ServiceHelper.patch(service)
             await wait_for_check_to_pass(
                 functools.partial(no_tuning_checks.run_one, id=f"check_service_proxy")
             )
 
             # Send traffic through the service and verify it shows up in Envoy
-            port = service.ports[0].port
+            port = service.spec.ports[0].port
             servo.logger.info(
                 f"Sending test traffic through proxied Service fiber-http on port {port}"
             )
@@ -927,6 +937,9 @@ class TestServiceMultiport:
                 )
 
                 # Fill in the missing annotations
+                deployment = await DeploymentHelper.read(
+                    checks.config.workload_name, checks.config.namespace
+                )
                 async with change_to_resource(deployment):
                     await add_annotations_to_podspec_of_deployment(
                         deployment,
@@ -947,6 +960,9 @@ class TestServiceMultiport:
                     ),
                 )
 
+                deployment = await DeploymentHelper.read(
+                    checks.config.workload_name, checks.config.namespace
+                )
                 async with change_to_resource(deployment):
                     await add_labels_to_podspec_of_deployment(
                         deployment,
@@ -970,11 +986,15 @@ class TestServiceMultiport:
                 )
 
                 # servo.logging.set_level("DEBUG")
+                deployment = await DeploymentHelper.read(
+                    checks.config.workload_name, checks.config.namespace
+                )
                 async with change_to_resource(deployment):
                     servo.logger.info(
                         f"injecting Envoy sidecar to Deployment {deployment.name} PodSpec"
                     )
-                    await deployment.inject_sidecar(
+                    await DeploymentHelper.inject_sidecar(
+                        deployment,
                         "opsani-envoy",
                         "opsani/envoy-proxy:latest",
                         service="fiber-http",
@@ -1065,18 +1085,17 @@ class TestServiceMultiport:
                 )
 
                 # Update the port to point to the sidecar
-                service = await servo.connectors.kubernetes.Service.read(
+                service = await ServiceHelper.read(
                     "fiber-http", checks.config.namespace
                 )
-                service.ports[0].target_port = envoy_proxy_port
-                async with change_to_resource(service):
-                    await service.patch()
+                service.spec.ports[0].target_port = envoy_proxy_port
+                await ServiceHelper.patch(service)
                 await wait_for_check_to_pass(
                     functools.partial(checks.run_one, id=f"check_service_proxy")
                 )
 
                 # Send traffic through the service and verify it shows up in Envoy
-                port = service.ports[0].port
+                port = service.spec.ports[0].port
                 servo.logger.info(
                     f"Sending test traffic through proxied Service fiber-http on port {port}"
                 )
@@ -1202,6 +1221,9 @@ class TestServiceMultiport:
                             servo.logger.critical(
                                 f"Attempting to remedy failing check: {devtools.pformat(next_failure)}"
                             )  # , exception=next_failure.exception)
+                            deployment = await DeploymentHelper.read(
+                                checks.config.workload_name, checks.config.namespace
+                            )
                             await _remedy_check(
                                 next_failure.id,
                                 config=checks.config,
@@ -1221,6 +1243,14 @@ class TestServiceMultiport:
             )
 
 
+# TODO/FIXME The following tests are using the _remedy_check test helper instead of running the actual check remedies
+#   whose parallelization is what these tests were intended to cover. Ideally this is refactored to use the
+#   ChecksHelper.process_checks method but that requires refactoring of the check_controller_envoy_sidecars remedy.
+#   Said rememdy currently uses a kubectl exec workaround instead of implementing the remedy in code which makes it incompatible
+#   with being run by a servo not deployed inside of a kubernetes cluster. Further complicating matters is the fact
+#   that remedies are being phased out which is why said refactor has not been prioritized at this time
+#   https://github.com/opsani/servox/blob/74ff31117b26eb13039d1d4ad6b1d430426695bc/servo/checks.py#L743
+#   https://github.com/opsani/servox/blob/74ff31117b26eb13039d1d4ad6b1d430426695bc/servo/connectors/opsani_dev.py#L807
 @pytest.mark.applymanifests(
     "../manifests/opsani_dev",
     files=[
@@ -1285,7 +1315,9 @@ class TestCheckHalting:
                     servo.logger.info(f"{failures}")
                     if failures:
                         for failure in failures:
-
+                            deployment = await DeploymentHelper.read(
+                                checks.config.workload_name, checks.config.namespace
+                            )
                             await _remedy_check(
                                 failure.id,
                                 config=checks.config,
@@ -1304,58 +1336,59 @@ class TestCheckHalting:
             "🔥 Now witness the firepower of this fully ARMED and OPERATIONAL battle station!"
         )
 
-    @pytest.mark.namespace(create=False, name="test-checks")
-    @pytest.mark.xfail(
-        reason="Remedy flow does not complete in time with check halting"
-    )
-    async def test_checks_timeout_with_halt(
-        self,
-        kube,
-        kubetest_teardown,
-        checks: servo.connectors.opsani_dev.OpsaniDevChecks,
-        kube_port_forward: Callable[[str, int], AsyncContextManager[str]],
-        load_generator: Callable[[], "LoadGenerator"],
-        tmp_path: pathlib.Path,
-    ) -> None:
-        servo.logging.set_level("INFO")
+    # TODO/FIXME this test is effectively identical to test_install_wait until refactored to use ChecksHelper.process_checks
+    # @pytest.mark.namespace(create=False, name="test-checks")
+    # @pytest.mark.xfail(
+    #     reason="Remedy flow does not complete in time with check halting"
+    # )
+    # async def test_checks_timeout_with_halt(
+    #     self,
+    #     kube,
+    #     kubetest_teardown,
+    #     checks: servo.connectors.opsani_dev.OpsaniDevChecks,
+    #     kube_port_forward: Callable[[str, int], AsyncContextManager[str]],
+    #     load_generator: Callable[[], "LoadGenerator"],
+    #     tmp_path: pathlib.Path,
+    # ) -> None:
+    #     servo.logging.set_level("INFO")
 
-        async with kube_port_forward("deploy/servo", 9090) as prometheus_base_url:
-            # Connect the checks to our port forward interface
-            checks.config.prometheus_base_url = prometheus_base_url
+    #     async with kube_port_forward("deploy/servo", 9090) as prometheus_base_url:
+    #         # Connect the checks to our port forward interface
+    #         checks.config.prometheus_base_url = prometheus_base_url
 
-            deployment = await DeploymentHelper.read(
-                checks.config.workload_name, checks.config.namespace
-            )
-            assert (
-                deployment
-            ), f"failed loading deployment '{checks.config.workload_name}' in namespace '{checks.config.namespace}'"
+    #         deployment = await DeploymentHelper.read(
+    #             checks.config.workload_name, checks.config.namespace
+    #         )
+    #         assert (
+    #             deployment
+    #         ), f"failed loading deployment '{checks.config.workload_name}' in namespace '{checks.config.namespace}'"
 
-            async def loop_checks() -> None:
-                while True:
-                    results = await checks.run_all()
-                    failures = list(filter(lambda r: r.success is False, results))
-                    if failures:
-                        for failure in failures:
-                            await _remedy_check(
-                                failure.id,
-                                config=checks.config,
-                                deployment=deployment,
-                                kube_port_forward=kube_port_forward,
-                                load_generator=load_generator,
-                                checks=checks,
-                            )
+    #         async def loop_checks() -> None:
+    #             while True:
+    #                 results = await checks.run_all()
+    #                 failures = list(filter(lambda r: r.success is False, results))
+    #                 if failures:
+    #                     for failure in failures:
+    #                         await _remedy_check(
+    #                             failure.id,
+    #                             config=checks.config,
+    #                             deployment=deployment,
+    #                             kube_port_forward=kube_port_forward,
+    #                             load_generator=load_generator,
+    #                             checks=checks,
+    #                         )
 
-                            # Replicate check-halting behavior, loop breaking on each failure
-                            break
-                    else:
-                        break
+    #                         # Replicate check-halting behavior, loop breaking on each failure
+    #                         break
+    #                 else:
+    #                     break
 
-            await asyncio.wait_for(loop_checks(), timeout=75.0)
+    #         await asyncio.wait_for(loop_checks(), timeout=75.0)
 
-        servo.logger.success("🥷 Opsani Dev is now deployed.")
-        servo.logger.critical(
-            "🔥 Now witness the firepower of this fully ARMED and OPERATIONAL battle station!"
-        )
+    #     servo.logger.success("🥷 Opsani Dev is now deployed.")
+    #     servo.logger.critical(
+    #         "🔥 Now witness the firepower of this fully ARMED and OPERATIONAL battle station!"
+    #     )
 
 
 ##
