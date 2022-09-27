@@ -212,9 +212,7 @@ class DeploymentHelper(BaseKubernetesWorkloadHelper):
 
         # check for a port conflict
         container_ports: list[V1ContainerPort] = list(
-            itertools.chain(
-                *map(operator.attrgetter("ports"), get_containers(workload=workload))
-            )
+            itertools.chain(*[c.ports or [] for c in get_containers(workload=workload)])
         )
         if service_port in list(
             map(operator.attrgetter("container_port"), container_ports)
