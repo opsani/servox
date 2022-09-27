@@ -1797,8 +1797,9 @@ async def _remedy_check(
             "Step 5 - Check that traffic metrics are coming in from Envoy"
         )
         servo.logger.info(f"Sending test traffic to Envoy through deploy/fiber-http")
+        pods = await DeploymentHelper.get_latest_pods(deployment)
         async with kube_port_forward(
-            "deploy/fiber-http", envoy_proxy_port
+            pods[0].metadata.name, envoy_proxy_port
         ) as envoy_url:
             await load_generator(envoy_url).run_until(
                 wait_for_check_to_pass(
