@@ -523,7 +523,7 @@ class KubeMetricsConnector(servo.BaseConnector):
                 if (cpu_request := cpu_resources[ResourceRequirement.request]) is None:
                     cpu_request = cpu_resources[ResourceRequirement.limit]
 
-                cpu_resources = ContainerHelper.get_resource_requirements(
+                mem_resources = ContainerHelper.get_resource_requirements(
                     target_resource_tuning_pod_container, Resource.memory.value
                 )
                 if (mem_request := mem_resources[ResourceRequirement.request]) is None:
