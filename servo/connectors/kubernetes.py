@@ -1891,7 +1891,7 @@ class DeploymentConfiguration(BaseKubernetesConfiguration):
 class StatefulSetConfiguration(DeploymentConfiguration):
     @pydantic.validator("strategy")
     def validate_strategy(cls, v):
-        if v == OptimizationStrategy.default:
+        if v == OptimizationStrategy.canary:
             raise NotImplementedError(
                 "Canary mode is not currently supported on StatefulSets"
             )
