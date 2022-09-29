@@ -1329,7 +1329,7 @@ class TestCheckHalting:
                     else:
                         break
 
-            await asyncio.wait_for(loop_checks(), timeout=75.0)
+            await asyncio.wait_for(loop_checks(), timeout=120.0)
 
         servo.logger.success("🥷 Opsani Dev is now deployed.")
         servo.logger.critical(
