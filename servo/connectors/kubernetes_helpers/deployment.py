@@ -320,13 +320,32 @@ class DeploymentHelper(BaseKubernetesWorkloadHelper):
         )
 
         # add the sidecar to the Deployment
-        if index is None:
-            workload.spec.template.spec.containers.append(container)
-        else:
-            workload.spec.template.spec.containers.insert(index, container)
+        retries = 3
+        while retries > 0:
+            if index is None:
+                workload.spec.template.spec.containers.append(container)
+            else:
+                workload.spec.template.spec.containers.insert(index, container)
 
-        # patch the deployment
-        await cls.patch(workload=workload)
+            # patch the deployment
+            try:
+                await cls.patch(workload=workload)
+            except ApiException as ae:
+                retries -= 1
+                if retries == 0:
+                    logger.error("Failed to inject sidecar after 3 retries")
+                    raise
+
+                if ae.status == 409 and ae.reason == "Conflict":
+                    # If we have a conflict, just load the existing object and try again
+                    workload = await cls.read(
+                        workload.metadata.name, workload.metadata.namespace
+                    )
+                else:
+                    raise
+            else:
+                # No need to retry if no exception raised
+                break
 
 
 # Run a dummy instantiation to detect missing ABC implementations
