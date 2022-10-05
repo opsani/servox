@@ -15,7 +15,7 @@ from typing import Any, Dict, List, Optional, FrozenSet, Union
 import servo
 from servo.checks import CheckError
 from servo.connectors.kubernetes_helpers import (
-    dict_to_string,
+    dict_to_selector,
     find_container,
     get_containers,
     ContainerHelper,
@@ -174,7 +174,7 @@ class KubeMetricsChecks(servo.BaseChecks):
         async with kubernetes_asyncio.client.api_client.ApiClient() as api:
             cust_obj_api = kubernetes_asyncio.client.CustomObjectsApi(api_client=api)
             await cust_obj_api.list_namespaced_custom_object(
-                label_selector=dict_to_string(
+                label_selector=dict_to_selector(
                     target_resource.spec.selector.match_labels
                 ),
                 namespace=self.config.namespace,
@@ -363,7 +363,7 @@ class KubeMetricsConnector(servo.BaseConnector):
 
         async with kubernetes_asyncio.client.api_client.ApiClient() as api:
             cust_obj_api = kubernetes_asyncio.client.CustomObjectsApi(api_client=api)
-            label_selector_str = dict_to_string(
+            label_selector_str = dict_to_selector(
                 target_resource.spec.selector.match_labels
             )
             timestamp = datetime.now()

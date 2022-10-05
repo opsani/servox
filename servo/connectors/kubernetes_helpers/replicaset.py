@@ -9,7 +9,7 @@ from kubernetes_asyncio.client import (
 )
 
 from servo.logging import logger
-from .util import dict_to_string
+from .util import dict_to_selector
 
 
 class ReplicasetHelper:
@@ -31,7 +31,7 @@ class ReplicasetHelper:
     ) -> list[V1ReplicaSet]:
         async with cls.api_client() as api:
             rs_list: V1ReplicaSetList = await api.list_namespaced_replica_set(
-                namespace=namespace, label_selector=dict_to_string(match_labels)
+                namespace=namespace, label_selector=dict_to_selector(match_labels)
             )
             return rs_list.items or []
 

@@ -27,7 +27,7 @@ from servo.logging import logger
 from .base_workload import BaseKubernetesWorkloadHelper
 from .replicaset import ReplicasetHelper
 from .service import ServiceHelper
-from .util import dict_to_string, get_containers
+from .util import dict_to_selector, get_containers
 
 
 class DeploymentHelper(BaseKubernetesWorkloadHelper):
@@ -72,8 +72,8 @@ class DeploymentHelper(BaseKubernetesWorkloadHelper):
             metadata: V1ObjectMeta = workload.metadata
             watch_args = {"func": api.list_namespaced_deployment}
             watch_args["namespace"] = metadata.namespace
-            watch_args["label_selector"] = dict_to_string(metadata.labels)
-            watch_args["field_selector"] = dict_to_string(
+            watch_args["label_selector"] = dict_to_selector(metadata.labels)
+            watch_args["field_selector"] = dict_to_selector(
                 {"metadata.name": metadata.name}
             )
             yield watch_args

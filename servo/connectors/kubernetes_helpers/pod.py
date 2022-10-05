@@ -21,7 +21,7 @@ from servo.logging import logger
 from servo.types.api import Adjustment
 from servo.types.kubernetes import ContainerLogOptions
 from .base import BaseKubernetesHelper
-from .util import dict_to_string
+from .util import dict_to_selector
 
 # FIXME should be coming from servo.types.telemetry which does not exist (yet)
 ONE_MiB = 1048576
@@ -69,8 +69,8 @@ class PodHelper(BaseKubernetesHelper):
             metadata: V1ObjectMeta = pod.metadata
             watch_args = {"func": api.list_namespaced_pod}
             watch_args["namespace"] = metadata.namespace
-            watch_args["label_selector"] = dict_to_string(metadata.labels)
-            watch_args["field_selector"] = dict_to_string(
+            watch_args["label_selector"] = dict_to_selector(metadata.labels)
+            watch_args["field_selector"] = dict_to_selector(
                 {"metadata.name": metadata.name}
             )
             yield watch_args
@@ -104,7 +104,7 @@ class PodHelper(BaseKubernetesHelper):
     ) -> list[V1Pod]:
         async with cls.api_client() as api:
             pod_list: V1PodList = await api.list_namespaced_pod(
-                namespace=namespace, label_selector=dict_to_string(match_labels)
+                namespace=namespace, label_selector=dict_to_selector(match_labels)
             )
             return pod_list.items or []
 

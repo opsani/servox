@@ -11,7 +11,7 @@ from kubernetes_asyncio.client import V1Deployment
 import servo
 from servo.runner import ServoRunner
 
-from servo.connectors.kubernetes_helpers import dict_to_string, DeploymentHelper
+from servo.connectors.kubernetes_helpers import dict_to_selector, DeploymentHelper
 from servo.connectors.kube_metrics import *
 from servo.connectors.kube_metrics import (
     _append_data_point,
@@ -80,7 +80,7 @@ async def _wait_for_scrape(namespace: str, deployment: V1Deployment):
             await asyncio.sleep(1)
 
             result = await cust_obj_api.list_namespaced_custom_object(
-                label_selector=dict_to_string(deployment.spec.selector.match_labels),
+                label_selector=dict_to_selector(deployment.spec.selector.match_labels),
                 namespace=namespace,
                 **METRICS_CUSTOM_OJBECT_CONST_ARGS,
             )

@@ -9,7 +9,7 @@ from kubernetes_asyncio.client import (
 )
 
 
-def dict_to_string(mapping: Mapping[str, str]) -> str:
+def dict_to_selector(mapping: Mapping[str, str]) -> str:
     # https://stackoverflow.com/a/17888002
     return ",".join(["=".join((k, v)) for k, v in mapping.items()])
 
