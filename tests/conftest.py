@@ -27,6 +27,7 @@ import fastapi
 import httpx
 import kubetest
 import kubetest.client
+import kubetest.objects
 import pytest
 import typer.testing
 import uvloop
@@ -543,6 +544,12 @@ async def minikube(request, subprocess, kubeconfig: pathlib.Path) -> str:
             # NOTE no point in even trying to recover from this due to asyncio xdist parallelization coordination hell
             pytest.xfail("Minikube failed start")
 
+        if exit_code == 80 and any(
+            "Exiting due to GUEST_START" in line for line in stderr
+        ):
+            # https://github.com/kubernetes/minikube/issues/13621
+            pytest.xfail("Minikube failed start (CA)")
+
         raise RuntimeError(
             f"failed running minikube: exited with status code {exit_code}: {stderr}"
         )
@@ -667,11 +674,8 @@ def fastapi_app() -> fastapi.FastAPI:
 ForwardingTarget = Union[
     str,
     kubetest.objects.Pod,
-    servo.connectors.kubernetes.Pod,
     kubetest.objects.Deployment,
-    servo.connectors.kubernetes.Deployment,
     kubetest.objects.Service,
-    servo.connectors.kubernetes.Service,
 ]
 
 
@@ -709,18 +713,11 @@ async def kubectl_ports_forwarded(
     def _identifier_for_target(target: ForwardingTarget) -> str:
         if isinstance(target, str):
             return target
-        elif isinstance(
-            target, (kubetest.objects.Pod, servo.connectors.kubernetes.Pod)
-        ):
+        elif isinstance(target, kubetest.objects.Pod):
             return f"pod/{target.name}"
-        elif isinstance(
-            target,
-            (kubetest.objects.Deployment, servo.connectors.kubernetes.Deployment),
-        ):
+        elif isinstance(target, kubetest.objects.Deployment):
             return f"deployment/{target.name}"
-        elif isinstance(
-            target, (kubetest.objects.Service, servo.connectors.kubernetes.Service)
-        ):
+        elif isinstance(target, kubetest.objects.Service):
             return f"service/{target.name}"
         else:
             raise TypeError(f"unknown target: {repr(target)}")
@@ -739,11 +736,16 @@ async def kubectl_ports_forwarded(
 
     await event.wait()
 
-    # Check if the sockets are open
+    # Check the sockets can be connected to
+    # TODO/FIXME add fault tolerance for error upgrading connection: unable to upgrade connection: pod does not exist
     for local_port, _ in ports:
         a_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        if a_socket.connect_ex(("localhost", local_port)) != 0:
-            raise RuntimeError(f"port forwarding failed: port {local_port} is not open")
+        if (h_errno := a_socket.connect_ex(("localhost", local_port))) != 0:
+            if task.done():
+                debug(task.result())
+            raise RuntimeError(
+                f"port forwarding failed: port {local_port} connect failed (errno {h_errno})"
+            )
 
     try:
         if len(ports) == 1:
@@ -763,7 +765,7 @@ async def kubectl_ports_forwarded(
 
 @pytest.fixture()
 async def kube_port_forward(
-    kube,
+    kube: kubetest.client.TestClient,
     unused_tcp_port_factory: Callable[[], int],
     kubeconfig,
     kubecontext: Optional[str],

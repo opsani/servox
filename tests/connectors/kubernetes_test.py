@@ -14,7 +14,16 @@ import pytest_mock
 import re
 import respx
 import traceback
-from kubernetes_asyncio import client
+from kubernetes_asyncio.client import (
+    ApiClient,
+    V1Container,
+    V1ContainerPort,
+    V1ResourceRequirements,
+    V1EnvVar,
+    V1ServicePort,
+    VersionApi,
+    VersionInfo,
+)
 from pydantic import BaseModel
 from pydantic.error_wrappers import ValidationError
 
@@ -24,11 +33,9 @@ from servo.connectors.kubernetes import (
     CPU,
     CanaryOptimization,
     CanaryOptimizationStrategyConfiguration,
-    Container,
     ContainerConfiguration,
     ContainerTagName,
     DefaultOptimizationStrategyConfiguration,
-    Deployment,
     DeploymentConfiguration,
     DNSLabelName,
     DNSSubdomainName,
@@ -39,12 +46,16 @@ from servo.connectors.kubernetes import (
     Memory,
     Core,
     OptimizationStrategy,
-    Pod,
-    ResourceRequirement,
-    Rollout,
-    RolloutConfiguration,
 )
-import servo
+from servo.types.kubernetes import Resource, ResourceRequirement
+from servo.connectors.kubernetes_helpers import (
+    find_container,
+    get_containers,
+    ContainerHelper,
+    DeploymentHelper,
+    PodHelper,
+    ServiceHelper,
+)
 from servo.errors import AdjustmentFailedError, AdjustmentRejectedError
 import servo.runner
 from servo.types.api import Adjustment, Component, Description
@@ -597,17 +608,16 @@ class TestResourceRequirement:
 
 class TestContainer:
     @pytest.fixture
-    def container(self, mocker) -> Container:
-        stub_pod = mocker.stub(name="Pod")
-        container = Container(client.V1Container(name="fiber-http"), stub_pod)
+    def container(self) -> V1Container:
+        container = V1Container(name="fiber-http")
 
-        resources = client.V1ResourceRequirements()
+        resources = V1ResourceRequirements()
         resources.requests = {"cpu": "100m", "memory": "3G"}
         resources.limits = {"cpu": "15000m"}
         container.resources = resources
 
-        container.obj.env = [
-            client.V1EnvVar(name="TEST1", value="TEST2"),
+        container.env = [
+            V1EnvVar(name="TEST1", value="TEST2"),
         ]
 
         return container
@@ -641,13 +651,15 @@ class TestContainer:
     )
     def test_get_resource_requirements(
         self,
-        container: Container,
+        container: V1Container,
         resource: str,
         requirement: ResourceRequirement,
         value,
     ) -> None:
         assert (
-            all_requirements := container.get_resource_requirements(resource)
+            all_requirements := ContainerHelper.get_resource_requirements(
+                container, resource
+            )
         ) is not None
         if requirement:
             assert all_requirements.get(requirement) == value
@@ -680,21 +692,22 @@ class TestContainer:
     )
     def test_set_resource_requirements(
         self,
-        container: Container,
+        container: V1Container,
         resource: str,
         value: dict[ResourceRequirement, Optional[str]],
         resources_dict,
     ) -> None:
-        container.set_resource_requirements(resource, value)
+        ContainerHelper.set_resource_requirements(container, resource, value)
         assert container.resources.to_dict() == resources_dict
 
     def test_set_resource_requirements_handles_null_requirements_dict(
-        self, container: Container
+        self, container: V1Container
     ):
-        container.resources = client.V1ResourceRequirements()
+        container.resources = V1ResourceRequirements()
 
-        container.set_resource_requirements(
-            "cpu",
+        ContainerHelper.set_resource_requirements(
+            container,
+            Resource.cpu.value,
             {ResourceRequirement.request: "1000m", ResourceRequirement.limit: "1000m"},
         )
         assert container.resources.to_dict() == {
@@ -702,16 +715,16 @@ class TestContainer:
             "requests": {"cpu": "1000m"},
         }
 
-    def test_get_environment_variable(self, container: Container):
-        assert container.get_environment_variable("TEST1") == "TEST2"
+    def test_get_environment_variable(self, container: V1Container):
+        assert ContainerHelper.get_environment_variable(container, "TEST1") == "TEST2"
 
-    def test_set_environment_variable(self, container: Container):
-        container.set_environment_variable("TEST1", "TEST3")
-        container.set_environment_variable("TEST4", "TEST5")
+    def test_set_environment_variable(self, container: V1Container):
+        ContainerHelper.set_environment_variable(container, "TEST1", "TEST3")
+        ContainerHelper.set_environment_variable(container, "TEST4", "TEST5")
 
         assert container.env == [
-            client.V1EnvVar(name="TEST1", value="TEST3"),
-            client.V1EnvVar(name="TEST4", value="TEST5"),
+            V1EnvVar(name="TEST1", value="TEST3"),
+            V1EnvVar(name="TEST4", value="TEST5"),
         ]
 
 
@@ -1078,22 +1091,26 @@ class TestKubernetesConnectorIntegration:
         assert setting
         assert setting.value == 0.25
 
-    async def test_adjust_cpu_at_non_zero_container_index(self, config):
+    async def test_adjust_cpu_at_non_zero_container_index(
+        self, config: KubernetesConfiguration
+    ):
         # Inject a sidecar at index zero
-        deployment = await servo.connectors.kubernetes.Deployment.read(
-            "fiber-http", config.namespace
-        )
+        deployment = await DeploymentHelper.read("fiber-http", config.namespace)
         assert (
             deployment
         ), f"failed loading deployment 'fiber-http' in namespace '{config.namespace}'"
-        async with deployment.rollout(timeout=config.timeout) as deployment_update:
-            await deployment_update.inject_sidecar(
-                "opsani-envoy",
-                "opsani/envoy-proxy:latest",
-                port="8480",
-                service_port=8091,
-                index=0,
-            )
+        await DeploymentHelper.inject_sidecar(
+            deployment,
+            "opsani-envoy",
+            "opsani/envoy-proxy:latest",
+            port="8480",
+            service_port=8091,
+            index=0,
+        )
+        await asyncio.wait_for(
+            DeploymentHelper.wait_until_ready(deployment),
+            timeout=config.timeout.total_seconds(),
+        )
 
         connector = KubernetesConnector(config=config)
         adjustment = Adjustment(
@@ -1249,12 +1266,14 @@ class TestKubernetesConnectorIntegration:
         assert setting
         assert setting.value == 2
 
-    async def test_read_pod(self, config, kube) -> None:
+    async def test_read_pod(
+        self, config: KubernetesConfiguration, kube: kubetest.client.TestClient
+    ) -> None:
         connector = KubernetesConnector(config=config)
         pods = kube.get_pods()
         pod_name = next(iter(pods.keys()))
         assert pod_name.startswith("fiber-http")
-        pod = await Pod.read(pod_name, kube.namespace)
+        pod = await PodHelper.read(pod_name, kube.namespace)
         assert pod
 
     ##
@@ -1512,7 +1531,7 @@ class TestKubernetesConnectorIntegration:
             return_value=("memory", "256.0MiBGiB"),
         )
 
-        tuning_config.deployments[0].on_failure = FailureMode.rollback
+        tuning_config.deployments[0].on_failure = FailureMode.shutdown
         connector = KubernetesConnector(config=tuning_config)
         adjustment = Adjustment(
             component_name="fiber-http/fiber-http-tuning",
@@ -1520,7 +1539,7 @@ class TestKubernetesConnectorIntegration:
             value="256Mi",
         )
 
-        # Catch info log messages
+        # Catch debug log messages
         messages = []
         connector.logger.add(lambda m: messages.append(m.record["message"]), level=10)
 
@@ -1588,9 +1607,9 @@ class TestKubernetesConnectorIntegration:
             description = await connector.adjust([adjustment])
             debug(description)
 
-        deployment = await Deployment.read("fiber-http", kube.namespace)
+        deployment = await DeploymentHelper.read("fiber-http", kube.namespace)
         # check deployment was not scaled to 0 replicas (i.e., the outer-level 'shutdown' was overridden)
-        assert deployment.obj.spec.replicas != 0
+        assert deployment.spec.replicas != 0
 
     async def test_adjust_tuning_cpu_out_of_range(self, tuning_config):
         connector = KubernetesConnector(config=tuning_config)
@@ -1819,7 +1838,7 @@ class TestKubernetesConnectorIntegrationUnreadyCmd:
             (
                 "if [ $(cat /sys/fs/cgroup/memory/memory.limit_in_bytes) -gt 201326592 ]; "
                 "then /bin/fiber-http; "
-                "else (/bin/fiber-http &); sleep 10s; kill $(jobs -p '%/bin/fiber-http'); "
+                "else (/bin/fiber-http &); sleep 10s; "
                 "fi"
             ),
         ]
@@ -2074,14 +2093,14 @@ class TestKubernetesResourceRequirementsIntegration:
     ) -> None:
         servo.logging.set_level("DEBUG")
 
-        deployment = await Deployment.read("fiber-http", tuning_config.namespace)
-        await deployment.wait_until_ready()
+        deployment = await DeploymentHelper.read("fiber-http", tuning_config.namespace)
+        await DeploymentHelper.wait_until_ready(deployment)
 
-        pods = await deployment.get_pods()
+        pods = await DeploymentHelper.get_latest_pods(deployment)
         assert len(pods) == 1, "expected a fiber-http pod"
         pod = pods[0]
-        container = pod.get_container("fiber-http")
-        assert container.get_resource_requirements("cpu") == {
+        container = find_container(pod, "fiber-http")
+        assert ContainerHelper.get_resource_requirements(container, "cpu") == {
             servo.connectors.kubernetes.ResourceRequirement.request: "125m",
             servo.connectors.kubernetes.ResourceRequirement.limit: None,
         }
@@ -2095,62 +2114,69 @@ class TestKubernetesResourceRequirementsIntegration:
     ) -> None:
         servo.logging.set_level("DEBUG")
 
-        deployment = await Deployment.read("fiber-http", tuning_config.namespace)
-        await deployment.wait_until_ready()
+        deployment = await DeploymentHelper.read("fiber-http", tuning_config.namespace)
+        await asyncio.wait_for(
+            DeploymentHelper.wait_until_ready(deployment), timeout=300
+        )
 
-        pods = await deployment.get_pods()
+        pods = await DeploymentHelper.get_latest_pods(deployment)
         assert len(pods) == 1, "expected a fiber-http pod"
         pod = pods[0]
-        container = pod.get_container("fiber-http")
-        assert container.get_resource_requirements("cpu") == {
+        container = find_container(pod, "fiber-http")
+        assert ContainerHelper.get_resource_requirements(container, "cpu") == {
             servo.connectors.kubernetes.ResourceRequirement.request: "125m",
             servo.connectors.kubernetes.ResourceRequirement.limit: None,
         }
 
         # Set request and limit
-        container.set_resource_requirements(
+        ContainerHelper.set_resource_requirements(
+            container,
             "cpu",
             {
                 servo.connectors.kubernetes.ResourceRequirement.request: "125m",
                 servo.connectors.kubernetes.ResourceRequirement.limit: "250m",
             },
         )
-        container.get_resource_requirements("cpu") == {
+        assert ContainerHelper.get_resource_requirements(container, "cpu") == {
             servo.connectors.kubernetes.ResourceRequirement.request: "125m",
             servo.connectors.kubernetes.ResourceRequirement.limit: "250m",
         }
 
         # Set limit, leaving request alone
-        container.set_resource_requirements(
-            "cpu", {servo.connectors.kubernetes.ResourceRequirement.limit: "750m"}
+        ContainerHelper.set_resource_requirements(
+            container,
+            "cpu",
+            {servo.connectors.kubernetes.ResourceRequirement.limit: "750m"},
         )
-        assert container.get_resource_requirements("cpu") == {
+        assert ContainerHelper.get_resource_requirements(container, "cpu") == {
             servo.connectors.kubernetes.ResourceRequirement.request: "125m",
             servo.connectors.kubernetes.ResourceRequirement.limit: "750m",
         }
 
         # Set request, clearing limit
-        container.set_resource_requirements(
+        ContainerHelper.set_resource_requirements(
+            container,
             "cpu",
             {
                 servo.connectors.kubernetes.ResourceRequirement.request: "250m",
                 servo.connectors.kubernetes.ResourceRequirement.limit: None,
             },
         )
-        assert container.get_resource_requirements("cpu") == {
+        assert ContainerHelper.get_resource_requirements(container, "cpu") == {
             servo.connectors.kubernetes.ResourceRequirement.request: "250m",
             servo.connectors.kubernetes.ResourceRequirement.limit: None,
         }
 
         # Clear request and limit
-        container.set_resource_requirements(
+        ContainerHelper.set_resource_requirements(
+            container,
             "cpu",
             {
                 servo.connectors.kubernetes.ResourceRequirement.request: None,
                 servo.connectors.kubernetes.ResourceRequirement.limit: None,
             },
         )
-        assert container.get_resource_requirements("cpu") == {
+        assert ContainerHelper.get_resource_requirements(container, "cpu") == {
             servo.connectors.kubernetes.ResourceRequirement.request: None,
             servo.connectors.kubernetes.ResourceRequirement.limit: None,
         }
@@ -2173,10 +2199,12 @@ class TestKubernetesResourceRequirementsIntegration:
         await servo.connectors.kubernetes.KubernetesOptimizations.create(tuning_config)
 
         # Read the Tuning Pod and check resources
-        pod = await Pod.read("fiber-http-tuning", tuning_config.namespace)
-        container = pod.get_container("fiber-http")
-        cpu_requirements = container.get_resource_requirements("cpu")
-        memory_requirements = container.get_resource_requirements("memory")
+        pod = await PodHelper.read("fiber-http-tuning", tuning_config.namespace)
+        container = find_container(pod, "fiber-http")
+        cpu_requirements = ContainerHelper.get_resource_requirements(container, "cpu")
+        memory_requirements = ContainerHelper.get_resource_requirements(
+            container, "memory"
+        )
 
         assert (
             cpu_requirements[servo.connectors.kubernetes.ResourceRequirement.limit]
@@ -2213,17 +2241,17 @@ class TestKubernetesResourceRequirementsIntegration:
         assert setting.value == 0.25
 
         # Read the Tuning Pod and check resources
-        pod = await Pod.read("fiber-http-tuning", tuning_config.namespace)
-        container = pod.get_container("fiber-http")
+        pod = await PodHelper.read("fiber-http-tuning", tuning_config.namespace)
+        container = find_container(pod, "fiber-http")
 
         # CPU picks up the 1000m default and then gets adjust to 250m
-        assert container.get_resource_requirements("cpu") == {
+        assert ContainerHelper.get_resource_requirements(container, "cpu") == {
             servo.connectors.kubernetes.ResourceRequirement.request: "250m",
             servo.connectors.kubernetes.ResourceRequirement.limit: "1",
         }
 
         # Memory is untouched from the mainfest
-        assert container.get_resource_requirements("memory") == {
+        assert ContainerHelper.get_resource_requirements(container, "memory") == {
             servo.connectors.kubernetes.ResourceRequirement.request: "128Mi",
             servo.connectors.kubernetes.ResourceRequirement.limit: "128Mi",
         }
@@ -2452,28 +2480,34 @@ class TestKubernetesResourceRequirementsIntegration:
         assert adjusted_tuning_mem_setting.value.human_readable() == "1.0Gi"
 
         ## Read the Main Pod and check resources
-        main_deployment = await Deployment.read("fiber-http", tuning_config.namespace)
-        main_pods = await main_deployment.get_pods()
-        main_pod_container = main_pods[0].get_container("fiber-http")
+        main_deployment = await DeploymentHelper.read(
+            "fiber-http", tuning_config.namespace
+        )
+        main_pods = await DeploymentHelper.get_latest_pods(main_deployment)
+        main_pod_container = find_container(main_pods[0], "fiber-http")
 
         ## CPU is set to 500m on both requirements
-        assert main_pod_container.get_resource_requirements("cpu") == {
+        assert ContainerHelper.get_resource_requirements(main_pod_container, "cpu") == {
             servo.connectors.kubernetes.ResourceRequirement.request: "125m",
             servo.connectors.kubernetes.ResourceRequirement.limit: "250m",
         }
 
         ## Read the Tuning Pod and check resources
-        tuning_pod = await Pod.read("fiber-http-tuning", tuning_config.namespace)
-        tuning_pod_container = tuning_pod.get_container("fiber-http")
+        tuning_pod = await PodHelper.read("fiber-http-tuning", tuning_config.namespace)
+        tuning_pod_container = find_container(tuning_pod, "fiber-http")
 
         ## CPU is set to 500m on both requirements
-        assert tuning_pod_container.get_resource_requirements("cpu") == {
+        assert ContainerHelper.get_resource_requirements(
+            tuning_pod_container, "cpu"
+        ) == {
             servo.connectors.kubernetes.ResourceRequirement.request: "500m",
             servo.connectors.kubernetes.ResourceRequirement.limit: "500m",
         }
 
         ## Memory is set to 1Gi on both requirements
-        assert tuning_pod_container.get_resource_requirements("memory") == {
+        assert ContainerHelper.get_resource_requirements(
+            tuning_pod_container, "memory"
+        ) == {
             servo.connectors.kubernetes.ResourceRequirement.request: "1Gi",
             servo.connectors.kubernetes.ResourceRequirement.limit: "1Gi",
         }
@@ -2538,7 +2572,7 @@ ENVOY_SIDECAR_IMAGE_TAG = "opsani/envoy-proxy:servox-v0.9.0"
 @pytest.mark.usefixtures("kubernetes_asyncio_config")
 class TestSidecarInjection:
     @pytest.fixture(autouse=True)
-    async def _wait_for_manifests(self, kube, config):
+    async def _wait_for_manifests(self, kube: kubetest.client.TestClient, config):
         kube.wait_for_registered()
         config.timeout = "5m"
 
@@ -2550,7 +2584,7 @@ class TestSidecarInjection:
         "../manifests/sidecar_injection", files=["fiber-http_single_port.yaml"]
     )
     @pytest.mark.parametrize(
-        "port, service",
+        "port, service_name",
         [
             (None, "fiber-http"),
             (80, "fiber-http"),
@@ -2558,17 +2592,13 @@ class TestSidecarInjection:
         ],
     )
     async def test_inject_single_port_deployment(
-        self, namespace: str, service: str, port: Union[str, int]
+        self, namespace: str, service_name: str, port: Union[str, int]
     ) -> None:
-        deployment = await servo.connectors.kubernetes.Deployment.read(
-            "fiber-http", namespace
-        )
-        assert len(deployment.containers) == 1, "expected a single container"
-        service = await servo.connectors.kubernetes.Service.read(
-            "fiber-http", namespace
-        )
-        assert len(service.ports) == 1
-        port_obj = service.ports[0]
+        deployment = await DeploymentHelper.read("fiber-http", namespace)
+        assert len(get_containers(deployment)) == 1, "expected a single container"
+        service = await ServiceHelper.read(service_name, namespace)
+        assert len(service.spec.ports) == 1
+        port_obj: V1ServicePort = service.spec.ports[0]
 
         if isinstance(port, int):
             assert port_obj.port == port
@@ -2576,26 +2606,31 @@ class TestSidecarInjection:
             assert port_obj.name == port
         assert port_obj.target_port == 8480
 
-        await deployment.inject_sidecar(
-            "opsani-envoy", ENVOY_SIDECAR_IMAGE_TAG, service="fiber-http", port=port
+        await DeploymentHelper.inject_sidecar(
+            deployment,
+            "opsani-envoy",
+            ENVOY_SIDECAR_IMAGE_TAG,
+            service=service_name,
+            port=port,
         )
 
         # Examine new sidecar
-        await deployment.refresh()
-        assert len(deployment.containers) == 2, "expected an injected container"
-        sidecar_container = deployment.containers[1]
+        deployment = await DeploymentHelper.read("fiber-http", namespace)
+        containers = get_containers(deployment)
+        assert len(containers) == 2, "expected an injected container"
+        sidecar_container = containers[1]
         assert sidecar_container.name == "opsani-envoy"
 
         # Check ports and env
         assert sidecar_container.ports == [
-            kubernetes_asyncio.client.V1ContainerPort(
+            V1ContainerPort(
                 container_port=9980,
                 host_ip=None,
                 host_port=None,
                 name="opsani-proxy",
                 protocol="TCP",
             ),
-            kubernetes_asyncio.client.V1ContainerPort(
+            V1ContainerPort(
                 container_port=9901,
                 host_ip=None,
                 host_port=None,
@@ -2603,11 +2638,11 @@ class TestSidecarInjection:
                 protocol="TCP",
             ),
         ]
-        assert sidecar_container.obj.env == [
-            kubernetes_asyncio.client.V1EnvVar(
+        assert sidecar_container.env == [
+            V1EnvVar(
                 name="OPSANI_ENVOY_PROXY_SERVICE_PORT", value="9980", value_from=None
             ),
-            kubernetes_asyncio.client.V1EnvVar(
+            V1EnvVar(
                 name="OPSANI_ENVOY_PROXIED_CONTAINER_PORT",
                 value="8480",
                 value_from=None,
@@ -2621,7 +2656,7 @@ class TestSidecarInjection:
         "../manifests/sidecar_injection", files=["fiber-http_multiple_ports.yaml"]
     )
     @pytest.mark.parametrize(
-        "port, service, error",
+        "port, service_name, error",
         [
             (
                 None,
@@ -2637,19 +2672,15 @@ class TestSidecarInjection:
     async def test_inject_multiport_deployment(
         self,
         namespace: str,
-        service: str,
+        service_name: str,
         port: Union[str, int],
         error: Optional[Exception],
     ) -> None:
-        deployment = await servo.connectors.kubernetes.Deployment.read(
-            "fiber-http", namespace
-        )
-        assert len(deployment.containers) == 1, "expected a single container"
-        service = await servo.connectors.kubernetes.Service.read(
-            "fiber-http", namespace
-        )
-        assert len(service.ports) == 2
-        port_obj = service.ports[0]
+        deployment = await DeploymentHelper.read("fiber-http", namespace)
+        assert len(get_containers(deployment)) == 1, "expected a single container"
+        service = await ServiceHelper.read(service_name, namespace)
+        assert len(service.spec.ports) == 2
+        port_obj: V1ServicePort = service.spec.ports[0]
 
         if isinstance(port, int):
             assert port_obj.port == port
@@ -2658,17 +2689,22 @@ class TestSidecarInjection:
         assert port_obj.target_port == 8480
 
         try:
-            await deployment.inject_sidecar(
-                "opsani-envoy", ENVOY_SIDECAR_IMAGE_TAG, service="fiber-http", port=port
+            await DeploymentHelper.inject_sidecar(
+                deployment,
+                "opsani-envoy",
+                ENVOY_SIDECAR_IMAGE_TAG,
+                service=service_name,
+                port=port,
             )
         except Exception as e:
             assert repr(e) == repr(error)
 
         # Examine new sidecar (if success is expected)
         if error is None:
-            await deployment.refresh()
-            assert len(deployment.containers) == 2, "expected an injected container"
-            sidecar_container = deployment.containers[1]
+            deployment = await DeploymentHelper.read("fiber-http", namespace)
+            containers = get_containers(deployment)
+            assert len(containers) == 2, "expected an injected container"
+            sidecar_container = containers[1]
             assert sidecar_container.name == "opsani-envoy"
 
             # Check ports and env
@@ -2688,7 +2724,7 @@ class TestSidecarInjection:
                     protocol="TCP",
                 ),
             ]
-            assert sidecar_container.obj.env == [
+            assert sidecar_container.env == [
                 kubernetes_asyncio.client.V1EnvVar(
                     name="OPSANI_ENVOY_PROXY_SERVICE_PORT",
                     value="9980",
@@ -2711,7 +2747,7 @@ class TestSidecarInjection:
         files=["fiber-http_multiple_ports_symbolic_targets.yaml"],
     )
     @pytest.mark.parametrize(
-        "port, service",
+        "port, service_name",
         [
             (None, "fiber-http"),
             (80, "fiber-http"),
@@ -2719,18 +2755,14 @@ class TestSidecarInjection:
         ],
     )
     async def test_inject_symbolic_target_port(
-        self, namespace: str, service: str, port: Union[str, int]
+        self, namespace: str, service_name: str, port: Union[str, int]
     ) -> None:
         """test_inject_by_source_port_name_with_symbolic_target_port"""
-        deployment = await servo.connectors.kubernetes.Deployment.read(
-            "fiber-http", namespace
-        )
-        assert len(deployment.containers) == 1, "expected a single container"
-        service = await servo.connectors.kubernetes.Service.read(
-            "fiber-http", namespace
-        )
-        assert len(service.ports) == 1
-        port_obj = service.ports[0]
+        deployment = await DeploymentHelper.read("fiber-http", namespace)
+        assert len(get_containers(deployment)) == 1, "expected a single container"
+        service = await ServiceHelper.read(service_name, namespace)
+        assert len(service.spec.ports) == 1
+        port_obj: V1ServicePort = service.spec.ports[0]
 
         if isinstance(port, int):
             assert port_obj.port == port
@@ -2738,14 +2770,19 @@ class TestSidecarInjection:
             assert port_obj.name == port
         assert port_obj.target_port == "collector"
 
-        await deployment.inject_sidecar(
-            "opsani-envoy", ENVOY_SIDECAR_IMAGE_TAG, service="fiber-http", port=port
+        await DeploymentHelper.inject_sidecar(
+            deployment,
+            "opsani-envoy",
+            ENVOY_SIDECAR_IMAGE_TAG,
+            service=service_name,
+            port=port,
         )
 
         # Examine new sidecar
-        await deployment.refresh()
-        assert len(deployment.containers) == 2, "expected an injected container"
-        sidecar_container = deployment.containers[1]
+        deployment = await DeploymentHelper.read("fiber-http", namespace)
+        containers = get_containers(deployment)
+        assert len(containers) == 2, "expected an injected container"
+        sidecar_container = containers[1]
         assert sidecar_container.name == "opsani-envoy"
 
         # Check ports and env
@@ -2765,7 +2802,7 @@ class TestSidecarInjection:
                 protocol="TCP",
             ),
         ]
-        assert sidecar_container.obj.env == [
+        assert sidecar_container.env == [
             kubernetes_asyncio.client.V1EnvVar(
                 name="OPSANI_ENVOY_PROXY_SERVICE_PORT", value="9980", value_from=None
             ),
@@ -2796,9 +2833,9 @@ class TestKubernetesClusterConnectorIntegration:
         config: KubernetesConfiguration,
         servo_runner: servo.runner.Runner,
     ) -> None:
-        async with client.api_client.ApiClient() as api:
-            v1 = kubernetes_asyncio.client.VersionApi(api)
-            version_obj = await v1.get_code()
+        async with ApiClient() as api:
+            v1 = VersionApi(api)
+            version_obj: VersionInfo = await v1.get_code()
 
         expected = (
             f'"telemetry": {{"servox.version": "{servo.__version__}", "servox.platform": "{platform.platform()}", '
@@ -2830,367 +2867,3 @@ class TestKubernetesClusterConnectorIntegration:
         assert request.called
         print(request.calls.last.request.content.decode())
         assert expected in request.calls.last.request.content.decode()
-
-
-##
-# Tests against an ArgoCD rollout
-@pytest.mark.integration
-@pytest.mark.usefixtures("kubernetes_asyncio_config", "manage_rollout")
-@pytest.mark.parametrize(
-    (),
-    [
-        pytest.param(
-            marks=pytest.mark.rollout_manifest.with_args(
-                "tests/manifests/argo_rollouts/fiber-http-opsani-dev.yaml"
-            )
-        ),
-        pytest.param(
-            marks=pytest.mark.rollout_manifest.with_args(
-                "tests/manifests/argo_rollouts/fiber-http-opsani-dev-workload-ref.yaml"
-            )
-        ),
-    ],
-)
-class TestKubernetesConnectorRolloutIntegration:
-    @pytest.fixture
-    def namespace(self, kube: kubetest.client.TestClient) -> str:
-        return kube.namespace
-
-    @pytest.fixture()
-    def _rollout_tuning_config(
-        self, tuning_config: KubernetesConfiguration
-    ) -> KubernetesConfiguration:
-        tuning_config.rollouts = [
-            RolloutConfiguration.parse_obj(d) for d in tuning_config.deployments
-        ]
-        tuning_config.deployments = None
-        return tuning_config
-
-    ##
-    # Canary Tests
-    async def test_create_rollout_tuning(
-        self,
-        _rollout_tuning_config: KubernetesConfiguration,
-        kube: kubetest.client.TestClient,
-        namespace: str,
-    ) -> None:
-        _rollout_tuning_config.rollouts[0].containers[
-            0
-        ].static_environment_variables = {"FOO": "BAR"}
-        connector = KubernetesConnector(config=_rollout_tuning_config)
-        rol = await Rollout.read("fiber-http", namespace)
-        description = await connector.describe()
-
-        assert description == Description(
-            components=[
-                Component(
-                    name="fiber-http/fiber-http",
-                    settings=[
-                        CPU(
-                            name="cpu",
-                            type="range",
-                            pinned=True,
-                            value="125m",
-                            min="125m",
-                            max="875m",
-                            step="125m",
-                            request="125m",
-                            limit="125m",
-                            get=["request", "limit"],
-                            set=["request", "limit"],
-                        ),
-                        Memory(
-                            name="mem",
-                            type="range",
-                            pinned=True,
-                            value=134217728,
-                            min=134217728,
-                            max=805306368,
-                            step=33554432,
-                            request=134217728,
-                            limit=134217728,
-                            get=["request", "limit"],
-                            set=["request", "limit"],
-                        ),
-                        Replicas(
-                            name="replicas",
-                            type="range",
-                            pinned=True,
-                            value=1,
-                            min=0,
-                            max=99999,
-                            step=1,
-                        ),
-                        EnvironmentEnumSetting(
-                            name="INIT_MEMORY_SIZE",
-                            type="enum",
-                            pinned=True,
-                            values=["32MB", "64MB", "128MB"],
-                        ),
-                    ],
-                ),
-                Component(
-                    name="fiber-http/fiber-http-tuning",
-                    settings=[
-                        CPU(
-                            name="cpu",
-                            type="range",
-                            pinned=False,
-                            value="125m",
-                            min="125m",
-                            max="875m",
-                            step="125m",
-                            request="125m",
-                            limit="125m",
-                            get=["request", "limit"],
-                            set=["request", "limit"],
-                        ),
-                        Memory(
-                            name="mem",
-                            type="range",
-                            pinned=False,
-                            value=134217728,
-                            min=134217728,
-                            max=805306368,
-                            step=33554432,
-                            request=134217728,
-                            limit=134217728,
-                            get=["request", "limit"],
-                            set=["request", "limit"],
-                        ),
-                        Replicas(
-                            name="replicas",
-                            type="range",
-                            pinned=True,
-                            value=1,
-                            min=0,
-                            max=1,
-                            step=1,
-                        ),
-                        EnvironmentEnumSetting(
-                            name="INIT_MEMORY_SIZE",
-                            type="enum",
-                            pinned=True,
-                            values=["32MB", "64MB", "128MB"],
-                        ),
-                    ],
-                ),
-            ]
-        )
-
-        tuning_pod = kube.get_pods()["fiber-http-tuning"]
-        assert (
-            tuning_pod.obj.metadata.annotations["opsani.com/opsani_tuning_for"]
-            == "fiber-http/fiber-http-tuning"
-        )
-        assert tuning_pod.obj.metadata.labels["opsani_role"] == "tuning"
-        target_container = next(
-            filter(lambda c: c.name == "fiber-http", tuning_pod.obj.spec.containers)
-        )
-        assert target_container.resources.requests == {"cpu": "125m", "memory": "128Mi"}
-        assert target_container.resources.limits == {"cpu": "125m", "memory": "128Mi"}
-        assert target_container.env == [
-            kubernetes.client.models.V1EnvVar(name="FOO", value="BAR")
-        ]
-
-        # verify tuning pod is registered as service endpoint
-        service = await servo.connectors.kubernetes.Service.read(
-            "fiber-http", namespace
-        )
-        endpoints = await service.get_endpoints()
-        tuning_name = f"{_rollout_tuning_config.rollouts[0].name}-tuning"
-        tuning_endpoint = next(
-            filter(
-                lambda epa: epa.target_ref.name == tuning_name,
-                endpoints[0].subsets[0].addresses,
-            ),
-            None,
-        )
-        if tuning_endpoint is None:
-            raise AssertionError(
-                f"Tuning pod {tuning_name} not contained in service endpoints: {endpoints}"
-            )
-
-    async def test_adjust_rol_tuning_cpu_with_settle(
-        self, _rollout_tuning_config, namespace
-    ):
-        # test_adjust_rollout_tuning_cpu_with_settlement
-        connector = KubernetesConnector(config=_rollout_tuning_config)
-        adjustment = Adjustment(
-            component_name="fiber-http/fiber-http-tuning",
-            setting_name="cpu",
-            value=".250",
-        )
-        control = servo.Control(settlement="1s")
-        description = await connector.adjust([adjustment], control)
-        assert description is not None
-        setting = description.get_setting("fiber-http/fiber-http-tuning.cpu")
-        assert setting
-        assert setting.value == 0.25
-
-    async def test_adjust_rol_tuning_insufficient_rsrcs(
-        self, _rollout_tuning_config: KubernetesConfiguration, namespace
-    ) -> None:
-        # test_adjust_rollout_tuning_insufficient_resources
-        servo.logging.set_level("TRACE")
-        _rollout_tuning_config.timeout = "15s"
-        _rollout_tuning_config.cascade_common_settings(overwrite=True)
-        _rollout_tuning_config.rollouts[0].containers[0].memory.max = "256Gi"
-        connector = KubernetesConnector(config=_rollout_tuning_config)
-
-        adjustment = Adjustment(
-            component_name="fiber-http/fiber-http-tuning",
-            setting_name="mem",
-            value="128Gi",  # impossible right?
-        )
-        with pytest.raises(AdjustmentRejectedError) as rejection_info:
-            description = await connector.adjust([adjustment])
-
-        rej_msg = str(rejection_info.value)
-        assert (
-            "Insufficient memory." in rej_msg
-            or "Pod Node didn't have enough resource: memory" in rej_msg
-        )
-
-
-STANDARD_ROLLOUT_EXPECTED_PORTS = [
-    servo.connectors.kubernetes.RolloutV1ContainerPort(
-        container_port=9980,
-        host_ip=None,
-        host_port=None,
-        name="opsani-proxy",
-        protocol="TCP",
-    ),
-    servo.connectors.kubernetes.RolloutV1ContainerPort(
-        container_port=9901,
-        host_ip=None,
-        host_port=None,
-        name="opsani-metrics",
-        protocol="TCP",
-    ),
-]
-STANDARD_ROLLOUT_EXPECTED_ENV = [
-    servo.connectors.kubernetes.RolloutV1EnvVar(
-        name="OPSANI_ENVOY_PROXY_SERVICE_PORT", value="9980", value_from=None
-    ),
-    servo.connectors.kubernetes.RolloutV1EnvVar(
-        name="OPSANI_ENVOY_PROXIED_CONTAINER_PORT", value="8480", value_from=None
-    ),
-    servo.connectors.kubernetes.RolloutV1EnvVar(
-        name="OPSANI_ENVOY_PROXY_METRICS_PORT", value="9901", value_from=None
-    ),
-]
-WORKLOAD_REF_ROLLOUT_EXPECTED_PORTS = [
-    kubernetes_asyncio.client.V1ContainerPort(
-        container_port=9980,
-        host_ip=None,
-        host_port=None,
-        name="opsani-proxy",
-        protocol="TCP",
-    ),
-    kubernetes_asyncio.client.V1ContainerPort(
-        container_port=9901,
-        host_ip=None,
-        host_port=None,
-        name="opsani-metrics",
-        protocol="TCP",
-    ),
-]
-WORKLOAD_REF_ROLLOUT_EXPECTED_ENV = [
-    kubernetes_asyncio.client.V1EnvVar(
-        name="OPSANI_ENVOY_PROXY_SERVICE_PORT", value="9980", value_from=None
-    ),
-    kubernetes_asyncio.client.V1EnvVar(
-        name="OPSANI_ENVOY_PROXIED_CONTAINER_PORT", value="8480", value_from=None
-    ),
-    kubernetes_asyncio.client.V1EnvVar(
-        name="OPSANI_ENVOY_PROXY_METRICS_PORT", value="9901", value_from=None
-    ),
-]
-
-
-@pytest.mark.integration
-@pytest.mark.usefixtures("kubernetes_asyncio_config", "manage_rollout")
-class TestRolloutSidecarInjection:
-    @pytest.fixture
-    def namespace(self, kube: kubetest.client.TestClient) -> str:
-        return kube.namespace
-
-    @pytest.mark.parametrize(
-        "ports, env",
-        [
-            pytest.param(
-                STANDARD_ROLLOUT_EXPECTED_PORTS,
-                STANDARD_ROLLOUT_EXPECTED_ENV,
-                marks=pytest.mark.rollout_manifest.with_args(
-                    "tests/manifests/argo_rollouts/fiber-http_single_port.yaml"
-                ),
-            ),
-            pytest.param(
-                WORKLOAD_REF_ROLLOUT_EXPECTED_PORTS,
-                WORKLOAD_REF_ROLLOUT_EXPECTED_ENV,
-                marks=pytest.mark.rollout_manifest.with_args(
-                    "tests/manifests/argo_rollouts/fiber-http-workload-ref_single_port.yaml"
-                ),
-            ),
-        ],
-    )
-    @pytest.mark.parametrize(
-        "test_port, service",
-        [
-            (None, "fiber-http"),
-            (80, "fiber-http"),
-            ("http", "fiber-http"),
-        ],
-    )
-    async def test_inject_rollout(
-        # test_inject_single_port_rollout
-        self,
-        namespace: str,
-        service: str,
-        test_port: Union[str, int],
-        ports: List[
-            Union[
-                servo.connectors.kubernetes.RolloutV1ContainerPort,
-                kubernetes_asyncio.client.V1ContainerPort,
-            ]
-        ],
-        env: List[
-            Union[
-                servo.connectors.kubernetes.RolloutV1EnvVar,
-                kubernetes_asyncio.client.V1EnvVar,
-            ]
-        ],
-    ) -> None:
-        rollout = await servo.connectors.kubernetes.Rollout.read(
-            "fiber-http", namespace
-        )
-        assert len(rollout.containers) == 1, "expected a single container"
-        service = await servo.connectors.kubernetes.Service.read(
-            "fiber-http", namespace
-        )
-        assert len(service.ports) == 1
-        port_obj = service.ports[0]
-
-        if isinstance(test_port, int):
-            assert port_obj.port == test_port
-        elif isinstance(test_port, str):
-            assert port_obj.name == test_port
-        assert port_obj.target_port == 8480
-
-        await rollout.inject_sidecar(
-            "opsani-envoy",
-            ENVOY_SIDECAR_IMAGE_TAG,
-            service="fiber-http",
-            port=test_port,
-        )
-
-        # Examine new sidecar
-        await rollout.refresh()
-        assert len(rollout.containers) == 2, "expected an injected container"
-        sidecar_container = rollout.containers[1]
-        assert sidecar_container.name == "opsani-envoy"
-
-        # Check ports and env
-        assert sidecar_container.ports == ports
-        assert sidecar_container.obj.env == env
