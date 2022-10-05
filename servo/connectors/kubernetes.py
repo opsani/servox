@@ -4,43 +4,28 @@ from __future__ import annotations, print_function
 
 import abc
 import asyncio
-import collections
 import contextlib
-import copy
-import datetime
 import decimal
 import enum
 import functools
 import itertools
-import json
-import operator
 import os
 import pathlib
+import pydantic
 import re
 from typing import (
-    Any,
     AsyncIterator,
-    AsyncContextManager,
-    Callable,
-    ClassVar,
     Collection,
-    Coroutine,
     Dict,
-    Generator,
     Iterable,
     List,
-    Mapping,
     Optional,
-    Protocol,
     Tuple,
     Type,
     Union,
     cast,
-    get_type_hints,
-    runtime_checkable,
 )
 
-import backoff
 import kubernetes_asyncio
 import kubernetes_asyncio.client
 import kubernetes_asyncio.client.api_client
@@ -55,11 +40,6 @@ from kubernetes_asyncio.client import (
     V1PodTemplateSpec,
     V1StatefulSet,
 )
-from kubernetes_asyncio.client.models.v1_container import V1Container
-from kubernetes_asyncio.client.models.v1_container_status import V1ContainerStatus
-from kubernetes_asyncio.client.models.v1_env_var import V1EnvVar
-import kubernetes_asyncio.watch
-import pydantic
 
 import servo
 from servo.telemetry import ONE_MiB
@@ -464,7 +444,6 @@ class BaseOptimization(abc.ABC, pydantic.BaseModel, servo.logging.Mixin):
         arbitrary_types_allowed = True
 
 
-# TODO: Update class name, saturation mode optimization is not specific to Deployment workloads
 class SaturationOptimization(BaseOptimization):
     """
     The SaturationOptimization class implements an optimization strategy based on directly reconfiguring a Kubernetes
