@@ -6,10 +6,12 @@ import freezegun
 import kubetest.client
 import pytest
 
+from kubernetes_asyncio.client import V1Deployment
+
 import servo
 from servo.runner import ServoRunner
 
-from servo.connectors.kubernetes import Deployment
+from servo.connectors.kubernetes_helpers import dict_to_selector, DeploymentHelper
 from servo.connectors.kube_metrics import *
 from servo.connectors.kube_metrics import (
     _append_data_point,
@@ -17,12 +19,6 @@ from servo.connectors.kube_metrics import (
     _get_target_resource_container,
     _name_to_metric,
 )
-from tests.connectors.kubernetes_test import namespace
-
-
-@pytest.fixture
-def kubecontext() -> str:
-    return "metrics-server"
 
 
 @pytest.fixture
@@ -68,14 +64,23 @@ MAIN_METRICS = [
 ]
 
 
-async def _wait_for_scrape(namespace: str, deployment: Deployment):
+async def _try_wait_for_scrape(namespace: str, deployment: V1Deployment) -> None:
+    try:
+        await asyncio.wait_for(
+            _wait_for_scrape(namespace=namespace, deployment=deployment), timeout=60
+        )
+    except asyncio.TimeoutError as te:
+        pytest.xfail("Metrics server scrape failed")
+
+
+async def _wait_for_scrape(namespace: str, deployment: V1Deployment):
     async with kubernetes_asyncio.client.ApiClient() as api:
         cust_obj_api = kubernetes_asyncio.client.CustomObjectsApi(api)
         while True:
             await asyncio.sleep(1)
 
             result = await cust_obj_api.list_namespaced_custom_object(
-                label_selector=deployment.label_selector,
+                label_selector=dict_to_selector(deployment.spec.selector.match_labels),
                 namespace=namespace,
                 **METRICS_CUSTOM_OJBECT_CONST_ARGS,
             )
@@ -93,12 +98,10 @@ async def _wait_for_scrape(namespace: str, deployment: Deployment):
             loguru.logger.info("Coninuing wait for scrape")
 
 
-# TODO group minikube fixture into file scope when xdist supports fixture scoping
-@pytest.mark.minikube_profile.with_args("metrics-server")
+@pytest.mark.integration
+@pytest.mark.usefixtures("kubernetes_asyncio_config")
 @pytest.mark.applymanifests("../manifests", files=["fiber-http-opsani-dev.yaml"])
 async def test_periodic_measure(
-    kubeconfig: str,
-    minikube: str,
     kube: kubetest.client.TestClient,
     servo_runner: ServoRunner,
 ):
@@ -111,20 +114,14 @@ async def test_periodic_measure(
             name="fiber-http",
             namespace=kube.namespace,
             container="fiber-http",
-            context=minikube,
-            kubeconfig=kubeconfig,
         )
     )
 
     await connector.attach(servo_=servo_runner.servo)
-    deployment = await Deployment.read("fiber-http", kube.namespace)
-
-    await asyncio.wait_for(
-        _wait_for_scrape(namespace=kube.namespace, deployment=deployment), timeout=60
-    )
+    deployment = await DeploymentHelper.read("fiber-http", kube.namespace)
+    await _try_wait_for_scrape(namespace=kube.namespace, deployment=deployment)
 
     await connector.periodic_measure(
-        target_resource=deployment,
         target_metrics=MAIN_METRICS,
         datapoints_dicts=datapoints_dicts,
     )
@@ -133,13 +130,12 @@ async def test_periodic_measure(
         assert m in datapoints_dicts
 
 
-@pytest.mark.minikube_profile.with_args("metrics-server")
+@pytest.mark.integration
+@pytest.mark.usefixtures("kubernetes_asyncio_config")
 @pytest.mark.applymanifests(
     "../manifests", files=["fiber-http-opsani-dev_no_resource_limits.yaml"]
 )
 async def test_periodic_measure_no_limits(
-    kubeconfig: str,
-    minikube: str,
     kube: kubetest.client.TestClient,
     servo_runner: ServoRunner,
 ):
@@ -152,20 +148,14 @@ async def test_periodic_measure_no_limits(
             name="fiber-http",
             namespace=kube.namespace,
             container="fiber-http",
-            context=minikube,
-            kubeconfig=kubeconfig,
         )
     )
 
     await connector.attach(servo_=servo_runner.servo)
-    deployment = await Deployment.read("fiber-http", kube.namespace)
-
-    await asyncio.wait_for(
-        _wait_for_scrape(namespace=kube.namespace, deployment=deployment), timeout=60
-    )
+    deployment = await DeploymentHelper.read("fiber-http", kube.namespace)
+    await _try_wait_for_scrape(namespace=kube.namespace, deployment=deployment)
 
     await connector.periodic_measure(
-        target_resource=deployment,
         target_metrics=MAIN_METRICS,
         datapoints_dicts=datapoints_dicts,
     )
@@ -175,13 +165,12 @@ async def test_periodic_measure_no_limits(
             assert m not in datapoints_dicts
 
 
-@pytest.mark.minikube_profile.with_args("metrics-server")
+@pytest.mark.integration
+@pytest.mark.usefixtures("kubernetes_asyncio_config")
 @pytest.mark.applymanifests(
     "../manifests", files=["fiber-http-opsani-dev_no_resource_requests.yaml"]
 )
 async def test_periodic_measure_no_requests(
-    kubeconfig: str,
-    minikube: str,
     kube: kubetest.client.TestClient,
     servo_runner: ServoRunner,
 ):
@@ -194,20 +183,14 @@ async def test_periodic_measure_no_requests(
             name="fiber-http",
             namespace=kube.namespace,
             container="fiber-http",
-            context=minikube,
-            kubeconfig=kubeconfig,
         )
     )
 
     await connector.attach(servo_=servo_runner.servo)
-    deployment = await Deployment.read("fiber-http", kube.namespace)
-
-    await asyncio.wait_for(
-        _wait_for_scrape(namespace=kube.namespace, deployment=deployment), timeout=60
-    )
+    deployment = await DeploymentHelper.read("fiber-http", kube.namespace)
+    await _try_wait_for_scrape(namespace=kube.namespace, deployment=deployment)
 
     await connector.periodic_measure(
-        target_resource=deployment,
         target_metrics=MAIN_METRICS,
         datapoints_dicts=datapoints_dicts,
     )
@@ -255,44 +238,34 @@ def test_append_data_point():
     }
 
 
-@pytest.mark.minikube_profile.with_args("metrics-server")
+@pytest.mark.integration
+@pytest.mark.usefixtures("kubernetes_asyncio_config")
 @pytest.mark.applymanifests("../manifests", files=["fiber-http-opsani-dev.yaml"])
 # async def test_periodic_measure(kubeconfig: str, minikube: str, kube: kubetest.client.TestClient, servo_runner: ServoRunner):
-async def test_get_target_resource(
-    kubeconfig: str, kubecontext: str, minikube: str, kube: kubetest.client.TestClient
-):
+async def test_get_target_resource(kube: kubetest.client.TestClient):
     kube.wait_for_registered()
-    await kubernetes_asyncio.config.load_kube_config(
-        config_file=str(kubeconfig), context=kubecontext
-    )
+    await kubernetes_asyncio.config.load_kube_config()
     assert await _get_target_resource(
         KubeMetricsConfiguration(
             name="fiber-http",
             namespace=kube.namespace,
             container="fiber-http",
-            context=minikube,
-            kubeconfig=kubeconfig,
         )
     )
 
 
-@pytest.mark.minikube_profile.with_args("metrics-server")
+@pytest.mark.integration
+@pytest.mark.usefixtures("kubernetes_asyncio_config")
 @pytest.mark.applymanifests("../manifests", files=["fiber-http-opsani-dev.yaml"])
-async def test_get_target_resource_container(
-    kubeconfig: str, kubecontext: str, minikube: str, kube: kubetest.client.TestClient
-):
+async def test_get_target_resource_container(kube: kubetest.client.TestClient):
     kube.wait_for_registered()
-    await kubernetes_asyncio.config.load_kube_config(
-        config_file=str(kubeconfig), context=kubecontext
-    )
-    deployment = await Deployment.read("fiber-http", kube.namespace)
+    await kubernetes_asyncio.config.load_kube_config()
+    deployment = await DeploymentHelper.read("fiber-http", kube.namespace)
     assert _get_target_resource_container(
         KubeMetricsConfiguration(
             name="fiber-http",
             namespace=kube.namespace,
             container="fiber-http",
-            context=minikube,
-            kubeconfig=kubeconfig,
         ),
         target_resource=deployment,
     )
@@ -306,7 +279,6 @@ def test_name_to_metric():
 
 @pytest.mark.integration
 @pytest.mark.usefixtures("kubernetes_asyncio_config")
-# @pytest.mark.applymanifests("../manifests/kube_metrics", files=["role.yaml", "role-binding.yaml"])
 @pytest.mark.applymanifests("../manifests", files=["fiber-http-opsani-dev.yaml"])
 class TestKubeMetricsConnectorIntegration:
     @pytest.fixture
@@ -316,10 +288,6 @@ class TestKubeMetricsConnectorIntegration:
             name="fiber-http",
             container="fiber-http",
         )
-
-    @pytest.fixture
-    def kubecontext(self) -> str:
-        return None  # override file level fixture for EKS
 
     async def test_checks(self, kube_metrics_config: KubeMetricsConfiguration) -> None:
         checks = await KubeMetricsChecks.run(kube_metrics_config)
@@ -331,12 +299,8 @@ class TestKubeMetricsConnectorIntegration:
         kube_metrics_connector: KubeMetricsConnector,
     ) -> None:
         kube.wait_for_registered()
-        deployment = await Deployment.read("fiber-http", kube.namespace)
-
-        await asyncio.wait_for(
-            _wait_for_scrape(namespace=kube.namespace, deployment=deployment),
-            timeout=60,
-        )
+        deployment = await DeploymentHelper.read("fiber-http", kube.namespace)
+        await _try_wait_for_scrape(namespace=kube.namespace, deployment=deployment)
 
         kube_metrics_connector.config.metric_collection_frequency = servo.Duration("1s")
         result = await kube_metrics_connector.measure()
