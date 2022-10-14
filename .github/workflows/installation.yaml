@@ -17,7 +17,7 @@ jobs:
       run: |
         echo "::set-output name=python-version::$(cat .python-version)"
     - name: Cache pyenv versions
-      uses: actions/cache@v2.1.1
+      uses: actions/cache@v3.0.11
       id: cached-pyenvs
       with:
         path: /opt/hostedtoolcache/pyenv_root
@@ -36,7 +36,7 @@ jobs:
         poetry env info
         poetry env use `cat .python-version`
     - name: Cache dependencies
-      uses: actions/cache@v2.1.1
+      uses: actions/cache@v3.0.11
       id: cached-poetry-dependencies
       with:
         path: .venv
