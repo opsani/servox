@@ -6,7 +6,7 @@ import os
 import random
 import shutil
 import signal
-from typing import Any, Optional
+from typing import Any, Optional, Union
 
 import backoff
 import colorama
@@ -26,7 +26,7 @@ from servo.servo import _set_current_servo
 from servo.types import Adjustment, Control, Description, Duration, Measurement
 
 
-class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
+class ServoRunner(pydantic.BaseModel, servo.logging.Mixin):
     interactive: bool = False
     _servo: servo.Servo = pydantic.PrivateAttr(None)
     _connected: bool = pydantic.PrivateAttr(False)
@@ -58,17 +58,17 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
         return self._connected
 
     @property
-    def optimizer(self) -> servo.Optimizer:
+    def optimizer(
+        self,
+    ) -> Union[
+        servo.configuration.OpsaniOptimizer,
+        servo.configuration.AppdynamicsOptimizer,
+    ]:
         return self.servo.optimizer
 
     @property
     def config(self) -> servo.BaseServoConfiguration:
         return self.servo.config
-
-    @property
-    def api_client_options(self) -> dict[str, Any]:
-        # Adopt the servo config for driving the API mixin
-        return self.servo.api_client_options
 
     async def describe(self, control: Control) -> Description:
         self.logger.info("Describing...")
@@ -86,7 +86,7 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
 
     async def measure(self, param: servo.api.MeasureParams) -> Measurement:
         if isinstance(param, dict):
-            # required parsing has failed in api.Mixin._post_event(), run parse_obj to surface the validation errors
+            # required parsing has failed in servo.post_event(), run parse_obj to surface the validation errors
             servo.api.MeasureParams.parse_obj(param)
         servo.logger.info(f"Measuring... [metrics={', '.join(param.metrics)}]")
         servo.logger.trace(devtools.pformat(param))
@@ -123,7 +123,7 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
         return aggregate_description
 
     async def exec_command(self) -> servo.api.Status:
-        cmd_response = await self._post_event(servo.api.Events.whats_next, None)
+        cmd_response = await self.servo.post_event(servo.api.Events.whats_next, None)
         self.logger.info(f"What's Next? => {cmd_response.command}")
         self.logger.trace(devtools.pformat(cmd_response))
 
@@ -137,7 +137,7 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
             self.logger.debug(devtools.pformat(description))
 
             status = servo.api.Status.ok(descriptor=description.__opsani_repr__())
-            return await self._post_event(servo.api.Events.describe, status.dict())
+            return await self.servo.post_event(servo.api.Events.describe, status.dict())
 
         elif cmd_response.command == servo.api.Commands.measure:
             try:
@@ -153,7 +153,7 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
                 self.logger.error(f"Responding with {param}")
                 self.logger.opt(exception=error).debug("Measure failure details")
 
-            return await self._post_event(servo.api.Events.measure, param)
+            return await self.servo.post_event(servo.api.Events.measure, param)
 
         elif cmd_response.command == servo.api.Commands.adjust:
             adjustments = servo.api.descriptor_to_adjustments(
@@ -178,7 +178,7 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
                 self.logger.error(f"Responding with {status.dict()}")
                 self.logger.opt(exception=error).debug("Adjust failure details")
 
-            return await self._post_event(servo.api.Events.adjust, status.dict())
+            return await self.servo.post_event(servo.api.Events.adjust, status.dict())
 
         elif cmd_response.command == servo.api.Commands.sleep:
             # TODO: Model this
@@ -295,7 +295,7 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
             )
             async def connect() -> None:
                 self.logger.info("Saying HELLO.", end=" ")
-                await self._post_event(
+                await self.servo.post_event(
                     servo.api.Events.hello,
                     dict(
                         agent=servo.api.user_agent(),
@@ -332,7 +332,9 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
         try:
             self._running = False
             if self.connected:
-                await self._post_event(servo.api.Events.goodbye, dict(reason=reason))
+                await self.servo.post_event(
+                    servo.api.Events.goodbye, dict(reason=reason)
+                )
         except Exception:
             self.logger.exception(f"Exception occurred during GOODBYE request")
 
@@ -419,7 +421,7 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
                     status = servo.api.Status.from_error(error)
                     self.logger.error(f"Responding with {status.dict()}")
                     runner = self._runner_for_servo(servo.current_servo())
-                    await runner._post_event(operation, status.dict())
+                    await runner.servo.post_event(operation, status.dict())
 
                 tasks = [
                     t for t in asyncio.all_tasks() if t is not asyncio.current_task()

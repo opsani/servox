@@ -182,7 +182,7 @@ async def test_hello_and_describe(
     await static_optimizer.say_hello(dict(agent=servo.api.user_agent()))
     assert static_optimizer.state == tests.fake.StateMachine.States.ready
 
-    response = await servo_runner._post_event(
+    response = await servo_runner.servo.post_event(
         servo.api.Events.hello, dict(agent=servo.api.user_agent())
     )
     assert response.status == "ok"
@@ -194,7 +194,7 @@ async def test_hello_and_describe(
     # get a description from the servo
     description = await servo_runner.describe(servo.types.Control())
     param = dict(descriptor=description.__opsani_repr__(), status="ok")
-    response = await servo_runner._post_event(servo.api.Events.describe, param)
+    response = await servo_runner.servo.post_event(servo.api.Events.describe, param)
     assert response.status == "ok"
 
     # description has been accepted and state machine has transitioned into analyzing

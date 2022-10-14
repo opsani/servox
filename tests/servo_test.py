@@ -25,7 +25,7 @@ from servo.configuration import (
     BaseConfiguration,
     ChecksConfiguration,
     CommonConfiguration,
-    Optimizer,
+    OpsaniOptimizer,
     Timeouts,
 )
 from servo.connector import BaseConnector
@@ -120,7 +120,7 @@ async def assembly(servo_yaml: Path) -> Assembly:
     }
     servo_yaml.write_text(yaml.dump(config))
 
-    optimizer = Optimizer(id="dev.opsani.com/servox", token="1234556789")
+    optimizer = OpsaniOptimizer(id="dev.opsani.com/servox", token="1234556789")
 
     # TODO: Can't pass in like this, needs to be fixed
     assembly = await Assembly.assemble(config_file=servo_yaml, optimizer=optimizer)
@@ -642,7 +642,7 @@ class TestAssembly:
         }
         servo_yaml.write_text(yaml.dump(config))
 
-        optimizer = Optimizer(id="dev.opsani.com/servox", token="1234556789")
+        optimizer = OpsaniOptimizer(id="dev.opsani.com/servox", token="1234556789")
 
         assembly = await Assembly.assemble(config_file=servo_yaml, optimizer=optimizer)
 
@@ -668,7 +668,7 @@ class TestAssembly:
         }
         servo_yaml.write_text(yaml.dump(config))
 
-        optimizer = Optimizer(id="dev.opsani.com/servox", token="1234556789")
+        optimizer = OpsaniOptimizer(id="dev.opsani.com/servox", token="1234556789")
 
         assembly = await Assembly.assemble(config_file=servo_yaml, optimizer=optimizer)
         DynamicServoSettings = assembly.servos[0].config.__class__
@@ -1497,7 +1497,7 @@ class TestAssembly:
         }
         servo_yaml.write_text(yaml.dump(config))
 
-        optimizer = Optimizer(id="dev.opsani.com/servox", token="1234556789")
+        optimizer = OpsaniOptimizer(id="dev.opsani.com/servox", token="1234556789")
 
         assembly = await Assembly.assemble(config_file=servo_yaml, optimizer=optimizer)
         DynamicServoConfiguration = assembly.servos[0].config.__class__
@@ -1542,7 +1542,7 @@ class TestAssembly:
 async def test_generating_schema_with_test_connectors(
     optimizer_env: None, servo_yaml: Path
 ) -> None:
-    optimizer = Optimizer(id="dev.opsani.com/servox", token="1234556789")
+    optimizer = OpsaniOptimizer(id="dev.opsani.com/servox", token="1234556789")
 
     assembly = await Assembly.assemble(config_file=servo_yaml, optimizer=optimizer)
     assert len(assembly.servos) == 1, "servo was not assembled"
@@ -1560,7 +1560,7 @@ class TestServoSettings:
     def test_override_optimizer_settings_with_env_vars(self) -> None:
         with environment_overrides({"OPSANI_TOKEN": "abcdefg"}):
             assert os.environ["OPSANI_TOKEN"] is not None
-            optimizer = Optimizer(id="dsada.com/foo")
+            optimizer = OpsaniOptimizer(id="dsada.com/foo")
             assert optimizer.token.get_secret_value() == "abcdefg"
 
     def test_set_connectors_with_env_vars(self) -> None:
@@ -1824,7 +1824,7 @@ def test_invalid_proxies(proxies) -> None:
 
 
 def test_api_client_options() -> None:
-    optimizer = Optimizer(id="test.com/foo", token="12345")
+    optimizer = OpsaniOptimizer(id="test.com/foo", token="12345")
     settings = CommonConfiguration(proxies="http://localhost:1234", ssl_verify=False)
 
     # NOTE: SETTINGS AND OPTIMIZER NOT TOGETHER!!!
@@ -1847,13 +1847,13 @@ def test_api_client_options() -> None:
 
 
 async def test_models() -> None:
-    optimizer = Optimizer(id="test.com/foo", token="12345")
+    optimizer = OpsaniOptimizer(id="test.com/foo", token="12345")
     config = CommonConfiguration(proxies="http://localhost:1234", ssl_verify=False)
     assert MeasureConnector(config={"__settings__": config, "__optimizer__": optimizer})
 
 
 async def test_httpx_client_config() -> None:
-    optimizer = Optimizer(id="test.com/foo", token="12345")
+    optimizer = OpsaniOptimizer(id="test.com/foo", token="12345")
     common = CommonConfiguration(proxies="http://localhost:1234", ssl_verify=False)
 
     # TODO: get rid of this...
@@ -1863,21 +1863,18 @@ async def test_httpx_client_config() -> None:
     connector = MeasureConnector(
         config={"__settings__": common, "__optimizer__": optimizer}
     )
-    assert connector.config.optimizer == optimizer
-    assert connector.optimizer == optimizer
-    assert connector.config.settings
-    assert connector.config.settings == common
 
     servo = Servo(
         config={"settings": common, "optimizer": optimizer}, connectors=[connector]
     )
+    assert connector.optimizer == optimizer
+    assert connector.config.settings
+    assert connector.config.settings == common
 
-    for c in [servo, connector]:
-        async with c.api_client() as client:
-            for k, v in client._mounts.items():
-                assert k == URLPattern("all://")
-            assert client._transport._pool._ssl_context.verify_mode == ssl.CERT_NONE
-            assert client._transport._pool._ssl_context.check_hostname == False
+    for k, v in servo._api_client._mounts.items():
+        assert k == URLPattern("all://")
+    assert servo._api_client._transport._pool._ssl_context.verify_mode == ssl.CERT_NONE
+    assert servo._api_client._transport._pool._ssl_context.check_hostname == False
 
 
 def test_backoff_defaults() -> None:
@@ -1940,15 +1937,14 @@ def test_checks_defaults() -> None:
     ],
 )
 async def test_proxy_utilization(proxies) -> None:
-    optimizer = Optimizer(id="test.com/foo", token="12345")
+    optimizer = OpsaniOptimizer(id="test.com/foo", token="12345")
     config = CommonConfiguration(proxies=proxies)
     servo = Servo(config={"settings": config, "optimizer": optimizer}, connectors=[])
-    async with servo.api_client() as client:
-        transport = client._transport_for_url(httpx.URL(optimizer.base_url))
-        assert isinstance(transport, httpx.AsyncHTTPTransport)
-        assert transport._pool._proxy_url.origin == Origin(
-            scheme=b"http", host=b"localhost", port=1234
-        )
+    transport = servo._api_client._transport_for_url(httpx.URL(optimizer.base_url))
+    assert isinstance(transport, httpx.AsyncHTTPTransport)
+    assert transport._pool._proxy_url.origin == Origin(
+        scheme=b"http", host=b"localhost", port=1234
+    )
 
 
 def test_codename() -> None:

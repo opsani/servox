@@ -29,6 +29,7 @@ import pkg_resources
 import pydantic
 
 import servo.api
+import servo.configuration
 import servo.events
 import servo.logging
 import servo.pubsub
@@ -61,7 +62,6 @@ _connector_subclasses: Set[Type["BaseConnector"]] = set()
 # NOTE: Initialize mixins first to control initialization graph
 class BaseConnector(
     servo.utilities.associations.Mixin,
-    servo.api.Mixin,
     servo.events.Mixin,
     servo.logging.Mixin,
     servo.pubsub.Mixin,
@@ -121,10 +121,25 @@ class BaseConnector(
     )
     """Shared configuration from our parent Servo instance."""
 
+    _optimizer: Optional[
+        Union[
+            servo.configuration.OpsaniOptimizer,
+            servo.configuration.AppdynamicsOptimizer,
+        ]
+    ] = pydantic.PrivateAttr(default=None)
+    """Shared optimizer from our parent Servo instance."""
+
     @property
-    def optimizer(self) -> Optional[servo.configuration.Optimizer]:
+    def optimizer(
+        self,
+    ) -> Optional[
+        Union[
+            servo.configuration.OpsaniOptimizer,
+            servo.configuration.AppdynamicsOptimizer,
+        ]
+    ]:
         """The optimizer for the connector."""
-        return self.config.optimizer
+        return self._optimizer
 
     ##
     # Shared telemetry metadata
@@ -221,24 +236,6 @@ class BaseConnector(
                 id(self),
             )
         )
-
-    @property
-    def api_client_options(self) -> Dict[str, Any]:  # noqa: D105
-        if not self.optimizer:
-            raise RuntimeError(
-                f"cannot construct API client: optimizer is not configured"
-            )
-        return {
-            "base_url": self.optimizer.url,
-            "headers": {
-                "Authorization": f"Bearer {self.optimizer.token.get_secret_value()}",
-                "User-Agent": servo.api.user_agent(),
-                "Content-Type": "application/json",
-            },
-            "proxies": self._global_config.proxies,
-            "timeout": self._global_config.timeouts,
-            "verify": self._global_config.ssl_verify,
-        }
 
     @property
     def logger(self) -> "loguru.Logger":

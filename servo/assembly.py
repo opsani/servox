@@ -65,9 +65,7 @@ class Assembly(pydantic.BaseModel):
         *,
         config_file: Optional[pathlib.Path] = None,
         configs: Optional[List[Dict[str, Any]]] = None,
-        optimizer: Optional[servo.configuration.Optimizer] = None,
         env: Optional[Dict[str, str]] = os.environ,
-        **kwargs,
     ) -> "Assembly":
         """Assemble a Servo by processing configuration and building a dynamic settings model"""
 
@@ -91,9 +89,9 @@ class Assembly(pydantic.BaseModel):
             if not configs:
                 configs.append({})
 
-        if len(configs) > 1 and optimizer is not None:
+        if len(configs) > 1 and any([c for c in configs if not c.get("optimizer")]):
             raise ValueError(
-                "cannot configure a multi-servo assembly with a single optimizer"
+                "cannot configure a multi-servo assembly without an optimizer specified in each config"
             )
 
         # Set up the event bus and pub/sub exchange
@@ -104,9 +102,6 @@ class Assembly(pydantic.BaseModel):
             # TODO: We need to index the env vars here for multi-servo
             servo_config_model, routes = _create_config_model(config=config, env=env)
             servo_config = servo_config_model.parse_obj(config)
-            if not servo_config.optimizer:
-                servo_config.optimizer = optimizer
-            servo_optimizer = servo_config.optimizer or optimizer
 
             telemetry = servo.telemetry.Telemetry()
 
@@ -115,14 +110,11 @@ class Assembly(pydantic.BaseModel):
             for name, connector_type in routes.items():
                 connector_config = getattr(servo_config, name)
                 if connector_config is not None:
-                    connector_config.__optimizer__ = servo_optimizer
                     connector = connector_type(
                         name=name,
                         config=connector_config,
-                        optimizer=servo_optimizer,
                         pubsub_exchange=pubsub_exchange,
                         telemetry=telemetry,
-                        __optimizer__=servo_optimizer,
                         __connectors__=connectors,
                     )
                     connectors.append(connector)
@@ -131,7 +123,6 @@ class Assembly(pydantic.BaseModel):
             servo_ = servo.servo.Servo(
                 config=servo_config,
                 connectors=connectors.copy(),  # Avoid self-referential reference to servo
-                optimizer=servo_optimizer,
                 telemetry=telemetry,
                 __connectors__=connectors,
                 pubsub_exchange=pubsub_exchange,

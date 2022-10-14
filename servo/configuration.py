@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import abc
+import base64
 import enum
 import inspect
 import json
+import os
 import pathlib
 import re
 from typing import Any, Callable, Dict, List, Optional, Type, Union
@@ -17,9 +19,10 @@ from servo import types
 
 __all__ = [
     "AbstractBaseConfiguration",
+    "AppdynamicsOptimizer",
     "BaseConfiguration",
     "BaseServoConfiguration",
-    "Optimizer",
+    "OpsaniOptimizer",
     "CommonConfiguration",
 ]
 
@@ -37,7 +40,46 @@ NAME_REGEX = r"[a-zA-Z\_\-\.0-9]{1,64}"
 OPTIMIZER_ID_REGEX = f"^{ORGANIZATION_REGEX}/{NAME_REGEX}$"
 
 
-class Optimizer(pydantic.BaseSettings):
+class AppdynamicsOptimizer(pydantic.BaseSettings):
+    workload_id: str
+    tenant_id: str
+    client_id: str
+    client_secret: pydantic.SecretStr
+    base_url: pydantic.AnyHttpUrl = "https://optimize-ignite-test.saas.appd-test.com/"
+    # override arguments
+    url: Optional[pydantic.AnyHttpUrl] = None
+    token_url: Optional[pydantic.AnyHttpUrl] = None
+
+    def __init__(self, **kwargs) -> None:
+        super().__init__(**kwargs)
+
+        if not self.url:
+            workload_id = base64.b32encode(str.encode(self.workload_id)).decode()
+            self.url = f"{self.base_url}/ext/optimize/v1/workloads/{workload_id}/"
+        if not self.token_url:
+            self.token_url = (
+                f"{self.base_url}/auth/{self.tenant_id}/default/oauth2/token"
+            )
+
+    @pydantic.validator("base_url")
+    def _rstrip_slash(cls, url: str) -> str:
+        return url.rstrip("/")
+
+    class Config:
+        case_sensitive = True
+        extra = pydantic.Extra.forbid
+        fields = {
+            "workload_id": {"env": "APPD_WORKLOAD_ID"},
+            "tenant_id": {"env": "APPD_TENANT_ID"},
+            "client_id": {"env": "APPD_CLIENT_ID"},
+            "client_secret": {"env": "APPD_CLIENT_SECRET"},
+            "base_url": {"env": "APPD_BASE_URL"},
+            "url": {"env": "APPD_URL"},
+            "token_url": {"env": "APPD_TOKEN_URL"},
+        }
+
+
+class OpsaniOptimizer(pydantic.BaseSettings):
     """
     An Optimizer models an Opsani optimization engines that the Servo can connect to
     in order to access the Opsani machine learning technology for optimizing system infrastructure
@@ -49,24 +91,29 @@ class Optimizer(pydantic.BaseSettings):
         token: An opaque access token for interacting with the Optimizer via HTTP Bearer Token authentication.
         base_url: The base URL for accessing the Opsani API. This field is typically only useful to Opsani developers or in the context
             of deployments with specific contractual, firewall, or security mandates that preclude access to the primary API.
-        __url__: An optional URL that overrides the computed URL for accessing the Opsani API. This option is utilized during development
+        url: An optional URL that overrides the computed URL for accessing the Opsani API. This option is utilized during development
             and automated testing to bind the servo to a fixed URL.
     """
 
     id: pydantic.constr(regex=OPTIMIZER_ID_REGEX)
     token: pydantic.SecretStr
     base_url: pydantic.AnyHttpUrl = "https://api.opsani.com"
+    url: Optional[pydantic.AnyHttpUrl] = None
     _organization: str
     _name: str
-    __url__: Optional[pydantic.AnyHttpUrl] = None
 
-    def __init__(self, *, __url__: Optional[str] = None, **kwargs) -> None:
+    def __init__(self, **kwargs) -> None:
+        if not kwargs.get("token") and (
+            token_file := os.environ.get("OPSANI_TOKEN_FILE")
+        ):
+            kwargs["token"] = pathlib.Path(token_file).read_text().strip()
         super().__init__(**kwargs)
 
         organization, name = self.id.split("/")
         self._organization = organization
         self._name = name
-        self.__url__ = __url__
+        if not self.url:
+            self.url = f"{self.base_url}/accounts/{self.organization}/applications/{self.name}/"
 
     @pydantic.validator("base_url")
     def _rstrip_slash(cls, url: str) -> str:
@@ -93,32 +140,16 @@ class Optimizer(pydantic.BaseSettings):
         """
         return self._name
 
-    @property
-    def url(self) -> str:
-        """
-        Returns a complete URL for interacting with the optimizer API.
-
-        An optional URL that overrides the computed URL for accessing the Opsani API. This option is utilized during development
-        and automated testing to bind the servo to a fixed URL.
-        """
-        return (
-            self.__url__
-            or f"{self.base_url}/accounts/{self.organization}/applications/{self.name}/"
-        )
-
     class Config:
-        env_file = ".env"
         case_sensitive = True
         extra = pydantic.Extra.forbid
         underscore_attrs_are_private = True
         validate_assignment = True
         fields = {
-            "token": {
-                "env": "OPSANI_TOKEN",
-            },
-            "base_url": {
-                "env": "OPSANI_BASE_URL",
-            },
+            "id": {"env": "OPSANI_OPTIMIZER"},
+            "token": {"env": "OPSANI_TOKEN"},
+            "base_url": {"env": "OPSANI_BASE_URL"},
+            "url": {"env": "OPSANI_URL"},
         }
         json_encoders = {
             pydantic.SecretStr: lambda v: v.get_secret_value() if v else None,
@@ -241,7 +272,6 @@ class AbstractBaseConfiguration(pydantic.BaseSettings, servo.logging.Mixin):
         return {**DEFAULT_JSON_ENCODERS, **encoders}
 
     class Config(servo.types.BaseModelConfig):
-        env_file = ".env"
         case_sensitive = True
         extra = pydantic.Extra.forbid
         title = DEFAULT_TITLE
@@ -265,31 +295,6 @@ class BaseConfiguration(AbstractBaseConfiguration):
     description: Optional[str] = pydantic.Field(
         None, description="An optional description of the configuration."
     )
-    __optimizer__: Optional[Optimizer] = pydantic.PrivateAttr(None)
-    __settings__: Optional[CommonConfiguration] = pydantic.PrivateAttr(
-        default_factory=lambda: CommonConfiguration(),
-    )
-
-    def __init__(
-        self,
-        __optimizer__: Optional[Optimizer] = None,
-        __settings__: Optional[CommonConfiguration] = None,
-        **kwargs,
-    ) -> None:
-        super().__init__(**kwargs)
-        self.__optimizer__ = __optimizer__
-        if __settings__:
-            self.__settings__ = __settings__
-
-    @property
-    def optimizer(self) -> Optional[Optimizer]:
-        """Returns the Optimizer this configuration is bound to."""
-        return self.__optimizer__
-
-    @property
-    def settings(self) -> Optional[Optimizer]:
-        """Returns the Optimizer this configuration is bound to."""
-        return self.__settings__
 
 
 # Uppercase handling for non-subclassed settings models. Should be pushed into Pydantic as a PR
@@ -537,7 +542,7 @@ class BaseServoConfiguration(AbstractBaseConfiguration, abc.ABC):
 
     name: Optional[str] = None
     description: Optional[str] = None
-    optimizer: Optional[Optimizer] = None
+    optimizer: Union[OpsaniOptimizer, AppdynamicsOptimizer] = {}
     connectors: Optional[Union[List[str], Dict[str, str]]] = pydantic.Field(
         None,
         description=(

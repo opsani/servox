@@ -1525,7 +1525,7 @@ async def test_logging() -> None:
 
     with servo.current():
         with connector.current():
-            handler = ProgressHandler(connector.report_progress, lambda m: print(m))
+            handler = ProgressHandler(servo.report_progress, lambda m: print(m))
             connector.logger.add(handler.sink)
             args = dict(operation="ADJUST", started_at=datetime.datetime.now())
             connector.logger.info("First", progress=0, **args)

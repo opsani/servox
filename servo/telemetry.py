@@ -71,18 +71,13 @@ class Telemetry(pydantic.BaseModel):
         return self._values
 
 
-class DiagnosticsHandler(servo.logging.Mixin, servo.api.Mixin):
+class DiagnosticsHandler(servo.logging.Mixin):
 
     servo: servo.Servo = None
     _running: bool = False
 
     def __init__(self, servo: servo.Servo) -> None:  # noqa: D10
         self.servo = servo
-
-    @property
-    def api_client_options(self) -> dict[str, Any]:
-        # Adopt the servo config for driving the API mixin
-        return self.servo.api_client_options
 
     async def diagnostics_check(self) -> None:
 
@@ -166,9 +161,8 @@ class DiagnosticsHandler(servo.logging.Mixin, servo.api.Mixin):
     @backoff.on_exception(
         backoff.expo,
         httpx.HTTPError,
-        max_time=lambda: servo.current_servo()
-        and servo.current_servo().config.settings.backoff.max_time(),
-        max_tries=lambda: DIAGNOSTICS_MAX_RETRIES,
+        max_time=600,
+        max_tries=DIAGNOSTICS_MAX_RETRIES,
         logger="diagnostics-backoff",
         on_giveup=lambda x: asyncio.current_task().cancel(),
     )
@@ -179,39 +173,37 @@ class DiagnosticsHandler(servo.logging.Mixin, servo.api.Mixin):
         output_model: pydantic.BaseModel,
         json: Optional[dict] = None,
     ) -> Union[DiagnosticStates, servo.api.Status]:
+        self.logger.trace(f"{method} diagnostic request")
+        try:
+            response: httpx.Response = await self.servo._api_client.request(
+                method=method, url=endpoint, json=dict(data=json)
+            )
+            response.raise_for_status()
+            response_json = response.json()
 
-        async with self.api_client() as client:
-            self.logger.trace(f"{method} diagnostic request")
+            # Handle /diagnostics-check retrieval
+            if "data" in response_json:
+                response_json = response_json["data"]
+
+            self.logger.trace(
+                f"{method} diagnostic request response ({response.status_code} {response.reason_phrase}): {devtools.pformat(response_json)}"
+            )
+            self.logger.trace(servo.api.redacted_to_curl(response.request))
             try:
-                response = await client.request(
-                    method=method, url=endpoint, json=dict(data=json)
+                return pydantic.parse_obj_as(output_model, response_json)
+            except pydantic.ValidationError as error:
+                # Should not raise due to improperly set diagnostic states
+                self.logger.exception(
+                    f"Malformed diagnostic {method} response", level_id="DEBUG"
                 )
-                response.raise_for_status()
-                response_json = response.json()
+                return DiagnosticStates.withhold
 
-                # Handle /diagnostics-check retrieval
-                if "data" in response_json:
-                    response_json = response_json["data"]
-
-                self.logger.trace(
-                    f"{method} diagnostic request response ({response.status_code} {response.reason_phrase}): {devtools.pformat(response_json)}"
+        except httpx.HTTPError as error:
+            if getattr(error, "response") and error.response.status_code < 500:
+                self.logger.debug(
+                    f"Giving up on non-retryable HTTP status code {error.response.status_code} ({error.response.reason_phrase}) for url: {error.request.url}"
                 )
-                self.logger.trace(servo.api._redacted_to_curl(response.request))
-                try:
-                    return pydantic.parse_obj_as(output_model, response_json)
-                except pydantic.ValidationError as error:
-                    # Should not raise due to improperly set diagnostic states
-                    self.logger.exception(
-                        f"Malformed diagnostic {method} response", level_id="DEBUG"
-                    )
-                    return DiagnosticStates.withhold
-
-            except httpx.HTTPError as error:
-                if error.response.status_code < 500:
-                    self.logger.debug(
-                        f"Giving up on non-retryable HTTP status code {error.response.status_code} ({error.response.reason_phrase}) for url: {error.request.url}"
-                    )
-                    return DiagnosticStates.withhold
-                else:
-                    self.logger.trace(servo.api._redacted_to_curl(error.request))
-                    raise
+                return DiagnosticStates.withhold
+            else:
+                self.logger.trace(servo.api.redacted_to_curl(error.request))
+                raise

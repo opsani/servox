@@ -97,13 +97,7 @@ class Context(typer.Context):
 
     # Basic configuration
     config_file: Optional[pathlib.Path] = None
-    optimizer: Optional[servo.Optimizer] = None
     name: Optional[str] = None
-
-    token: Optional[str] = None
-    token_file: Optional[pathlib.Path] = None
-    base_url: Optional[str] = None
-    url: Optional[str] = None
     limit: Optional[int] = None
 
     # Assembled servo
@@ -122,15 +116,10 @@ class Context(typer.Context):
         return {
             "config_file",
             "name",
-            "optimizer",
             "assembly",
             "servo_",
             "connector",
             "section",
-            "token",
-            "token_file",
-            "base_url",
-            "url",
             "limit",
         }
 
@@ -144,28 +133,19 @@ class Context(typer.Context):
         *args,
         config_file: Optional[pathlib.Path] = None,
         name: Optional[str] = None,
-        optimizer: Optional[servo.Optimizer] = None,
         assembly: Optional[servo.Assembly] = None,
         servo_: Optional[servo.Servo] = None,
         connector: Optional[servo.BaseConnector] = None,
         section: Section = Section.commands,
-        token: Optional[str] = None,
-        token_file: Optional[pathlib.Path] = None,
-        base_url: Optional[str] = None,
-        url: Optional[str] = None,
         limit: Optional[int] = None,
         **kwargs,
     ) -> None:  # noqa: D107
         self.config_file = config_file
         self.name = name
-        self.optimizer = optimizer
         self.assembly = assembly
         self.servo_ = servo_
         self.connector = connector
         self.section = section
-        self.token = token
-        self.token_file = token_file
-        self.base_url = base_url
         self.limit = limit
         return super().__init__(command, *args, **kwargs)
 
@@ -356,48 +336,6 @@ class CLI(typer.Typer, servo.logging.Mixin):
     @staticmethod
     def root_callback(
         ctx: Context,
-        optimizer: str = typer.Option(
-            None,
-            envvar="OPSANI_OPTIMIZER",
-            show_envvar=True,
-            metavar="OPTIMIZER",
-            help="Opsani optimizer to connect to (format is example.com/app)",
-        ),
-        token: str = typer.Option(
-            None,
-            envvar="OPSANI_TOKEN",
-            show_envvar=True,
-            metavar="TOKEN",
-            help="Opsani API access token",
-        ),
-        token_file: pathlib.Path = typer.Option(
-            None,
-            envvar="OPSANI_TOKEN_FILE",
-            show_envvar=True,
-            exists=True,
-            file_okay=True,
-            dir_okay=False,
-            writable=False,
-            readable=True,
-            resolve_path=True,
-            help="File to load the access token from",
-        ),
-        base_url: str = typer.Option(
-            "https://api.opsani.com/",
-            "--base-url",
-            envvar="OPSANI_BASE_URL",
-            show_envvar=True,
-            show_default=True,
-            metavar="URL",
-            help="Base URL for connecting to Opsani API",
-        ),
-        url: str = typer.Option(
-            None,
-            hidden=True,
-            envvar="OPSANI_URL",
-            metavar="URL",
-            help="Complete URL to reach the Opsani API, overriding the URL computed from the base URL",
-        ),
         config_file: pathlib.Path = typer.Option(
             "servo.yaml",
             "--config-file",
@@ -442,11 +380,6 @@ class CLI(typer.Typer, servo.logging.Mixin):
     ):
         ctx.config_file = config_file
         ctx.name = name
-        ctx.optimizer = optimizer
-        ctx.token = token
-        ctx.token_file = token_file
-        ctx.base_url = base_url
-        ctx.url = url
         ctx.limit = limit
         servo.logging.set_level(log_level)
         servo.logging.set_colors(not no_color)
@@ -460,12 +393,7 @@ class CLI(typer.Typer, servo.logging.Mixin):
             "validate",
             "version",
         }:
-            try:
-                CLI.assemble_from_context(ctx)
-
-            except (ValueError, pydantic.ValidationError) as error:
-                typer.echo(f"fatal: invalid configuration: {error}", err=True)
-                raise typer.Exit(2)
+            CLI.assemble_from_context(ctx)
 
     @staticmethod
     def assemble_from_context(ctx: Context) -> None:
@@ -486,70 +414,16 @@ class CLI(typer.Typer, servo.logging.Mixin):
         if len(configs) == 0:
             configs.append({})
 
-        if len(configs) == 1:
-            config = configs[0]
-
+        for config in configs:
             if not isinstance(config, dict):
                 raise TypeError(
                     f'error: config file "{ctx.config_file}" parsed to an unexpected value of type "{config.__class__}"'
                 )
 
-            if config.get("optimizer", None) == None:
-                if ctx.optimizer is None:
-                    raise typer.BadParameter("An optimizer must be specified")
-
-                # Resolve token
-                if ctx.token is None and ctx.token_file is None:
-                    raise typer.BadParameter(
-                        "API token must be provided via --token (ENV['OPSANI_TOKEN']) or --token-file (ENV['OPSANI_TOKEN_FILE'])"
-                    )
-
-                if ctx.token is not None and ctx.token_file is not None:
-                    raise typer.BadParameter(
-                        "--token and --token-file cannot both be given"
-                    )
-
-                if ctx.token_file is not None and ctx.token_file.exists():
-                    ctx.token = ctx.token_file.read_text().strip()
-
-                if len(ctx.token) == 0 or ctx.token.isspace():
-                    raise typer.BadParameter("token cannot be blank")
-
-                optimizer = servo.Optimizer(
-                    id=ctx.optimizer,
-                    token=ctx.token,
-                    base_url=ctx.base_url,
-                    __url__=ctx.url,
-                )
-        else:
-            if ctx.optimizer:
-                raise typer.BadParameter(
-                    f"An optimizer cannot be specified in a multi-servo configuration (found {ctx.optimizer})"
-                )
-
-            if ctx.token or ctx.token_file:
-                raise typer.BadParameter(
-                    "A token cannot be specified in a multi-servo configuration"
-                )
-
-            if ctx.limit:
-                if len(configs) > ctx.limit:
-                    servo.logger.warning(
-                        f"concurrent servo execution limited to {ctx.limit}: declining to run {len(configs) - ctx.limit} configured servos"
-                    )
-                    configs = configs[0 : ctx.limit]
-
         # Assemble the Servo
-        try:
-            assembly = run_async(
-                servo.Assembly.assemble(
-                    config_file=ctx.config_file, configs=configs, optimizer=optimizer
-                )
-            )
-
-        except pydantic.ValidationError as error:
-            typer.echo(error, err=True)
-            raise typer.Exit(2) from error
+        assembly: servo.Assembly = run_async(
+            servo.Assembly.assemble(config_file=ctx.config_file, configs=configs)
+        )
 
         # Target a specific servo if possible
         ctx.assembly = assembly

@@ -305,6 +305,7 @@ class OpsaniDevConfiguration(servo.BaseConfiguration):
 
 class OpsaniDevChecks(servo.BaseChecks):
     config: OpsaniDevConfiguration
+    optimizer: servo.OpsaniOptimizer
 
     # FIXME make this a property of worklod helper?
     @property
@@ -341,6 +342,11 @@ class OpsaniDevChecks(servo.BaseChecks):
 
     ##
     # Kubernetes essentials
+    @servo.checks.require("Optimizer Configuration")
+    def check_optimizer(self) -> None:
+        assert isinstance(
+            self.optimizer, servo.OpsaniOptimizer
+        ), f"Opsani Dev connector is incompatible with non OpsaniOptimizer type {self.optimizer.__class__.__name__}"
 
     @servo.checks.require("Connectivity to Kubernetes")
     async def check_connectivity(self) -> None:
@@ -588,7 +594,7 @@ class OpsaniDevChecks(servo.BaseChecks):
     async def check_prometheus_config_map(self) -> None:
         namespace = os.getenv("POD_NAMESPACE", self.config.namespace)
         optimizer_subdomain = servo.connectors.kubernetes.dns_subdomainify(
-            self.config.optimizer.name
+            self.optimizer.name
         )
 
         # Read optimizer namespaced resources
@@ -717,7 +723,7 @@ class OpsaniDevChecks(servo.BaseChecks):
 
         # Add optimizer annotation to the static Prometheus values
         required_annotations = PROMETHEUS_ANNOTATION_DEFAULTS.copy()
-        required_annotations["servo.opsani.com/optimizer"] = self.config.optimizer.id
+        required_annotations["servo.opsani.com/optimizer"] = self.optimizer.id
 
         # NOTE: Only check for annotation keys
         annotations: dict[str, str] = (
@@ -759,7 +765,7 @@ class OpsaniDevChecks(servo.BaseChecks):
         required_labels = ENVOY_SIDECAR_LABELS.copy()
         required_labels[
             "servo.opsani.com/optimizer"
-        ] = servo.connectors.kubernetes.dns_labelize(self.config.optimizer.id)
+        ] = servo.connectors.kubernetes.dns_labelize(self.optimizer.id)
 
         # NOTE: Check for exact labels as this isn't configurable
         delta = dict(set(required_labels.items()) - set(labels.items()))
@@ -1049,9 +1055,9 @@ class OpsaniDevConnector(servo.BaseConnector):
         matching: Optional[servo.CheckFilter],
         halt_on: Optional[servo.ErrorSeverity] = servo.ErrorSeverity.critical,
     ) -> List[servo.Check]:
-        return await OpsaniDevChecks.run(
-            self.config, matching=matching, halt_on=halt_on
-        )
+        return await OpsaniDevChecks(
+            config=self.config, optimizer=self.optimizer
+        ).run_all(matching=matching, halt_on=halt_on)
 
 
 async def _stream_remedy_command(command: str) -> None:

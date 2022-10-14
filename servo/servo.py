@@ -2,13 +2,18 @@
 from __future__ import annotations
 
 import asyncio
+import backoff
 import contextlib
 import contextvars
+from datetime import datetime, timedelta
+import devtools
 import enum
 import functools
 import json
-from typing import Any, Optional, Protocol, Sequence, Tuple, Union
+from typing import Any, Callable, Optional, Protocol, Sequence, Tuple, Union
+import time
 
+from authlib.integrations.httpx_client import AsyncOAuth2Client
 import httpx
 import pydantic
 
@@ -17,6 +22,7 @@ import servo.checks
 import servo.configuration
 import servo.connector
 import servo.events
+import servo.errors
 import servo.pubsub
 import servo.types
 import servo.utilities
@@ -138,27 +144,6 @@ class _EventDefinitions(Protocol):
         ...
 
 
-class ServoChecks(servo.checks.BaseChecks):
-    """Check that a servo is ready to perform optimization.
-
-    Args:
-        servo: The servo to be checked.
-    """
-
-    async def check_connectivity(self) -> Tuple[bool, str]:
-        """Check that the servo has connectivity to the Opsani API.
-
-        Returns:
-            A tuple value containing a boolean that indicates if connectivity is
-            available and an advisory string describing the status encountered.
-        """
-        async with self.api_client() as client:
-            event_request = servo.api.Request(event=servo.api.Events.hello)
-            response = await client.post("servo", data=event_request.json())
-            success = response.status_code == httpx.codes.OK
-            return (success, f"Response status code: {response.status_code}")
-
-
 @servo.connector.metadata(
     description="Continuous Optimization Orchestrator",
     homepage="https://opsani.com/",
@@ -197,6 +182,11 @@ class Servo(servo.connector.BaseConnector):
     """The active connectors in the Servo.
     """
 
+    _api_client: Union[httpx.AsyncClient, AsyncOAuth2Client] = pydantic.PrivateAttr(
+        None
+    )
+    """An asynchronous client for interacting with the Opsani API."""
+
     _running: bool = pydantic.PrivateAttr(False)
 
     async def dispatch_event(
@@ -210,12 +200,67 @@ class Servo(servo.connector.BaseConnector):
     ) -> None:  # noqa: D107
         super().__init__(*args, connectors=[], **kwargs)
 
+        if isinstance(self.config.optimizer, servo.configuration.OpsaniOptimizer):
+            # NOTE httpx useage docs indicate context manager but author states singleton is fine...
+            #   https://github.com/encode/httpx/issues/1042#issuecomment-652951591
+            self._api_client = httpx.AsyncClient(
+                base_url=self.config.optimizer.url,
+                headers={
+                    "Authorization": f"Bearer {self.config.optimizer.token.get_secret_value()}",
+                    "User-Agent": servo.api.user_agent(),
+                    "Content-Type": "application/json",
+                },
+                proxies=self.config.settings.proxies,
+                timeout=self.config.settings.timeouts,
+                verify=self.config.settings.ssl_verify,
+            )
+        elif isinstance(
+            self.config.optimizer, servo.configuration.AppdynamicsOptimizer
+        ):
+            self._api_client = AsyncOAuth2Client(
+                base_url=self.config.optimizer.url,
+                headers={
+                    "User-Agent": servo.api.user_agent(),
+                    "Content-Type": "application/json",
+                },
+                client_id=self.config.optimizer.client_id,
+                client_secret=self.config.optimizer.client_secret.get_secret_value(),
+                token_endpoint=self.config.optimizer.token_url,
+                grant_type="client_credentials",
+                proxies=self.config.settings.proxies,
+                timeout=self.config.settings.timeouts,
+                verify=self.config.settings.ssl_verify,
+            )
+
+            # authlib doesn't check status of token request so we have to do it ourselves
+            def raise_for_resp_status(response: httpx.Response):
+                response.raise_for_status()
+                return response
+
+            self._api_client.register_compliance_hook(
+                "access_token_response", raise_for_resp_status
+            )
+
+            # Ideally we would call the following but async is not allowed in __init__
+            #   await self.api_client.fetch_token(self.config.optimizer.token_url)
+            # Instead we use an ugly hack to trigger the client's autorefresh capabilities
+            self._api_client.token = {
+                "expires_at": int(time.time()) - 1,
+                "access_token": "_",
+            }
+
+        else:
+            raise RuntimeError(
+                f"Servo is not compatible with Optimizer type {self.optimizer.__class__.__name__}"
+            )
+
         # Ensure the connectors refer to the same objects by identity (required for eventing)
         self.connectors.extend(connectors)
 
         # associate shared config with our children
         for connector in connectors + [self]:
             connector._global_config = self.config.settings
+            connector._optimizer = self.config.optimizer
 
     @pydantic.root_validator()
     def _initialize_name(cls, values: dict[str, Any]) -> dict[str, Any]:
@@ -318,6 +363,7 @@ class Servo(servo.connector.BaseConnector):
 
         connector.name = name
         connector._global_config = self.config.settings
+        connector._optimizer = self.config.optimizer
 
         # Add to the event bus
         self.connectors.append(connector)
@@ -402,6 +448,114 @@ class Servo(servo.connector.BaseConnector):
             default=pydantic.json.pydantic_encoder,
         )
 
+    async def report_progress(self, **kwargs) -> None:
+        """Post a progress report to the Opsani API."""
+        request = self.progress_request(**kwargs)
+        status = await self.post_event(*request)
+
+        if status.status == servo.api.OptimizerStatuses.ok:
+            pass
+        elif status.status == servo.api.OptimizerStatuses.unexpected_event:
+            # We have lost sync with the backend, raise an exception to halt broken execution
+            raise servo.errors.UnexpectedEventError(status.reason)
+        elif status.status == servo.api.OptimizerStatuses.cancelled:
+            # Optimizer wants to cancel the operation
+            raise servo.errors.EventCancelledError(status.reason or "Command cancelled")
+        elif status.status == servo.api.OptimizerStatuses.invalid:
+            self.logger.warning(f"progress report was rejected as invalid")
+        else:
+            raise ValueError(f'unknown error status: "{status.status}"')
+
+    def progress_request(
+        self,
+        operation: str,
+        progress: servo.types.Numeric,
+        started_at: datetime,
+        message: Optional[str],
+        *,
+        connector: Optional[str] = None,
+        event_context: Optional["servo.events.EventContext"] = None,
+        time_remaining: Optional[
+            Union[servo.types.Numeric, servo.types.Duration]
+        ] = None,
+        logs: Optional[list[str]] = None,
+    ) -> Tuple[str, dict[str, Any]]:
+        def set_if(d: dict, k: str, v: Any):
+            if v is not None:
+                d[k] = v
+
+        # Calculate runtime
+        runtime = servo.types.Duration(datetime.now() - started_at)
+
+        # Produce human readable and remaining time in seconds values (if given)
+        if time_remaining:
+            if isinstance(time_remaining, (int, float)):
+                time_remaining_in_seconds = time_remaining
+                time_remaining = servo.types.Duration(time_remaining_in_seconds)
+            elif isinstance(time_remaining, timedelta):
+                time_remaining_in_seconds = time_remaining.total_seconds()
+            else:
+                raise ValueError(
+                    f"Unknown value of type '{time_remaining.__class__.__name__}' for parameter 'time_remaining'"
+                )
+        else:
+            time_remaining_in_seconds = None
+
+        params = dict(
+            progress=float(progress),
+            runtime=float(runtime.total_seconds()),
+        )
+        set_if(params, "message", message)
+
+        return (operation, params)
+
+    async def post_event(
+        self, event: Events, param
+    ) -> Union[servo.api.CommandResponse, servo.api.Status]:
+        @backoff.on_exception(
+            backoff.expo,
+            httpx.HTTPError,
+            max_time=lambda: self.config.settings.backoff.max_time(),
+            max_tries=lambda: self.config.settings.backoff.max_tries(),
+            giveup=servo.api.is_fatal_status_code,
+        )
+        async def _post_event(
+            event: Events, param
+        ) -> Union[servo.api.CommandResponse, servo.api.Status]:
+            event_request = servo.api.Request(event=event, param=param)
+            self.logger.trace(
+                f"POST event request: {devtools.pformat(event_request.json())}"
+            )
+
+            try:
+                response = await self.api_client.post(
+                    "servo", data=event_request.json()
+                )
+                response.raise_for_status()
+                response_json = response.json()
+                self.logger.trace(
+                    f"POST event response ({response.status_code} {response.reason_phrase}): {devtools.pformat(response_json)}"
+                )
+                self.logger.trace(servo.api.redacted_to_curl(response.request))
+
+                return pydantic.parse_obj_as(
+                    Union[servo.api.CommandResponse, servo.api.Status], response_json
+                )
+
+            except httpx.HTTPError as error:
+                if getattr(error, "response"):
+                    response_text = devtools.pformat(error.response.text)
+                else:
+                    response_text = "(No response on error)"
+                self.logger.error(
+                    f'HTTP error "{error.__class__.__name__}" encountered while posting "{event}" event: {error}, for '
+                    f"url {error.request.url} \n\n Response: {response_text}"
+                )
+                self.logger.trace(servo.api.redacted_to_curl(error.request))
+                raise
+
+        return await _post_event(event, param)
+
     async def check_servo(self, print_callback: Callable[[str], None] = None) -> bool:
 
         connectors = self.config.checks.connectors
@@ -459,7 +613,7 @@ class Servo(servo.connector.BaseConnector):
             )
             constraints = dict(filter(lambda i: bool(i[1]), args.items()))
 
-            results: List[servo.EventResult] = (
+            results: list[servo.EventResult] = (
                 await self.dispatch_event(
                     servo.Events.check,
                     servo.CheckFilter(**constraints),
@@ -518,23 +672,23 @@ class Servo(servo.connector.BaseConnector):
             A list of check objects that describe the outcomes of the checks that were run.
         """
         try:
-            async with self.api_client() as client:
-                event_request = servo.api.Request(event=servo.api.Events.hello)
-                response = await client.post("servo", data=event_request.json())
-                success = response.status_code == httpx.codes.OK
-                return [
-                    servo.checks.Check(
-                        name="Opsani API connectivity",
-                        success=success,
-                        message=f"Response status code: {response.status_code}",
-                    )
-                ]
+            event_request = servo.api.Request(event=servo.api.Events.hello)
+            response = await self._api_client.post("servo", data=event_request.json())
+            success = response.status_code == httpx.codes.OK
+            return [
+                servo.checks.Check(
+                    name="Opsani API connectivity",
+                    success=success,
+                    message=f"Response status code: {response.status_code}",
+                )
+            ]
         except Exception as error:
             return [
                 servo.checks.Check(
                     name="Opsani API connectivity",
                     success=False,
                     message=str(error),
+                    exception=error,
                 )
             ]
 

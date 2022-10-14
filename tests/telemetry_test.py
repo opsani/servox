@@ -34,7 +34,7 @@ async def test_telemetry_hello(
             200, text=f'{{"status": "{servo.api.OptimizerStatuses.ok}"}}'
         )
     )
-    await servo_runner._post_event(
+    await servo_runner.servo.post_event(
         servo.api.Events.hello,
         dict(
             agent=servo.api.user_agent(), telemetry=servo_runner.servo.telemetry.values

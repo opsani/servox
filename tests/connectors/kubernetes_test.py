@@ -2856,7 +2856,7 @@ class TestKubernetesClusterConnectorIntegration:
             )
         )
 
-        await servo_runner._post_event(
+        await servo_runner.servo.post_event(
             servo.api.Events.hello,
             dict(
                 agent=servo.api.user_agent(),
