@@ -344,9 +344,9 @@ def optimizer_env() -> Iterator[None]:
 
 
 @pytest.fixture()
-def optimizer() -> servo.Optimizer:
+def optimizer() -> servo.OpsaniOptimizer:
     """Return a generated optimizer instance."""
-    return servo.Optimizer(id="dev.opsani.com/servox", token="123456789")
+    return servo.OpsaniOptimizer(id="dev.opsani.com/servox", token="123456789")
 
 
 @pytest.fixture()
