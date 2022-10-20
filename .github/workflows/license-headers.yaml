@@ -1,0 +1,21 @@
+name: Verify License Headers
+on:
+  pull_request:
+    paths-ignore:
+    - 'docs/**'
+    - '*.md'
+    - Makefile
+    branches:
+      - main
+
+jobs:
+  check_license_headers_applied:
+    name: check_license_headers_applied
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+        name: Checkout code
+      - uses: docker://ghcr.io/google/addlicense
+        name: Run license header check
+        with:
+          args: -check -ignore 'tests/**' -ignore autotest.py **/*.py Dockerfile docker-compose.yaml entrypoint.sh
