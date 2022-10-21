@@ -15,7 +15,10 @@ jobs:
     steps:
       - uses: actions/checkout@v2
         name: Checkout code
+      # Note: directories weren't being ignored for some reason via -ignore '.github/**' -ignore 'tests/**' 
+      - name: Ignore directories workaround
+        run: rm .github tests
       - uses: docker://ghcr.io/google/addlicense
         name: Run license header check
         with:
-          args: -check -ignore '.github/**' -ignore 'tests/**' -ignore autotest.py -ignore .markdownlint.yaml -ignore .pre-commit-config.yaml .
+          args: -check -ignore autotest.py -ignore .markdownlint.yaml -ignore .pre-commit-config.yaml .
