@@ -18,4 +18,4 @@ jobs:
       - uses: docker://ghcr.io/google/addlicense
         name: Run license header check
         with:
-          args: -check -ignore 'tests/**' -ignore autotest.py **/*.py Dockerfile docker-compose.yaml entrypoint.sh
+          args: -check -ignore '.github/**' -ignore 'tests/**' -ignore autotest.py -ignore .markdownlint.yaml -ignore .pre-commit-config.yaml .
