@@ -17,7 +17,7 @@ jobs:
         name: Checkout code
       # Note: directories weren't being ignored for some reason via -ignore '.github/**' -ignore 'tests/**' 
       - name: Ignore directories workaround
-        run: rm .github tests
+        run: rm -r .github tests
       - uses: docker://ghcr.io/google/addlicense
         name: Run license header check
         with:
