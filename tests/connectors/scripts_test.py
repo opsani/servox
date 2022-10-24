@@ -26,7 +26,9 @@ async def test_scripts(connector: servo.connectors.scripts.ScriptsConnector) -> 
     ]
     _servo = servo.Servo(
         config={
-            "optimizer": servo.Optimizer(id="dev.opsani.com/servox", token="1234556789")
+            "optimizer": servo.OpsaniOptimizer(
+                id="dev.opsani.com/servox", token="1234556789"
+            )
         },
         connectors=connectors,
         __connectors__=connectors,

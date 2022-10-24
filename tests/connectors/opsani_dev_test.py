@@ -123,10 +123,6 @@ class TestConfig:
             "  max: 4.0Gi\n"
         )
 
-    def test_assign_optimizer(self) -> None:
-        config = servo.connectors.opsani_dev.OpsaniDevConfiguration.generate()
-        config.__optimizer__ = None
-
     def test_generate_kubernetes_config(self) -> None:
         kwargs = {}
         kwargs.update(namespace="test")
@@ -142,11 +138,6 @@ class TestConfig:
             )
         )
         kwargs.update(static_environment_variables={"FOO": "BAR", "BAZ": 1})
-        kwargs.update(
-            __optimizer__=servo.configuration.Optimizer(
-                id="test.com/foo", token="12345"
-            )
-        )
         opsani_dev_config = servo.connectors.opsani_dev.OpsaniDevConfiguration(**kwargs)
 
         kubernetes_config = opsani_dev_config.generate_kubernetes_config()
@@ -177,9 +168,6 @@ class TestConfig:
                 min="128 MiB", max="4.0 GiB", step="128 MiB"
             ),
             create_tuning_pod=False,
-            __optimizer__=servo.configuration.Optimizer(
-                id="test.com/foo", token="12345"
-            ),
         )
         no_tuning_k_config = no_tuning_config.generate_kubernetes_config()
         assert no_tuning_config.create_tuning_pod == False

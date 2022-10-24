@@ -169,14 +169,12 @@ async def test_static_optimizer() -> None:
 
 async def test_hello_and_describe(
     servo_runner: servo.runner.ServoRunner,
-    fakeapi_url: str,
     fastapi_app: "OpsaniAPI",
 ) -> None:
     static_optimizer = tests.fake.StaticOptimizer(
         id="dev.opsani.com/big-in-japan", token="31337"
     )
     fastapi_app.optimizer = static_optimizer
-    servo_runner.servo.optimizer.base_url = fakeapi_url
 
     assert static_optimizer.state == tests.fake.StateMachine.States.ready
     await static_optimizer.say_hello(dict(agent=servo.api.user_agent()))
@@ -262,22 +260,25 @@ async def test_state_machine_lifecyle(measurement: servo.Measurement) -> None:
 
 
 @pytest.fixture()
-async def assembly(servo_yaml: pathlib.Path) -> servo.assembly.Assembly:
+async def assembly(
+    servo_yaml: pathlib.Path,
+    fakeapi_url: str,
+) -> servo.assembly.Assembly:
     config_model = servo.assembly._create_config_model_from_routes(
         {
             "adjust": tests.helpers.AdjustConnector,
         }
     )
-    config = config_model.generate()
+    config = config_model.generate(
+        optimizer=servo.OpsaniOptimizer(
+            base_url=fakeapi_url,
+            id="servox.opsani.com/tests",
+            token="00000000-0000-0000-0000-000000000000",
+        )
+    )
     servo_yaml.write_text(config.yaml())
 
-    optimizer = servo.Optimizer(
-        id="servox.opsani.com/tests",
-        token="00000000-0000-0000-0000-000000000000",
-    )
-    assembly_ = await servo.assembly.Assembly.assemble(
-        config_file=servo_yaml, optimizer=optimizer
-    )
+    assembly_ = await servo.assembly.Assembly.assemble(config_file=servo_yaml)
     return assembly_
 
 

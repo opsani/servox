@@ -578,6 +578,14 @@ class BaseServoConfiguration(AbstractBaseConfiguration, abc.ABC):
         description="Configuration of Checks behavior",
     )
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        # If optimizer hasn't failed validation then it was set by environment variables.
+        # Explicityly assign it so that its included in pydantic's __fields_set__
+        # Ideally we could just set include=True on the Field but that doesn't seem to override exclude_unset
+        self.optimizer = self.optimizer
+
     @classmethod
     def generate(
         cls: Type["BaseServoConfiguration"], **kwargs
@@ -597,6 +605,12 @@ class BaseServoConfiguration(AbstractBaseConfiguration, abc.ABC):
                 else:
                     if config := field.type_.generate():
                         kwargs[name] = config
+
+        if "optimizer" not in kwargs:
+            kwargs["optimizer"] = {
+                "id": "generated-id.test/generated",
+                "token": "generated-token",
+            }
 
         return cls(**kwargs)
 

@@ -33,6 +33,8 @@ import typer.testing
 import uvloop
 import yaml
 
+import servo
+import servo.runner
 import servo.cli
 import servo.connectors.kubernetes
 import tests.helpers
@@ -391,7 +393,9 @@ def stub_multiservo_yaml(tmp_path: pathlib.Path) -> pathlib.Path:
             )
         )
     )
-    optimizer1 = servo.Optimizer(id="dev.opsani.com/multi-servox-1", token="123456789")
+    optimizer1 = servo.OpsaniOptimizer(
+        id="dev.opsani.com/multi-servox-1", token="123456789"
+    )
     optimizer1_config_json = json.loads(
         optimizer1.json(
             by_alias=True,
@@ -403,7 +407,9 @@ def stub_multiservo_yaml(tmp_path: pathlib.Path) -> pathlib.Path:
         "measure": measure_config_json,
         "adjust": {},
     }
-    optimizer2 = servo.Optimizer(id="dev.opsani.com/multi-servox-2", token="987654321")
+    optimizer2 = servo.OpsaniOptimizer(
+        id="dev.opsani.com/multi-servox-2", token="987654321"
+    )
     optimizer2_config_json = json.loads(
         optimizer2.json(
             by_alias=True,
@@ -642,13 +648,7 @@ async def assembly(servo_yaml: pathlib.Path) -> servo.assembly.Assembly:
     config = config_model.generate()
     servo_yaml.write_text(config.yaml())
 
-    optimizer = servo.Optimizer(
-        id="servox.opsani.com/tests",
-        token="00000000-0000-0000-0000-000000000000",
-    )
-    assembly_ = await servo.assembly.Assembly.assemble(
-        config_file=servo_yaml, optimizer=optimizer
-    )
+    assembly_ = await servo.assembly.Assembly.assemble(config_file=servo_yaml)
     return assembly_
 
 

@@ -528,7 +528,7 @@ class Servo(servo.connector.BaseConnector):
             )
 
             try:
-                response = await self.api_client.post(
+                response = await self._api_client.post(
                     "servo", data=event_request.json()
                 )
                 response.raise_for_status()

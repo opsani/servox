@@ -12,7 +12,7 @@ import servo.telemetry
 
 @respx.mock
 async def test_telemetry_hello(
-    monkeypatch, optimizer: servo.configuration.Optimizer
+    monkeypatch, optimizer: servo.configuration.OpsaniOptimizer
 ) -> None:
     expected = f'"telemetry": {{"servox.version": "{servo.__version__}", "servox.platform": "{platform.platform()}", "servox.namespace": "test-namespace"}}'
 
@@ -61,7 +61,7 @@ class TestDiagnosticStates:
 
 @respx.mock
 async def test_diagnostics_request_200(
-    monkeypatch, optimizer: servo.configuration.Optimizer
+    monkeypatch, optimizer: servo.configuration.OpsaniOptimizer
 ) -> None:
 
     # Simulate running as a k8s pod
@@ -91,7 +91,7 @@ async def test_diagnostics_request_200(
 
 @respx.mock
 async def test_diagnostics_request_404(
-    monkeypatch, optimizer: servo.configuration.Optimizer
+    monkeypatch, optimizer: servo.configuration.OpsaniOptimizer
 ) -> None:
 
     # Simulate running as a k8s pod
@@ -121,7 +121,7 @@ async def test_diagnostics_request_404(
 
 @respx.mock
 async def test_diagnostics_put(
-    monkeypatch, optimizer: servo.configuration.Optimizer
+    monkeypatch, optimizer: servo.configuration.OpsaniOptimizer
 ) -> None:
 
     monkeypatch.setenv("POD_NAMESPACE", "test-namespace")
@@ -154,7 +154,7 @@ async def test_diagnostics_put(
 
 @respx.mock
 async def test_diagnostics_reset(
-    monkeypatch, optimizer: servo.configuration.Optimizer
+    monkeypatch, optimizer: servo.configuration.OpsaniOptimizer
 ) -> None:
 
     monkeypatch.setenv("POD_NAMESPACE", "test-namespace")

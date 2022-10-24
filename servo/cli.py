@@ -678,13 +678,15 @@ class ServoCLI(CLI):
                     )
 
                 if write_dotenv:
+                    default_optimizer = os.environ.get("OPSANI_OPTIMIZER")
                     optimizer = typer.prompt(
                         "Opsani optimizer? (format: dev.opsani.com/app-name)",
-                        default=context.optimizer,
+                        default=default_optimizer,
                     )
-                    optimizer != context.optimizer or typer.echo()
-                    token = typer.prompt("API token?", default=context.token)
-                    token != context.token or typer.echo()
+                    optimizer != default_optimizer or typer.echo()
+                    default_token = os.environ.get("OPSANI_TOKEN")
+                    token = typer.prompt("API token?", default=default_token)
+                    token != default_token or typer.echo()
                     dotenv_file.write_text(
                         f"OPSANI_OPTIMIZER={optimizer}\nOPSANI_TOKEN={token}\nSERVO_LOG_LEVEL=DEBUG\n"
                     )

@@ -58,6 +58,7 @@ def _orjson_dumps(
 
             return default(obj)
         except TypeError:
+            # TODO increase visibility into this error as this fallback can cause issues with round tripping (eg. AnyHttpUrl)
             return orjson.dumps(obj).decode()
 
     try:
@@ -68,6 +69,7 @@ def _orjson_dumps(
 
 DEFAULT_JSON_ENCODERS = {
     pydantic.SecretStr: lambda v: v.get_secret_value() if v else None,
+    pydantic.AnyHttpUrl: str,
 }
 
 
