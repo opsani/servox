@@ -544,7 +544,7 @@ each one. For example:
 ---
 optimizer:
   id: newco.com/awesome-app1
-  token: 6686e4c3-2c6a-4c28-9c87-b304d7c1427b
+  token: 00000000-0000-0000-0000-000000000000
 connectors: [vegeta]
 vegeta:
   duration: 5m
@@ -553,7 +553,7 @@ vegeta:
 ---
 optimizer:
   id: newco.com/awesome-app2
-  token: 5d6e004d-cf7b-4121-b66f-d72f0fd44953
+  token: 00000000-0000-0000-0000-000000000000
 connectors: [vegeta]
 vegeta:
   duration: 5m
