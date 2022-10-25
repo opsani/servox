@@ -378,7 +378,7 @@ class TestPrometheusIntegration:
         # TODO: This needs a real optimizer
         return servo.OpsaniOptimizer(
             id="dev.opsani.com/servox-integration-tests",
-            token="179eddc9-20e2-4096-b064-824b72a83b7d",
+            token="00000000-0000-0000-0000-000000000000",
         )
 
     @pytest.fixture(autouse=True)

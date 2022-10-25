@@ -1,0 +1,24 @@
+name: Verify License Headers
+on:
+  pull_request:
+    paths-ignore:
+    - 'docs/**'
+    - '*.md'
+    - Makefile
+    branches:
+      - main
+
+jobs:
+  check_license_headers_applied:
+    name: check_license_headers_applied
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+        name: Checkout code
+      # Note: directories weren't being ignored for some reason via -ignore '.github/**' -ignore 'tests/**'
+      - name: Ignore directories workaround
+        run: rm -r .github tests
+      - uses: docker://ghcr.io/google/addlicense
+        name: Run license header check
+        with:
+          args: -check -ignore autotest.py -ignore .markdownlint.yaml -ignore .pre-commit-config.yaml .

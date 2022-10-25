@@ -30,7 +30,7 @@ async def assembly(servo_yaml: pathlib.Path) -> servo.assembly.Assembly:
     # TODO: This needs a real optimizer ID
     optimizer = servo.configuration.Optimizer(
         id="dev.opsani.com/servox-integration-tests",
-        token="179eddc9-20e2-4096-b064-824b72a83b7d",
+        token="00000000-0000-0000-0000-000000000000",
     )
     assembly_ = await servo.assembly.Assembly.assemble(
         config_file=servo_yaml, optimizer=optimizer
@@ -224,7 +224,7 @@ async def test_authorization_redacted(
 ) -> None:
     static_optimizer = tests.fake.StaticOptimizer(
         id="dev.opsani.com/servox-integration-tests",
-        token="179eddc9-20e2-4096-b064-824b72a83b7d",
+        token="00000000-0000-0000-0000-000000000000",
     )
     fastapi_app.optimizer = static_optimizer
     servo_runner.servo.optimizer.base_url = fakeapi_url
