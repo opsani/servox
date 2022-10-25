@@ -41,7 +41,7 @@ async def test_run_servo_on_kind(
     )
     command = (
         f'kubectl --kubeconfig={kubeconfig} --context kind-{kind} run servo --attach --image-pull-policy=Never --restart=Never --image="{kind_servo_image}" --'
-        " --optimizer example.com/app --token 123456 version"
+        " version"
     )
     exit_code, _, stderr = await subprocess(command, print_output=True, timeout=None)
     assert exit_code == 0, f"servo image execution failed: {stderr}"

@@ -55,6 +55,10 @@ async def test_generate_opsani_dev(project_path: pathlib.Path, subprocess) -> No
     config_path = project_path / "servo.yaml"
     yaml_text = config_path.read_text()
     assert yaml_text == (
+        "optimizer:\n"
+        "  id: generated-id.test/generated\n"
+        "  token: generated-token\n"
+        "  url: https://api.opsani.com/accounts/generated-id.test/applications/generated/\n"
         "connectors:\n"
         "- opsani_dev\n"
         "opsani_dev:\n"

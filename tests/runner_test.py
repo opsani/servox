@@ -24,17 +24,15 @@ async def assembly(servo_yaml: pathlib.Path) -> servo.assembly.Assembly:
             "adjust": tests.helpers.AdjustConnector,
         }
     )
-    config = config_model.generate()
-    servo_yaml.write_text(config.yaml())
-
     # TODO: This needs a real optimizer ID
-    optimizer = servo.configuration.Optimizer(
+    optimizer = servo.configuration.OpsaniOptimizer(
         id="dev.opsani.com/servox-integration-tests",
         token="00000000-0000-0000-0000-000000000000",
     )
-    assembly_ = await servo.assembly.Assembly.assemble(
-        config_file=servo_yaml, optimizer=optimizer
-    )
+    config = config_model.generate(optimizer=optimizer)
+    servo_yaml.write_text(config.yaml())
+
+    assembly_ = await servo.assembly.Assembly.assemble(config_file=servo_yaml)
     return assembly_
 
 
