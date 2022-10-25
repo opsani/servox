@@ -293,7 +293,7 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin):
             f"Servo started with {len(self.servo.connectors)} active connectors [{self.optimizer.id} @ {self.optimizer.url or self.optimizer.base_url}]"
         )
 
-        async def giveup() -> None:
+        async def giveup(_: dict) -> None:
             loop = asyncio.get_event_loop()
             self.logger.critical("retries exhausted, giving up")
             asyncio.create_task(self.shutdown(loop))
