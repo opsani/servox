@@ -817,7 +817,7 @@ class OpsaniDevChecks(servo.BaseChecks):
         )
         command = (
             f"kubectl exec -n {self.config.namespace} -c servo {self._servo_resource_target} -- "
-            f"servo --token-file /servo/opsani.token inject-sidecar --image {self.config.envoy_sidecar_image} "
+            f"servo inject-sidecar --image {self.config.envoy_sidecar_image} "
             f"--namespace {self.config.namespace} --service {self.config.service}{port_switch} "
             f"{self.config.workload_kind.lower()}/{self.config.workload_name}"
         )
