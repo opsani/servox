@@ -127,7 +127,7 @@ class OpsaniOptimizer(pydantic.BaseSettings):
         self._organization = organization
         self._name = name
         if not self.url:
-            self.url = f"{self.base_url}/accounts/{self.organization}/applications/{self.name}/"
+            self.url = self.default_url
 
     @pydantic.validator("base_url")
     def _rstrip_slash(cls, url: str) -> str:
@@ -153,6 +153,10 @@ class OpsaniOptimizer(pydantic.BaseSettings):
         between 1 and 64 characters in length.
         """
         return self._name
+
+    @property
+    def default_url(self) -> str:
+        return f"{self.base_url}/accounts/{self.organization}/applications/{self.name}/"
 
     class Config:
         case_sensitive = True

@@ -17,9 +17,7 @@ pytestmark = [pytest.mark.asyncio, pytest.mark.integration]
 
 
 @pytest.fixture()
-async def assembly(
-    servo_yaml: pathlib.Path, fakeapi_url: str
-) -> servo.assembly.Assembly:
+async def assembly(servo_yaml: pathlib.Path) -> servo.assembly.Assembly:
     config_model = servo.assembly._create_config_model_from_routes(
         {
             "prometheus": servo.connectors.prometheus.PrometheusConnector,
@@ -30,12 +28,15 @@ async def assembly(
     optimizer = servo.configuration.OpsaniOptimizer(
         id="dev.opsani.com/servox-integration-tests",
         token="00000000-0000-0000-0000-000000000000",
-        base_url=fakeapi_url,
     )
     config = config_model.generate(optimizer=optimizer)
     servo_yaml.write_text(config.yaml())
 
     assembly_ = await servo.assembly.Assembly.assemble(config_file=servo_yaml)
+    servo_config: servo.BaseServoConfiguration = assembly_.servos[0].config
+    servo_config.settings.backoff.__root__["__default__"].max_time = servo.Duration(
+        "30s"
+    )  # override default 10m timeout
     return assembly_
 
 
@@ -160,6 +161,7 @@ async def test_out_of_order_operations(servo_runner: servo.runner.ServoRunner) -
 
 async def test_hello(
     servo_runner: servo.runner.ServoRunner,
+    fakeapi_url: str,
     fastapi_app: "tests.OpsaniAPI",
 ) -> None:
     static_optimizer = tests.fake.StaticOptimizer(
@@ -167,6 +169,8 @@ async def test_hello(
     )
     await static_optimizer.request_description()
     fastapi_app.optimizer = static_optimizer
+    servo_runner.servo.optimizer.base_url = fakeapi_url
+    servo_runner.servo._api_client.base_url = servo_runner.servo.optimizer.default_url
     response = await servo_runner.servo.post_event(
         servo.api.Events.hello, dict(agent=servo.api.user_agent())
     )
@@ -214,6 +218,7 @@ async def test_hello(
 
 async def test_authorization_redacted(
     servo_runner: servo.runner.ServoRunner,
+    fakeapi_url: str,
     fastapi_app: "tests.OpsaniAPI",
 ) -> None:
     static_optimizer = tests.fake.StaticOptimizer(
@@ -221,6 +226,8 @@ async def test_authorization_redacted(
         token="00000000-0000-0000-0000-000000000000",
     )
     fastapi_app.optimizer = static_optimizer
+    servo_runner.servo.optimizer.base_url = fakeapi_url
+    servo_runner.servo._api_client.base_url = servo_runner.servo.optimizer.default_url
 
     # Capture TRACE logs
     messages = []
@@ -236,6 +243,7 @@ async def test_authorization_redacted(
 
 async def test_control_sent_on_adjust(
     servo_runner: servo.runner.ServoRunner,
+    fakeapi_url: str,
     fastapi_app: "tests.OpsaniAPI",
     mocker: pytest_mock.MockFixture,
 ) -> None:
@@ -246,10 +254,8 @@ async def test_control_sent_on_adjust(
     await sequenced_optimizer.recommend_adjustments(adjustments=[], control=control),
     sequenced_optimizer.sequence(sequenced_optimizer.done())
     fastapi_app.optimizer = sequenced_optimizer
-    servo_config: servo.BaseServoConfiguration = servo_runner.servo.config
-    servo_config.settings.backoff.__root__["default"].max_time = servo.Duration(
-        "30s"
-    )  # override default 10m timeout
+    servo_runner.servo.optimizer.base_url = fakeapi_url
+    servo_runner.servo._api_client.base_url = servo_runner.servo.optimizer.default_url
 
     adjust_connector = servo_runner.servo.get_connector("adjust")
     event_handler = adjust_connector.get_event_handlers(

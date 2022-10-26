@@ -1440,6 +1440,17 @@ pytest = ">=2.9"
 termcolor = ">=1.1.0"
 
 [[package]]
+name = "pytest-timeout"
+version = "2.1.0"
+description = "pytest plugin to abort hanging tests"
+category = "dev"
+optional = false
+python-versions = ">=3.6"
+
+[package.dependencies]
+pytest = ">=5.0.0"
+
+[[package]]
 name = "pytest-vscodedebug"
 version = "0.1.0"
 description = "A pytest plugin to easily enable debugging tests within Visual Studio Code"
@@ -2011,7 +2022,7 @@ testing = ["func-timeout", "jaraco.itertools", "pytest (>=4.6)", "pytest-black (
 [metadata]
 lock-version = "1.1"
 python-versions = ">=3.8,<=3.9.11"
-content-hash = "d7662b0b87b0abf5d87e8b47173b66a64f54104f87ed30e121ddc81a6ac87d0c"
+content-hash = "232812b2411b0ab179f835487047553afa0cdac40706822c54c6c0deb58e646b"
 
 [metadata.files]
 aiofiles = [
@@ -2870,6 +2881,10 @@ pytest-randomly = [
 ]
 pytest-sugar = [
     {file = "pytest-sugar-0.9.4.tar.gz", hash = "sha256:b1b2186b0a72aada6859bea2a5764145e3aaa2c1cfbb23c3a19b5f7b697563d3"},
+]
+pytest-timeout = [
+    {file = "pytest-timeout-2.1.0.tar.gz", hash = "sha256:c07ca07404c612f8abbe22294b23c368e2e5104b521c1790195561f37e1ac3d9"},
+    {file = "pytest_timeout-2.1.0-py3-none-any.whl", hash = "sha256:f6f50101443ce70ad325ceb4473c4255e9d74e3c7cd0ef827309dfa4c0d975c6"},
 ]
 pytest-vscodedebug = [
     {file = "pytest-vscodedebug-0.1.0.tar.gz", hash = "sha256:d2ca5a9edc6699c6e8afee7af064eabd359c92a3fb98691227d535f95d944a68"},
