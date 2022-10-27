@@ -724,7 +724,7 @@ Note these sections are mutually exclusive: Opsani API refers to Opsani managed 
 API refers to upcoming FSO Optimization. Which API type is used is dynamically derived during configuration/env var parsing by
 the [pydantic configuration model (see BaseServoConfiguration.optimizer)](https://github.com/opsani/servox/blob/main/servo/configuration.py).
 
-## Opsani API
+#### Opsani API
 
 By default, the servo will connect to the primary Opsani API hosted on
 [https://api.opsani.com](https://api.opsani.com). This behavior can be
@@ -737,7 +737,7 @@ overridden via CLI options and environment variables:
 | `optimizer.id`       | `OPSANI_ID`          | Identifier of the application as provided by the Opsani optimizer provisioned for your application                                                                         | `OPSANI_ID=newco.com/awesome-app1 servo run`                    |
 | `optimizer.token`    | `OPSANI_TOKEN`       | Authentication token as provided by the Opsani optimizer provisioned for your application                                                                                  | `OPSANI_TOKEN=00000000-0000-0000-0000-000000000000 servo run`   |
 
-## AppDynamics API
+#### AppDynamics API
 
 | Config Option             | Environment Variable | Description                                                                                                                                                                | Example                                                                    |
 | ------------------------- | -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
