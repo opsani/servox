@@ -79,6 +79,10 @@ class AppdynamicsOptimizer(pydantic.BaseSettings):
     def _rstrip_slash(cls, url: str) -> str:
         return url.rstrip("/")
 
+    @property
+    def id(self) -> str:
+        return f"{self.tenant_id} - {self.workload_id}"
+
     class Config:
         case_sensitive = True
         extra = pydantic.Extra.forbid
