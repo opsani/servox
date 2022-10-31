@@ -799,7 +799,7 @@ class OpsaniDevChecks(servo.BaseChecks):
                 remedy=lambda: _stream_remedy_command(command),
             )
 
-    @servo.checks.check("{self.config.workload_kind} has Envoy sidecar container")
+    @servo.checks.require("{self.config.workload_kind} has Envoy sidecar container")
     async def check_controller_envoy_sidecars(self) -> None:
         controller = await self.workload_helper.read(
             self.config.workload_name, self.config.namespace
