@@ -68,7 +68,7 @@ PROMETHEUS_ANNOTATION_DEFAULTS = {
     "prometheus.opsani.com/path": "/stats/prometheus",
     "prometheus.opsani.com/port": "9901",
 }
-ENVOY_SIDECAR_IMAGE_TAG = "opsani/envoy-proxy:v1.19-latest"
+ENVOY_SIDECAR_IMAGE_TAG = "envoyproxy/envoy:v1.24.0"
 ENVOY_SIDECAR_LABELS = {"sidecar.opsani.com/type": "envoy"}
 ENVOY_SIDECAR_DEFAULT_PORT = 9980
 
