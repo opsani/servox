@@ -23,7 +23,7 @@ jobs:
         path: /opt/hostedtoolcache/pyenv_root
         key: ${{ runner.os }}-pyenv
     - name: Install pyenv versions
-      uses: gabrielfalcao/pyenv-action@v9
+      uses: gabrielfalcao/pyenv-action@v10
       with:
         default: ${{ steps.python-version.outputs.python-version }}
       # if: steps.cached-pyenvs.outputs.cache-hit != 'true'
