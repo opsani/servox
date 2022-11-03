@@ -620,14 +620,35 @@ class SaturationOptimization(BaseOptimization):
             error: An optional error that triggered the destruction.
         """
         self.logger.info(f"adjustment failed: shutting down deployment's pods...")
-        self.workload = await self.workload_helper.read(
-            self.workload_config.name, self.workload_config.namespace
-        )
-        self.workload.spec.replicas = 0
-        self.workload = await asyncio.wait_for(
-            self.workload_helper.patch(self.workload),
-            timeout=self.timeout.total_seconds(),
-        )
+
+        retries = 3
+        while retries > 0:
+            # patch the deployment
+            try:
+                self.workload = await self.workload_helper.read(
+                    self.workload_config.name, self.workload_config.namespace
+                )
+                self.workload.spec.replicas = 0
+                self.workload = await asyncio.wait_for(
+                    self.workload_helper.patch(self.workload),
+                    timeout=self.timeout.total_seconds(),
+                )
+            except kubernetes_asyncio.client.ApiException as ae:
+                retries -= 1
+                if retries == 0:
+                    self.logger.error(
+                        "Failed to shutdown SaturationOptimization after 3 retries"
+                    )
+                    raise
+
+                if ae.status == 409 and ae.reason == "Conflict":
+                    # If we have a conflict, just load the existing object and try again
+                    pass
+                else:
+                    raise
+            else:
+                # No need to retry if no exception raised
+                break
 
     def to_components(self) -> List[servo.Component]:
         settings = [self.cpu, self.memory, self.replicas]
