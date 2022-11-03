@@ -135,23 +135,15 @@ class BaseConnector(
     )
     """Shared configuration from our parent Servo instance."""
 
-    _optimizer: Optional[
-        Union[
-            servo.configuration.OpsaniOptimizer,
-            servo.configuration.AppdynamicsOptimizer,
-        ]
-    ] = pydantic.PrivateAttr(default=None)
+    _optimizer: Optional[servo.configuration.OptimizerTypes] = pydantic.PrivateAttr(
+        default=None
+    )
     """Shared optimizer from our parent Servo instance."""
 
     @property
     def optimizer(
         self,
-    ) -> Optional[
-        Union[
-            servo.configuration.OpsaniOptimizer,
-            servo.configuration.AppdynamicsOptimizer,
-        ]
-    ]:
+    ) -> Optional[servo.configuration.OptimizerTypes]:
         """The optimizer for the connector."""
         return self._optimizer
 

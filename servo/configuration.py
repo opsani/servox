@@ -23,6 +23,7 @@ import os
 import pathlib
 import re
 from typing import Any, Callable, Dict, List, Optional, Type, Union
+from typing_extensions import TypeAlias
 
 import pydantic
 import yaml
@@ -37,6 +38,7 @@ __all__ = [
     "BaseConfiguration",
     "BaseServoConfiguration",
     "OpsaniOptimizer",
+    "OptimizerTypes",
     "CommonConfiguration",
 ]
 
@@ -176,6 +178,9 @@ class OpsaniOptimizer(pydantic.BaseSettings):
         json_encoders = {
             pydantic.SecretStr: lambda v: v.get_secret_value() if v else None,
         }
+
+
+OptimizerTypes: TypeAlias = Union[OpsaniOptimizer, AppdynamicsOptimizer]
 
 
 DEFAULT_TITLE = "Base Connector Configuration Schema"
@@ -564,7 +569,7 @@ class BaseServoConfiguration(AbstractBaseConfiguration, abc.ABC):
 
     name: Optional[str] = None
     description: Optional[str] = None
-    optimizer: Union[OpsaniOptimizer, AppdynamicsOptimizer] = {}
+    optimizer: OptimizerTypes = {}
     connectors: Optional[Union[List[str], Dict[str, str]]] = pydantic.Field(
         None,
         description=(
@@ -604,7 +609,7 @@ class BaseServoConfiguration(AbstractBaseConfiguration, abc.ABC):
         super().__init__(*args, **kwargs)
 
         # If optimizer hasn't failed validation then it was set by environment variables.
-        # Explicityly assign it so that its included in pydantic's __fields_set__
+        # Explicitly assign it so that its included in pydantic's __fields_set__
         # Ideally we could just set include=True on the Field but that doesn't seem to override exclude_unset
         self.optimizer = self.optimizer
 

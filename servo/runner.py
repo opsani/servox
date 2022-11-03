@@ -74,10 +74,7 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin):
     @property
     def optimizer(
         self,
-    ) -> Union[
-        servo.configuration.OpsaniOptimizer,
-        servo.configuration.AppdynamicsOptimizer,
-    ]:
+    ) -> servo.configuration.OptimizerTypes:
         return self.servo.optimizer
 
     @property
