@@ -24,17 +24,19 @@ async def assembly(servo_yaml: pathlib.Path) -> servo.assembly.Assembly:
             "adjust": tests.helpers.AdjustConnector,
         }
     )
-    config = config_model.generate()
-    servo_yaml.write_text(config.yaml())
-
     # TODO: This needs a real optimizer ID
-    optimizer = servo.configuration.Optimizer(
+    optimizer = servo.configuration.OpsaniOptimizer(
         id="dev.opsani.com/servox-integration-tests",
         token="00000000-0000-0000-0000-000000000000",
     )
-    assembly_ = await servo.assembly.Assembly.assemble(
-        config_file=servo_yaml, optimizer=optimizer
-    )
+    config = config_model.generate(optimizer=optimizer)
+    servo_yaml.write_text(config.yaml())
+
+    assembly_ = await servo.assembly.Assembly.assemble(config_file=servo_yaml)
+    servo_config: servo.BaseServoConfiguration = assembly_.servos[0].config
+    servo_config.settings.backoff.__root__["__default__"].max_time = servo.Duration(
+        "30s"
+    )  # override default 10m timeout
     return assembly_
 
 
@@ -97,7 +99,6 @@ async def servo_runner(assembly: servo.Assembly) -> servo.runner.ServoRunner:
 async def running_servo(
     event_loop: asyncio.AbstractEventLoop,
     servo_runner: servo.runner.ServoRunner,
-    fakeapi_url: str,
 ) -> servo.runner.ServoRunner:
     """Start, run, and yield a servo runner.
 
@@ -105,10 +106,6 @@ async def running_servo(
     runloop scheduled and will begin interacting with the optimizer API.
     """
     try:
-        servo_runner.servo.optimizer.base_url = fakeapi_url
-        for connector in servo_runner.servo.connectors:
-            connector.optimizer.base_url = fakeapi_url
-            connector.api_client_options.update(servo_runner.servo.api_client_options)
         event_loop.create_task(servo_runner.run())
         async with servo_runner.servo.current():
             yield servo_runner
@@ -127,13 +124,13 @@ async def running_servo(
 @pytest.mark.xfail(reason="too brittle.")
 async def test_out_of_order_operations(servo_runner: servo.runner.ServoRunner) -> None:
     await servo_runner.servo.startup()
-    response = await servo_runner._post_event(
+    response = await servo_runner.servo.post_event(
         servo.api.Events.hello, dict(agent=servo.api.user_agent())
     )
     debug(response)
     assert response.status == "ok"
 
-    response = await servo_runner._post_event(servo.api.Events.whats_next, None)
+    response = await servo_runner.servo.post_event(servo.api.Events.whats_next, None)
     debug(response)
     assert response.command in (servo.api.Commands.describe, servo.api.Commands.sleep)
 
@@ -141,16 +138,16 @@ async def test_out_of_order_operations(servo_runner: servo.runner.ServoRunner) -
 
     param = dict(descriptor=description.__opsani_repr__(), status="ok")
     debug(param)
-    response = await servo_runner._post_event(servo.api.Events.describe, param)
+    response = await servo_runner.servo.post_event(servo.api.Events.describe, param)
     debug(response)
 
-    response = await servo_runner._post_event(servo.api.Events.whats_next, None)
+    response = await servo_runner.servo.post_event(servo.api.Events.whats_next, None)
     debug(response)
     assert response.command == servo.api.Commands.measure
 
     # Send out of order adjust
     reply = {"status": "ok"}
-    response = await servo_runner._post_event(servo.api.Events.adjust, reply)
+    response = await servo_runner.servo.post_event(servo.api.Events.adjust, reply)
     debug(response)
 
     assert response.status == "unexpected-event"
@@ -173,7 +170,8 @@ async def test_hello(
     await static_optimizer.request_description()
     fastapi_app.optimizer = static_optimizer
     servo_runner.servo.optimizer.base_url = fakeapi_url
-    response = await servo_runner._post_event(
+    servo_runner.servo._api_client.base_url = servo_runner.servo.optimizer.default_url
+    response = await servo_runner.servo.post_event(
         servo.api.Events.hello, dict(agent=servo.api.user_agent())
     )
     assert response.status == "ok"
@@ -181,7 +179,7 @@ async def test_hello(
     description = await servo_runner.describe(servo.types.Control())
 
     param = dict(descriptor=description.__opsani_repr__(), status="ok")
-    response = await servo_runner._post_event(servo.api.Events.describe, param)
+    response = await servo_runner.servo.post_event(servo.api.Events.describe, param)
 
 
 # async def test_describe() -> None:
@@ -229,12 +227,13 @@ async def test_authorization_redacted(
     )
     fastapi_app.optimizer = static_optimizer
     servo_runner.servo.optimizer.base_url = fakeapi_url
+    servo_runner.servo._api_client.base_url = servo_runner.servo.optimizer.default_url
 
     # Capture TRACE logs
     messages = []
     servo_runner.logger.add(lambda m: messages.append(m), level=5)
 
-    await servo_runner._post_event(
+    await servo_runner.servo.post_event(
         servo.api.Events.hello, dict(agent=servo.api.user_agent())
     )
 
@@ -256,6 +255,7 @@ async def test_control_sent_on_adjust(
     sequenced_optimizer.sequence(sequenced_optimizer.done())
     fastapi_app.optimizer = sequenced_optimizer
     servo_runner.servo.optimizer.base_url = fakeapi_url
+    servo_runner.servo._api_client.base_url = servo_runner.servo.optimizer.default_url
 
     adjust_connector = servo_runner.servo.get_connector("adjust")
     event_handler = adjust_connector.get_event_handlers(

@@ -49,7 +49,6 @@ def config(kube) -> servo.connectors.opsani_dev.OpsaniDevConfiguration:
         memory=servo.connectors.kubernetes.Memory(
             min="128 MiB", max="4.0 GiB", step="128 MiB"
         ),
-        __optimizer__=servo.configuration.Optimizer(id="test.com/foo", token="12345"),
     )
 
 
@@ -65,22 +64,32 @@ def no_tuning_config(kube) -> servo.connectors.opsani_dev.OpsaniDevConfiguration
             min="128 MiB", max="4.0 GiB", step="128 MiB"
         ),
         create_tuning_pod=False,
-        __optimizer__=servo.configuration.Optimizer(id="test.com/foo", token="12345"),
     )
+
+
+@pytest.fixture
+def optimizer() -> servo.configuration.OpsaniOptimizer:
+    return servo.configuration.OpsaniOptimizer(id="test.com/foo", token="12345")
 
 
 @pytest.fixture
 def checks(
     config: servo.connectors.opsani_dev.OpsaniDevConfiguration,
+    optimizer: servo.configuration.OpsaniOptimizer,
 ) -> servo.connectors.opsani_dev.OpsaniDevChecks:
-    return servo.connectors.opsani_dev.OpsaniDevChecks(config=config)
+    return servo.connectors.opsani_dev.OpsaniDevChecks(
+        config=config, optimizer=optimizer
+    )
 
 
 @pytest.fixture
 def no_tuning_checks(
     no_tuning_config: servo.connectors.opsani_dev.OpsaniDevConfiguration,
+    optimizer: servo.configuration.OpsaniOptimizer,
 ) -> servo.connectors.opsani_dev.OpsaniDevChecks:
-    return servo.connectors.opsani_dev.OpsaniDevChecks(config=no_tuning_config)
+    return servo.connectors.opsani_dev.OpsaniDevChecks(
+        config=no_tuning_config, optimizer=optimizer
+    )
 
 
 class TestConfig:
@@ -123,10 +132,6 @@ class TestConfig:
             "  max: 4.0Gi\n"
         )
 
-    def test_assign_optimizer(self) -> None:
-        config = servo.connectors.opsani_dev.OpsaniDevConfiguration.generate()
-        config.__optimizer__ = None
-
     def test_generate_kubernetes_config(self) -> None:
         kwargs = {}
         kwargs.update(namespace="test")
@@ -142,11 +147,6 @@ class TestConfig:
             )
         )
         kwargs.update(static_environment_variables={"FOO": "BAR", "BAZ": 1})
-        kwargs.update(
-            __optimizer__=servo.configuration.Optimizer(
-                id="test.com/foo", token="12345"
-            )
-        )
         opsani_dev_config = servo.connectors.opsani_dev.OpsaniDevConfiguration(**kwargs)
 
         kubernetes_config = opsani_dev_config.generate_kubernetes_config()
@@ -177,9 +177,6 @@ class TestConfig:
                 min="128 MiB", max="4.0 GiB", step="128 MiB"
             ),
             create_tuning_pod=False,
-            __optimizer__=servo.configuration.Optimizer(
-                id="test.com/foo", token="12345"
-            ),
         )
         no_tuning_k_config = no_tuning_config.generate_kubernetes_config()
         assert no_tuning_config.create_tuning_pod == False
@@ -441,7 +438,7 @@ class TestNoTuningIntegration:
                     {
                         "prometheus.opsani.com/path": "/stats/prometheus",
                         "prometheus.opsani.com/port": "9901",
-                        "servo.opsani.com/optimizer": no_tuning_checks.config.optimizer.id,
+                        "servo.opsani.com/optimizer": no_tuning_checks.optimizer.id,
                     },
                 )
             await assert_check_raises(
@@ -487,7 +484,7 @@ class TestNoTuningIntegration:
                     {
                         "sidecar.opsani.com/type": "envoy",
                         "servo.opsani.com/optimizer": servo.connectors.kubernetes.dns_labelize(
-                            no_tuning_checks.config.optimizer.id
+                            no_tuning_checks.optimizer.id
                         ),
                     },
                 )
@@ -925,7 +922,7 @@ class TestServiceMultiport:
                         {
                             "prometheus.opsani.com/path": "/stats/prometheus",
                             "prometheus.opsani.com/port": "9901",
-                            "servo.opsani.com/optimizer": checks.config.optimizer.id,
+                            "servo.opsani.com/optimizer": checks.optimizer.id,
                         },
                     )
                 await assert_check_raises(
@@ -969,7 +966,7 @@ class TestServiceMultiport:
                         {
                             "sidecar.opsani.com/type": "envoy",
                             "servo.opsani.com/optimizer": servo.connectors.kubernetes.dns_labelize(
-                                checks.config.optimizer.id
+                                checks.optimizer.id
                             ),
                         },
                     )
@@ -1745,7 +1742,7 @@ async def _remedy_check(
                     "prometheus.opsani.com/port": "9901",
                     "prometheus.opsani.com/scrape": "true",
                     "prometheus.opsani.com/scheme": "http",
-                    "servo.opsani.com/optimizer": config.optimizer.id,
+                    "servo.opsani.com/optimizer": checks.optimizer.id,
                 },
             )
 
@@ -1758,7 +1755,7 @@ async def _remedy_check(
                 {
                     "sidecar.opsani.com/type": "envoy",
                     "servo.opsani.com/optimizer": servo.connectors.kubernetes.dns_labelize(
-                        config.optimizer.id
+                        checks.optimizer.id
                     ),
                 },
             )

@@ -14,15 +14,11 @@
 
 from __future__ import annotations
 
-import abc
 import copy
-from datetime import datetime, timedelta
 import enum
-from typing import Any, Dict, List, Optional, Tuple, Union, TYPE_CHECKING
+from typing import Any, Dict, List, Optional, Union, TYPE_CHECKING
 
-import backoff
 import curlify2
-import devtools
 import httpx
 import pydantic
 
@@ -30,7 +26,6 @@ import servo
 import servo.errors
 import servo.types
 import servo.utilities
-from servo.logging import logs_path
 
 if TYPE_CHECKING:
     from pydantic.typing import DictStrAny
@@ -179,150 +174,6 @@ class CommandResponse(pydantic.BaseModel):
         }
 
 
-class Mixin(abc.ABC):
-    """Provides functionality for interacting with the Opsani API via httpx.
-
-    The mixin requires the implementation of the `api_client_options` method
-    which is responsible for providing details around base URL, HTTP headers,
-    timeouts, proxies, SSL configuration, etc. for initializing
-    `httpx.AsyncClient` and `httpx.Client` instances.
-    """
-
-    @property
-    @abc.abstractmethod
-    def api_client_options(self) -> Dict[str, Any]:
-        """Return a dict of options for initializing httpx API client objects.
-
-        An implementation must be provided in subclasses derived from the mixin
-        and is responsible for appropriately configuring the base URL, HTTP
-        headers, timeouts, proxies, SSL configuration, transport flags, etc.
-
-        The dict returned is passed directly to the initializer of
-        `httpx.AsyncClient` and `httpx.Client` objects constructed by the
-        `api_client` and `api_client_sync` methods.
-        """
-        ...
-
-    def api_client(self, **kwargs) -> httpx.AsyncClient:
-        """Return an asynchronous client for interacting with the Opsani API."""
-        return httpx.AsyncClient(**{**self.api_client_options, **kwargs})
-
-    def api_client_sync(self, **kwargs) -> httpx.Client:
-        """Return a synchronous client for interacting with the Opsani API."""
-        return httpx.Client(**{**self.api_client_options, **kwargs})
-
-    async def report_progress(self, **kwargs) -> None:
-        """Post a progress report to the Opsani API."""
-        request = self.progress_request(**kwargs)
-        status = await self._post_event(*request)
-
-        if status.status == OptimizerStatuses.ok:
-            pass
-        elif status.status == OptimizerStatuses.unexpected_event:
-            # We have lost sync with the backend, raise an exception to halt broken execution
-            raise servo.errors.UnexpectedEventError(status.reason)
-        elif status.status == OptimizerStatuses.cancelled:
-            # Optimizer wants to cancel the operation
-            raise servo.errors.EventCancelledError(status.reason or "Command cancelled")
-        elif status.status == OptimizerStatuses.invalid:
-            servo.logger.warning(f"progress report was rejected as invalid")
-        else:
-            raise ValueError(f'unknown error status: "{status.status}"')
-
-    def progress_request(
-        self,
-        operation: str,
-        progress: servo.types.Numeric,
-        started_at: datetime,
-        message: Optional[str],
-        *,
-        connector: Optional[str] = None,
-        event_context: Optional["servo.events.EventContext"] = None,
-        time_remaining: Optional[
-            Union[servo.types.Numeric, servo.types.Duration]
-        ] = None,
-        logs: Optional[List[str]] = None,
-    ) -> Tuple[str, Dict[str, Any]]:
-        def set_if(d: Dict, k: str, v: Any):
-            if v is not None:
-                d[k] = v
-
-        # Normalize progress to positive percentage
-        if progress < 1.0:
-            progress = progress * 100
-
-        # Calculate runtime
-        runtime = servo.types.Duration(datetime.now() - started_at)
-
-        # Produce human readable and remaining time in seconds values (if given)
-        if time_remaining:
-            if isinstance(time_remaining, (int, float)):
-                time_remaining_in_seconds = time_remaining
-                time_remaining = servo.types.Duration(time_remaining_in_seconds)
-            elif isinstance(time_remaining, timedelta):
-                time_remaining_in_seconds = time_remaining.total_seconds()
-            else:
-                raise ValueError(
-                    f"Unknown value of type '{time_remaining.__class__.__name__}' for parameter 'time_remaining'"
-                )
-        else:
-            time_remaining_in_seconds = None
-
-        params = dict(
-            progress=float(progress),
-            runtime=float(runtime.total_seconds()),
-        )
-        set_if(params, "message", message)
-
-        return (operation, params)
-
-    def _is_fatal_status_code(error: Exception) -> bool:
-        if isinstance(error, httpx.HTTPStatusError):
-            if error.response.status_code < 500:
-                servo.logger.error(
-                    f"Giving up on non-retryable HTTP status code {error.response.status_code} ({error.response.reason_phrase}) "
-                )
-                return True
-        return False
-
-    @backoff.on_exception(
-        backoff.expo,
-        httpx.HTTPError,
-        max_time=lambda: servo.current_servo()
-        and servo.current_servo().config.settings.backoff.max_time(),
-        max_tries=lambda: servo.current_servo()
-        and servo.current_servo().config.settings.backoff.max_tries(),
-        giveup=_is_fatal_status_code,
-    )
-    async def _post_event(self, event: Events, param) -> Union[CommandResponse, Status]:
-        async with self.api_client() as client:
-            event_request = Request(event=event, param=param)
-            self.logger.trace(
-                f"POST event request: {devtools.pformat(event_request.json())}"
-            )
-
-            try:
-                response = await client.post("servo", data=event_request.json())
-                response.raise_for_status()
-                response_json = response.json()
-                self.logger.trace(
-                    f"POST event response ({response.status_code} {response.reason_phrase}): {devtools.pformat(response_json)}"
-                )
-                self.logger.trace(_redacted_to_curl(response.request))
-
-                return pydantic.parse_obj_as(
-                    Union[CommandResponse, Status], response_json
-                )
-
-            except httpx.HTTPError as error:
-                self.logger.error(
-                    f'HTTP error "{error.__class__.__name__}" encountered while posting "{event}" event: {error}, for '
-                    f"url {error.request.url} \n\n Response: {devtools.pformat(error.response.text)}"
-                )
-                self.logger.trace(_redacted_to_curl(error.request))
-                raise
-
-
 def descriptor_to_adjustments(descriptor: dict) -> List[servo.types.Adjustment]:
     """Return a list of adjustment objects from an Opsani API app descriptor."""
     adjustments = []
@@ -354,11 +205,21 @@ def adjustments_to_descriptor(
     return descriptor
 
 
+def is_fatal_status_code(error: Exception) -> bool:
+    if isinstance(error, httpx.HTTPStatusError):
+        if error.response.status_code < 500:
+            servo.logger.error(
+                f"Giving up on non-retryable HTTP status code {error.response.status_code} ({error.response.reason_phrase}) "
+            )
+            return True
+    return False
+
+
 def user_agent() -> str:
     return f"{USER_AGENT} v{servo.__version__}"
 
 
-def _redacted_to_curl(request: httpx.Request) -> str:
+def redacted_to_curl(request: httpx.Request) -> str:
     """Pass through to curlify2.to_curl that redacts the authorization in the headers"""
     if (auth_header := request.headers.get("authorization")) is None:
         return curlify2.to_curl(request)

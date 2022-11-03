@@ -784,6 +784,11 @@ class CheckHelpers(pydantic.BaseModel, servo.logging.Mixin):
                 if failure.hint:
                     servo.logger.info(f"Hint: {failure.hint}")
 
+                if failure.exception:
+                    servo.logger.opt(exception=failure.exception).debug(
+                        "check.exception"
+                    )
+
                 if failure.remedy:
                     if asyncio.iscoroutinefunction(failure.remedy):
                         task = asyncio.create_task(failure.remedy())

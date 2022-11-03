@@ -11,7 +11,7 @@ from typer import Typer
 from typer.testing import CliRunner
 
 import servo
-from servo import Optimizer
+from servo import OpsaniOptimizer
 from servo.cli import CLI, Context, ServoCLI
 from servo.connectors.vegeta import VegetaConnector
 from servo.servo import Servo
@@ -24,8 +24,8 @@ def cli_runner() -> CliRunner:
 
 
 @pytest.fixture()
-def optimizer() -> Optimizer:
-    return Optimizer(id="dev.opsani.com/servox", token="123456789")
+def optimizer() -> OpsaniOptimizer:
+    return OpsaniOptimizer(id="dev.opsani.com/servox", token="123456789")
 
 
 @pytest.fixture()
@@ -90,8 +90,10 @@ def test_connectors_verbose(
 
 def test_check_no_optimizer(cli_runner: CliRunner, servo_cli: Typer) -> None:
     result = cli_runner.invoke(servo_cli, "run --check --dry-run")
-    assert result.exit_code == 2
-    assert "Error: Invalid value: An optimizer must be specified" in result.stderr
+    assert result.exit_code == 1
+    assert ("optimizer -> id\n" "  field required (type=value_error.missing)\n") in str(
+        result.exception
+    )
 
 
 @respx.mock
@@ -209,8 +211,10 @@ class TestShow:
     ) -> None:
         clean_environment()
         result = cli_runner.invoke(servo_cli, "show --help")
-        assert result.exit_code == 2
-        assert "Error: Invalid value: An optimizer must be specified" in result.stderr
+        assert result.exit_code == 1
+        assert (
+            "optimizer -> id\n" "  field required (type=value_error.missing)\n"
+        ) in str(result.exception)
 
     def test_help(self, cli_runner: CliRunner, servo_cli: Typer) -> None:
         result = cli_runner.invoke(servo_cli, "show --help")
@@ -526,7 +530,9 @@ def test_run_with_empty_config_file(
     assert result.exit_code == 0, f"RESULT: {result.stderr}"
 
     parsed = yaml.full_load(result.stdout)
-    assert parsed, f"Expected to a config doc: {optimizer}"
+    assert (
+        parsed
+    ), f"Expected to parse a config doc containing an optimizer. Found {parsed}"
     optimizer = parsed["optimizer"]
     assert optimizer["id"] == "dev.opsani.com/servox"
     assert optimizer["token"] == "123456789"
@@ -551,11 +557,11 @@ def test_config_with_bad_connectors_key(
     optimizer_env: None,
 ) -> None:
     servo_yaml.write_text("connectors: [invalid]\n")
-    result = cli_runner.invoke(servo_cli, "config", catch_exceptions=False)
-    assert (
-        'fatal: invalid configuration: no connector found for the identifier "invalid"'
-        in result.stderr
-    )
+    with pytest.raises(
+        ValueError,
+        match='no connector found for the identifier "invalid"',
+    ):
+        cli_runner.invoke(servo_cli, "config", catch_exceptions=False)
 
 
 def test_config_yaml(
@@ -870,12 +876,8 @@ def test_schema_top_level_dict_file_output(
     assert schema["title"] == "Servo Schema"
 
 
+@pytest.mark.usefixtures("optimizer_env")
 class TestCommands:
-    @pytest.fixture(autouse=True)
-    def test_set_defaults_via_env(self) -> None:
-        os.environ["OPSANI_OPTIMIZER"] = "dev.opsani.com/test-app"
-        os.environ["OPSANI_TOKEN"] = "123456789"
-
     def test_schema_text(self, servo_cli: Typer, cli_runner: CliRunner) -> None:
         result = cli_runner.invoke(servo_cli, "schema -f text")
         assert result.exit_code == 1
@@ -935,7 +937,16 @@ class TestCommands:
         assert result.exit_code == 0
         assert "already exists. Overwrite it?" in result.stdout
         content = yaml.full_load(open("servo.yaml"))
-        assert content == {"connectors": ["measure"], "measure": {}, "name": "foo"}
+        assert content == {
+            "connectors": ["measure"],
+            "measure": {},
+            "name": "foo",
+            "optimizer": {
+                "id": "generated-id.test/generated",
+                "token": "generated-token",
+                "url": "https://api.opsani.com/accounts/generated-id.test/applications/generated/",
+            },
+        }
 
     def test_generate_with_append(
         self, cli_runner: CliRunner, servo_cli: Typer, stub_servo_yaml: Path
@@ -962,6 +973,11 @@ class TestCommands:
                 ],
                 "measure": {},
                 "name": "foo",
+                "optimizer": {
+                    "id": "generated-id.test/generated",
+                    "token": "generated-token",
+                    "url": "https://api.opsani.com/accounts/generated-id.test/applications/generated/",
+                },
             },
         ]
 
@@ -974,7 +990,15 @@ class TestCommands:
         assert result.exit_code == 0
         assert "already exists. Overwrite it?" in result.stdout
         content = yaml.full_load(servo_yaml.read_text())
-        assert content == {"connectors": ["measure"], "measure": {}}
+        assert content == {
+            "connectors": ["measure"],
+            "measure": {},
+            "optimizer": {
+                "id": "generated-id.test/generated",
+                "token": "generated-token",
+                "url": "https://api.opsani.com/accounts/generated-id.test/applications/generated/",
+            },
+        }
 
     def test_generate_prompts_to_overwrite_declined(
         self, cli_runner: CliRunner, servo_cli: Typer, servo_yaml: Path
@@ -995,7 +1019,15 @@ class TestCommands:
         )
         assert result.exit_code == 0
         content = yaml.full_load(servo_yaml.read_text())
-        assert content == {"connectors": ["measure"], "measure": {}}
+        assert content == {
+            "connectors": ["measure"],
+            "measure": {},
+            "optimizer": {
+                "id": "generated-id.test/generated",
+                "token": "generated-token",
+                "url": "https://api.opsani.com/accounts/generated-id.test/applications/generated/",
+            },
+        }
 
     def test_generate_connector_without_settings(
         self,

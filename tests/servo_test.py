@@ -25,7 +25,7 @@ from servo.configuration import (
     BaseConfiguration,
     ChecksConfiguration,
     CommonConfiguration,
-    Optimizer,
+    OpsaniOptimizer,
     Timeouts,
 )
 from servo.connector import BaseConnector
@@ -112,18 +112,22 @@ class SecondTestServoConnector(BaseConnector):
 
 
 @pytest.fixture()
-async def assembly(servo_yaml: Path) -> Assembly:
+def optimizer_config() -> dict[str, str]:
+    return {"id": "dev.opsani.com/servox", "token": "1234556789"}
+
+
+@pytest.fixture()
+async def assembly(servo_yaml: Path, optimizer_config: dict[str, str]) -> Assembly:
     config = {
+        "optimizer": optimizer_config,
         "connectors": ["first_test_servo", "second_test_servo"],
         "first_test_servo": {},
         "second_test_servo": {},
     }
     servo_yaml.write_text(yaml.dump(config))
 
-    optimizer = Optimizer(id="dev.opsani.com/servox", token="1234556789")
-
     # TODO: Can't pass in like this, needs to be fixed
-    assembly = await Assembly.assemble(config_file=servo_yaml, optimizer=optimizer)
+    assembly = await Assembly.assemble(config_file=servo_yaml)
     return assembly
 
 
@@ -634,26 +638,29 @@ def test_validation_of_after_handlers_ignores_kwargs() -> None:
     assert after_measure.__event_handler__.preposition == Preposition.after
 
 
+@pytest.mark.usefixtures("optimizer_env")
 class TestAssembly:
-    async def test_assemble_assigns_optimizer_to_connectors(self, servo_yaml: Path):
+    async def test_assemble_assigns_optimizer_to_connectors(
+        self, servo_yaml: Path, optimizer_config: dict[str, str]
+    ):
         config = {
+            "optimizer": optimizer_config,
             "connectors": {"vegeta": "vegeta"},
             "vegeta": {"rate": 0, "target": "https://opsani.com/"},
         }
         servo_yaml.write_text(yaml.dump(config))
 
-        optimizer = Optimizer(id="dev.opsani.com/servox", token="1234556789")
-
-        assembly = await Assembly.assemble(config_file=servo_yaml, optimizer=optimizer)
+        assembly = await Assembly.assemble(config_file=servo_yaml)
 
         assert len(assembly.servos) == 1
         assert len(assembly.servos[0].connectors) == 1
         servo = assembly.servos[0]
 
+        optimizer = OpsaniOptimizer(**optimizer_config)
         assert servo.config.optimizer, "optimizer should not be null"
         assert servo.config.optimizer == optimizer
         connector = servo.connectors[0]
-        assert connector.config.optimizer == optimizer
+        assert connector._optimizer == optimizer
 
     async def test_aliased_connectors_produce_schema(
         self, servo_yaml: Path, mocker
@@ -668,9 +675,7 @@ class TestAssembly:
         }
         servo_yaml.write_text(yaml.dump(config))
 
-        optimizer = Optimizer(id="dev.opsani.com/servox", token="1234556789")
-
-        assembly = await Assembly.assemble(config_file=servo_yaml, optimizer=optimizer)
+        assembly = await Assembly.assemble(config_file=servo_yaml)
         DynamicServoSettings = assembly.servos[0].config.__class__
 
         schema = json.loads(DynamicServoSettings.schema_json())
@@ -701,11 +706,11 @@ class TestAssembly:
                     "env_names": [
                         "SERVO_OPTIMIZER",
                     ],
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/Optimizer",
-                        },
+                    "anyOf": [
+                        {"$ref": "#/definitions/OpsaniOptimizer"},
+                        {"$ref": "#/definitions/AppdynamicsOptimizer"},
                     ],
+                    "default": {},
                 },
                 "checks": {
                     "allOf": [{"$ref": "#/definitions/ChecksConfiguration"}],
@@ -798,8 +803,8 @@ class TestAssembly:
             ],
             "additionalProperties": False,
             "definitions": {
-                "Optimizer": {
-                    "title": "Optimizer",
+                "OpsaniOptimizer": {
+                    "title": "OpsaniOptimizer",
                     "description": (
                         "An Optimizer models an Opsani optimization engines that the Servo can connect to\n"
                         "in order to access the Opsani machine learning technology for optimizing system infrastructure\n"
@@ -815,7 +820,7 @@ class TestAssembly:
                         "psani developers or in the context\n"
                         "        of deployments with specific contractual, firewall, or security mandates that preclude ac"
                         "cess to the primary API.\n"
-                        "    __url__: An optional URL that overrides the computed URL for accessing the Opsani API. This o"
+                        "    url: An optional URL that overrides the computed URL for accessing the Opsani API. This o"
                         "ption is utilized during development\n"
                         "        and automated testing to bind the servo to a fixed URL."
                     ),
@@ -823,7 +828,8 @@ class TestAssembly:
                     "properties": {
                         "id": {
                             "title": "Id",
-                            "env_names": ["id"],
+                            "env": "OPSANI_OPTIMIZER",
+                            "env_names": ["OPSANI_OPTIMIZER"],
                             "pattern": (
                                 "^(?!-)([A-Za-z0-9-.]{5,50})/[a-zA-Z\\_\\-\\.0-9]{1,64}$"
                             ),
@@ -851,12 +857,89 @@ class TestAssembly:
                             "format": "uri",
                             "type": "string",
                         },
+                        "url": {
+                            "env": "OPSANI_URL",
+                            "env_names": ["OPSANI_URL"],
+                            "format": "uri",
+                            "maxLength": 65536,
+                            "minLength": 1,
+                            "title": "Url",
+                            "type": "string",
+                        },
                     },
                     "required": [
                         "id",
                         "token",
                     ],
                     "additionalProperties": False,
+                },
+                "AppdynamicsOptimizer": {
+                    "additionalProperties": False,
+                    "description": "Base class for settings, allowing values to be overridden by environment variables.\n\nThis is useful in production for secrets you do not wish to save in code, it plays nicely with docker(-compose),\nHeroku and any 12 factor app design.",
+                    "properties": {
+                        "base_url": {
+                            "default": "https://optimize-ignite-test.saas.appd-test.com/",
+                            "env": "APPD_BASE_URL",
+                            "env_names": ["APPD_BASE_URL"],
+                            "format": "uri",
+                            "maxLength": 65536,
+                            "minLength": 1,
+                            "title": "Base Url",
+                            "type": "string",
+                        },
+                        "client_id": {
+                            "env": "APPD_CLIENT_ID",
+                            "env_names": ["APPD_CLIENT_ID"],
+                            "title": "Client Id",
+                            "type": "string",
+                        },
+                        "client_secret": {
+                            "env": "APPD_CLIENT_SECRET",
+                            "env_names": ["APPD_CLIENT_SECRET"],
+                            "format": "password",
+                            "title": "Client Secret",
+                            "type": "string",
+                            "writeOnly": True,
+                        },
+                        "tenant_id": {
+                            "env": "APPD_TENANT_ID",
+                            "env_names": ["APPD_TENANT_ID"],
+                            "title": "Tenant Id",
+                            "type": "string",
+                        },
+                        "token_url": {
+                            "env": "APPD_TOKEN_URL",
+                            "env_names": ["APPD_TOKEN_URL"],
+                            "format": "uri",
+                            "maxLength": 65536,
+                            "minLength": 1,
+                            "title": "Token Url",
+                            "type": "string",
+                        },
+                        "url": {
+                            "env": "APPD_URL",
+                            "env_names": ["APPD_URL"],
+                            "format": "uri",
+                            "maxLength": 65536,
+                            "minLength": 1,
+                            "title": "Url",
+                            "type": "string",
+                        },
+                        "workload_id": {
+                            "env": "APPD_WORKLOAD_ID",
+                            "env_names": ["APPD_WORKLOAD_ID"],
+                            "title": "Workload Id",
+                            "type": "string",
+                        },
+                    },
+                    "required": [
+                        "workload_id",
+                        "tenant_id",
+                        "client_id",
+                        "client_secret",
+                    ],
+                    "title": "AppdynamicsOptimizer",
+                    "type": "object",
                 },
                 "BackoffSettings": {
                     "title": "BackoffSettings Connector Configuration Schema",
@@ -1497,9 +1580,7 @@ class TestAssembly:
         }
         servo_yaml.write_text(yaml.dump(config))
 
-        optimizer = Optimizer(id="dev.opsani.com/servox", token="1234556789")
-
-        assembly = await Assembly.assemble(config_file=servo_yaml, optimizer=optimizer)
+        assembly = await Assembly.assemble(config_file=servo_yaml)
         DynamicServoConfiguration = assembly.servos[0].config.__class__
 
         # Grab the vegeta field and check it
@@ -1542,15 +1623,14 @@ class TestAssembly:
 async def test_generating_schema_with_test_connectors(
     optimizer_env: None, servo_yaml: Path
 ) -> None:
-    optimizer = Optimizer(id="dev.opsani.com/servox", token="1234556789")
-
-    assembly = await Assembly.assemble(config_file=servo_yaml, optimizer=optimizer)
+    assembly = await Assembly.assemble(config_file=servo_yaml)
     assert len(assembly.servos) == 1, "servo was not assembled"
     DynamicServoConfiguration = assembly.servos[0].config.__class__
     DynamicServoConfiguration.schema()
     # NOTE: Covers naming conflicts between settings models -- will raise if misconfigured
 
 
+@pytest.mark.usefixtures("optimizer_env")
 class TestServoSettings:
     def test_forbids_extra_attributes(self) -> None:
         with pytest.raises(ValidationError) as e:
@@ -1560,7 +1640,7 @@ class TestServoSettings:
     def test_override_optimizer_settings_with_env_vars(self) -> None:
         with environment_overrides({"OPSANI_TOKEN": "abcdefg"}):
             assert os.environ["OPSANI_TOKEN"] is not None
-            optimizer = Optimizer(id="dsada.com/foo")
+            optimizer = OpsaniOptimizer(id="dsada.com/foo")
             assert optimizer.token.get_secret_value() == "abcdefg"
 
     def test_set_connectors_with_env_vars(self) -> None:
@@ -1710,10 +1790,6 @@ class TestServoSettings:
 # Test servo config...
 
 
-def test_backoff_settings() -> None:
-    BaseServoConfiguration()
-
-
 @pytest.mark.parametrize("attr", ["connect", "read", "write", "pool"])
 @pytest.mark.parametrize(
     ("value", "expected"),
@@ -1824,7 +1900,7 @@ def test_invalid_proxies(proxies) -> None:
 
 
 def test_api_client_options() -> None:
-    optimizer = Optimizer(id="test.com/foo", token="12345")
+    optimizer = OpsaniOptimizer(id="test.com/foo", token="12345")
     settings = CommonConfiguration(proxies="http://localhost:1234", ssl_verify=False)
 
     # NOTE: SETTINGS AND OPTIMIZER NOT TOGETHER!!!
@@ -1835,49 +1911,39 @@ def test_api_client_options() -> None:
 
     assert servo.config.settings, "expected settings"
     assert servo.config.settings == settings, "expected settings"
-
     assert servo.config.settings.proxies
-    assert servo.api_client_options["proxies"]
 
-    assert {
-        "proxies": "http://localhost:1234",
-        "timeout": None,
-        "verify": False,
-    }.items() <= servo.api_client_options.items()
+    assert servo._api_client._timeout == httpx.Timeout(timeout=None)
+    assert servo._api_client._transport._pool._ssl_context.verify_mode == ssl.CERT_NONE
+    assert servo._api_client._transport._pool._ssl_context.check_hostname == False
+    for k, v in servo._api_client._mounts.items():
+        assert v._pool._proxy_url.scheme == b"http"
+        assert v._pool._proxy_url.host == b"localhost"
+        assert v._pool._proxy_url.port == 1234
 
 
 async def test_models() -> None:
-    optimizer = Optimizer(id="test.com/foo", token="12345")
-    config = CommonConfiguration(proxies="http://localhost:1234", ssl_verify=False)
-    assert MeasureConnector(config={"__settings__": config, "__optimizer__": optimizer})
+    assert MeasureConnector(config={})
 
 
 async def test_httpx_client_config() -> None:
-    optimizer = Optimizer(id="test.com/foo", token="12345")
+    optimizer = OpsaniOptimizer(id="test.com/foo", token="12345")
     common = CommonConfiguration(proxies="http://localhost:1234", ssl_verify=False)
 
-    # TODO: get rid of this...
-    from httpx._utils import URLPattern
-
     # TODO: init with config that has optimizer, use optimizer + config? allow optimizer=UUU only on Servo class?
-    connector = MeasureConnector(
-        config={"__settings__": common, "__optimizer__": optimizer}
-    )
-    assert connector.config.optimizer == optimizer
-    assert connector.optimizer == optimizer
-    assert connector.config.settings
-    assert connector.config.settings == common
+    connector = MeasureConnector(config={})
 
     servo = Servo(
         config={"settings": common, "optimizer": optimizer}, connectors=[connector]
     )
+    assert connector.optimizer == optimizer
+    assert connector._global_config
+    assert connector._global_config == common
 
-    for c in [servo, connector]:
-        async with c.api_client() as client:
-            for k, v in client._mounts.items():
-                assert k == URLPattern("all://")
-            assert client._transport._pool._ssl_context.verify_mode == ssl.CERT_NONE
-            assert client._transport._pool._ssl_context.check_hostname == False
+    for k, v in servo._api_client._mounts.items():
+        assert k.pattern == "all://"
+    assert servo._api_client._transport._pool._ssl_context.verify_mode == ssl.CERT_NONE
+    assert servo._api_client._transport._pool._ssl_context.check_hostname == False
 
 
 def test_backoff_defaults() -> None:
@@ -1940,15 +2006,14 @@ def test_checks_defaults() -> None:
     ],
 )
 async def test_proxy_utilization(proxies) -> None:
-    optimizer = Optimizer(id="test.com/foo", token="12345")
+    optimizer = OpsaniOptimizer(id="test.com/foo", token="12345")
     config = CommonConfiguration(proxies=proxies)
     servo = Servo(config={"settings": config, "optimizer": optimizer}, connectors=[])
-    async with servo.api_client() as client:
-        transport = client._transport_for_url(httpx.URL(optimizer.base_url))
-        assert isinstance(transport, httpx.AsyncHTTPTransport)
-        assert transport._pool._proxy_url.origin == Origin(
-            scheme=b"http", host=b"localhost", port=1234
-        )
+    transport = servo._api_client._transport_for_url(httpx.URL(optimizer.base_url))
+    assert isinstance(transport, httpx.AsyncHTTPTransport)
+    assert transport._pool._proxy_url.origin == Origin(
+        scheme=b"http", host=b"localhost", port=1234
+    )
 
 
 def test_codename() -> None:
@@ -2059,8 +2124,8 @@ def test_servo_name_literal(servo: Servo) -> None:
     assert servo.name == "hrm"
 
 
-def test_servo_name_from_config() -> None:
-    config = BaseServoConfiguration(name="archibald")
+def test_servo_name_from_config(optimizer_config: dict[str, str]) -> None:
+    config = BaseServoConfiguration(name="archibald", optimizer=optimizer_config)
     servo = Servo(config=config, connectors=[])
     assert servo.name == "archibald"
 

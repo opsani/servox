@@ -51,7 +51,7 @@ class KubernetesConnector(servo.BaseConnector):
 ## Metadata Serialization
 
 On HELLO requests to the Opsani OCO API, the telemetry backing dictionary is serialized and sent as json within the
-`servo.api._post_event()` method
+`servo._api_client.post_event()` method
 
 See the following for an example of the out of the box telemetry as serialized with the HELLO request:
 

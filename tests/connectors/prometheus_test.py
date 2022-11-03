@@ -374,9 +374,9 @@ class TestPrometheusChecks:
     ],
 )
 class TestPrometheusIntegration:
-    def optimizer(self) -> servo.Optimizer:
+    def optimizer(self) -> servo.OpsaniOptimizer:
         # TODO: This needs a real optimizer
-        return servo.Optimizer(
+        return servo.OpsaniOptimizer(
             id="dev.opsani.com/servox-integration-tests",
             token="00000000-0000-0000-0000-000000000000",
         )
@@ -387,7 +387,7 @@ class TestPrometheusIntegration:
 
     async def test_targets(
         self,
-        optimizer: servo.Optimizer,
+        optimizer: servo.OpsaniOptimizer,
         kube_port_forward: Callable[[str, int], AsyncIterator[str]],
     ) -> None:
         # Deploy Prometheus and take a look at the targets it starts scraping
@@ -466,7 +466,7 @@ class TestPrometheusIntegration:
     )
     async def test_no_traffic(
         self,
-        optimizer: servo.Optimizer,
+        optimizer: servo.OpsaniOptimizer,
         kube,
         kube_port_forward: Callable[[str, int], AsyncIterator[str]],
         absent,
@@ -525,7 +525,7 @@ class TestPrometheusIntegration:
     async def test_bursty_traffic(
         self,
         kubetest_teardown,
-        optimizer: servo.Optimizer,
+        optimizer: servo.OpsaniOptimizer,
         event_loop: asyncio.AbstractEventLoop,
         kube_port_forward: Callable[[str, int], AsyncIterator[str]],
     ) -> None:
@@ -646,7 +646,7 @@ class TestPrometheusIntegration:
     async def test_fast_fail_passes(
         self,
         kubetest_teardown,
-        optimizer: servo.Optimizer,
+        optimizer: servo.OpsaniOptimizer,
         kube_port_forward: Callable[[str, int], AsyncIterator[str]],
         tuning_config: servo.connectors.kubernetes.KubernetesConfiguration,
     ) -> None:
@@ -758,7 +758,7 @@ class TestPrometheusIntegration:
     async def test_fast_fail_fails(
         self,
         kubetest_teardown,
-        optimizer: servo.Optimizer,
+        optimizer: servo.OpsaniOptimizer,
         kube_port_forward: Callable[[str, int], AsyncIterator[str]],
         tuning_config: servo.connectors.kubernetes.KubernetesConfiguration,
     ) -> None:
@@ -1558,7 +1558,7 @@ class TestAbsentMetrics:
 
     @pytest.fixture
     def connector(self) -> servo.connectors.prometheus.PrometheusConnector:
-        optimizer = servo.Optimizer(
+        optimizer = servo.OpsaniOptimizer(
             id="servox.opsani.com/tests",
             token="00000000-0000-0000-0000-000000000000",
         )

@@ -14,7 +14,7 @@ from pydantic import Extra, ValidationError
 from typer.testing import CliRunner
 
 import servo as servox
-from servo import BaseConnector, Duration, License, Maturity, Optimizer, Version
+from servo import BaseConnector, Duration, License, Maturity, OpsaniOptimizer, Version
 from servo.cli import ServoCLI
 from servo.configuration import BaseConfiguration, BaseServoConfiguration
 from servo.connector import _connector_subclasses
@@ -26,13 +26,13 @@ from tests.helpers import *
 
 class TestOptimizer:
     def test_organization_valid(self) -> None:
-        optimizer = Optimizer(id="example.com/my-app", token="123456")
+        optimizer = OpsaniOptimizer(id="example.com/my-app", token="123456")
         assert optimizer.organization == "example.com"
 
     def test_organization_invalid(self) -> None:
         with pytest.raises(ValidationError) as e:
-            Optimizer(id="inval/id/my-app", token="123456")
-        assert "1 validation error for Optimizer" in str(e.value)
+            OpsaniOptimizer(id="inval/id/my-app", token="123456")
+        assert "1 validation error for OpsaniOptimizer" in str(e.value)
         assert e.value.errors()[0]["loc"] == ("id",)
         assert (
             e.value.errors()[0]["msg"]
@@ -40,13 +40,13 @@ class TestOptimizer:
         )
 
     def test_name_valid(self) -> None:
-        optimizer = Optimizer(id="example.com/my-app", token="123456")
+        optimizer = OpsaniOptimizer(id="example.com/my-app", token="123456")
         assert optimizer.name == "my-app"
 
     def test_name_invalid(self) -> None:
         with pytest.raises(ValidationError) as e:
-            Optimizer(id="example.com/$$$invalid$$$", token="123456")
-        assert "1 validation error for Optimizer" in str(e.value)
+            OpsaniOptimizer(id="example.com/$$$invalid$$$", token="123456")
+        assert "1 validation error for OpsaniOptimizer" in str(e.value)
         assert e.value.errors()[0]["loc"] == ("id",)
         assert (
             e.value.errors()[0]["msg"]
@@ -55,15 +55,15 @@ class TestOptimizer:
 
     def test_token_validation(self) -> None:
         with pytest.raises(ValidationError) as e:
-            Optimizer(id="example.com/my-app", token=None)
-        assert "1 validation error for Optimizer" in str(e.value)
+            OpsaniOptimizer(id="example.com/my-app", token=None)
+        assert "1 validation error for OpsaniOptimizer" in str(e.value)
         assert e.value.errors()[0]["loc"] == ("token",)
         assert e.value.errors()[0]["msg"] == "none is not an allowed value"
 
     def test_base_url_validation(self) -> None:
         with pytest.raises(ValidationError) as e:
-            Optimizer(id="example.com/my-app", token="123456", base_url="INVALID")
-        assert "1 validation error for Optimizer" in str(e.value)
+            OpsaniOptimizer(id="example.com/my-app", token="123456", base_url="INVALID")
+        assert "1 validation error for OpsaniOptimizer" in str(e.value)
         assert e.value.errors()[0]["loc"] == ("base_url",)
         assert e.value.errors()[0]["msg"] == "invalid or missing URL scheme"
 
@@ -76,7 +76,7 @@ class TestOptimizer:
         ids=(f"target-{i}" for i in itertools.count()),
     )
     def test_api_url(self, url, expected_api_url) -> None:
-        optimizer = Optimizer(id="example.com/my-app", token="123456", __url__=url)
+        optimizer = OpsaniOptimizer(id="example.com/my-app", token="123456", url=url)
         assert optimizer.url == expected_api_url
 
 
@@ -887,7 +887,7 @@ def test_vegeta_cli_measure(
 
 
 def test_vegeta_cli_generate(
-    tmp_path: Path, servo_cli: ServoCLI, cli_runner: CliRunner
+    tmp_path: Path, servo_cli: ServoCLI, cli_runner: CliRunner, optimizer_env: None
 ) -> None:
     result = cli_runner.invoke(servo_cli, "generate vegeta")
     assert result.exit_code == 0
@@ -900,6 +900,11 @@ def test_vegeta_cli_generate(
             "description": "Update the rate and target/targets to match your load profile",
             "rate": "50/1s",
             "target": "GET https://example.com/",
+        },
+        "optimizer": {
+            "id": "generated-id.test/generated",
+            "token": "generated-token",
+            "url": "https://api.opsani.com/accounts/generated-id.test/applications/generated/",
         },
     }
 
@@ -919,6 +924,11 @@ def test_vegeta_cli_generate_filename(
             "rate": "50/1s",
             "target": "GET https://example.com/",
         },
+        "optimizer": {
+            "id": "generated-id.test/generated",
+            "token": "generated-token",
+            "url": "https://api.opsani.com/accounts/generated-id.test/applications/generated/",
+        },
     }
 
 
@@ -932,6 +942,11 @@ def test_vegeta_cli_generate_quiet(
     config = yaml.full_load(config_file.read_text())
     assert config == {
         "connectors": ["vegeta"],
+        "optimizer": {
+            "id": "generated-id.test/generated",
+            "token": "generated-token",
+            "url": "https://api.opsani.com/accounts/generated-id.test/applications/generated/",
+        },
         "vegeta": {
             "description": "Update the rate and target/targets to match your load profile",
             "rate": "50/1s",
@@ -952,6 +967,11 @@ def test_vegeta_cli_generate_standalone(
             "description": "Update the rate and target/targets to match your load profile",
             "rate": "50/1s",
             "target": "GET https://example.com/",
+        },
+        "optimizer": {
+            "id": "generated-id.test/generated",
+            "token": "generated-token",
+            "url": "https://api.opsani.com/accounts/generated-id.test/applications/generated/",
         },
     }
 
@@ -980,6 +1000,11 @@ def test_vegeta_cli_generate_aliases(
             "rate": "50/1s",
             "target": "GET https://example.com/",
         },
+        "optimizer": {
+            "id": "generated-id.test/generated",
+            "token": "generated-token",
+            "url": "https://api.opsani.com/accounts/generated-id.test/applications/generated/",
+        },
     }
 
 
@@ -995,6 +1020,12 @@ def test_vegeta_cli_generate_with_defaults(
     config = yaml.full_load(config_file.read_text())
     assert config == {
         "no_diagnostics": False,
+        "optimizer": {
+            "base_url": "https://api.opsani.com",
+            "id": "generated-id.test/generated",
+            "token": "generated-token",
+            "url": "https://api.opsani.com/accounts/generated-id.test/applications/generated/",
+        },
         "settings": {
             "backoff": {
                 "__default__": {"max_time": "10m"},
@@ -1028,7 +1059,7 @@ def test_vegeta_cli_generate_with_defaults(
 
 
 def test_vegeta_cli_validate(
-    tmp_path: Path, servo_cli: ServoCLI, cli_runner: CliRunner
+    tmp_path: Path, servo_cli: ServoCLI, cli_runner: CliRunner, optimizer_env: None
 ) -> None:
     config_file = tmp_path / "vegeta.yaml"
     config = VegetaConfiguration.generate()
@@ -1044,7 +1075,7 @@ def test_vegeta_cli_validate(
 
 
 def test_vegeta_cli_validate_quiet(
-    tmp_path: Path, servo_cli: ServoCLI, cli_runner: CliRunner
+    tmp_path: Path, servo_cli: ServoCLI, cli_runner: CliRunner, optimizer_env: None
 ) -> None:
     config_file = tmp_path / "vegeta.yaml"
     config = VegetaConfiguration.generate()
@@ -1057,7 +1088,7 @@ def test_vegeta_cli_validate_quiet(
 
 
 def test_vegeta_cli_validate_dict(
-    tmp_path: Path, servo_cli: ServoCLI, cli_runner: CliRunner
+    tmp_path: Path, servo_cli: ServoCLI, cli_runner: CliRunner, optimizer_env: None
 ) -> None:
     config_file = tmp_path / "vegeta.yaml"
     config = VegetaConfiguration.generate()
@@ -1078,7 +1109,7 @@ def test_vegeta_cli_validate_dict(
 
 
 def test_vegeta_cli_validate_invalid(
-    tmp_path: Path, servo_cli: ServoCLI, cli_runner: CliRunner
+    tmp_path: Path, servo_cli: ServoCLI, cli_runner: CliRunner, optimizer_env: None
 ) -> None:
     config_file = tmp_path / "vegeta.yaml"
     config_yaml = yaml.dump({"vegeta": {}})
@@ -1091,7 +1122,7 @@ def test_vegeta_cli_validate_invalid(
 
 
 def test_vegeta_cli_validate_invalid_key(
-    tmp_path: Path, servo_cli: ServoCLI, cli_runner: CliRunner
+    tmp_path: Path, servo_cli: ServoCLI, cli_runner: CliRunner, optimizer_env: None
 ) -> None:
     config_file = tmp_path / "vegeta.yaml"
     config = VegetaConfiguration.generate()
@@ -1114,7 +1145,7 @@ def test_vegeta_cli_validate_file_doesnt_exist(
 
 
 def test_vegeta_cli_validate_wrong_connector(
-    tmp_path: Path, servo_cli: ServoCLI, cli_runner: CliRunner
+    tmp_path: Path, servo_cli: ServoCLI, cli_runner: CliRunner, optimizer_env: None
 ) -> None:
     config_file = tmp_path / "vegeta.yaml"
     config = VegetaConfiguration.generate()
@@ -1127,7 +1158,7 @@ def test_vegeta_cli_validate_wrong_connector(
 
 
 def test_vegeta_cli_validate_alias_syntax(
-    tmp_path: Path, servo_cli: ServoCLI, cli_runner: CliRunner
+    tmp_path: Path, servo_cli: ServoCLI, cli_runner: CliRunner, optimizer_env: None
 ) -> None:
     config_file = tmp_path / "vegeta.yaml"
     config = VegetaConfiguration.generate()
@@ -1140,7 +1171,7 @@ def test_vegeta_cli_validate_alias_syntax(
 
 
 def test_vegeta_cli_validate_aliasing(
-    tmp_path: Path, servo_cli: ServoCLI, cli_runner: CliRunner
+    tmp_path: Path, servo_cli: ServoCLI, cli_runner: CliRunner, optimizer_env: None
 ) -> None:
     config_file = tmp_path / "vegeta.yaml"
     config = VegetaConfiguration.generate()
@@ -1153,7 +1184,7 @@ def test_vegeta_cli_validate_aliasing(
 
 
 def test_vegeta_cli_validate_invalid_dict(
-    tmp_path: Path, servo_cli: ServoCLI, cli_runner: CliRunner
+    tmp_path: Path, servo_cli: ServoCLI, cli_runner: CliRunner, optimizer_env: None
 ) -> None:
     config_file = tmp_path / "vegeta.yaml"
     config = VegetaConfiguration.generate()
@@ -1168,7 +1199,7 @@ def test_vegeta_cli_validate_invalid_dict(
 
 
 def test_vegeta_cli_validate_quiet_invalid(
-    tmp_path: Path, servo_cli: ServoCLI, cli_runner: CliRunner
+    tmp_path: Path, servo_cli: ServoCLI, cli_runner: CliRunner, optimizer_env: None
 ) -> None:
     config_file = tmp_path / "vegeta.yaml"
     config_yaml = yaml.dump({"vegeta": {}})
@@ -1192,7 +1223,7 @@ def test_vegeta_cli_validate_no_such_file(
 
 
 def test_vegeta_cli_validate_invalid_config(
-    tmp_path: Path, servo_cli: ServoCLI, cli_runner: CliRunner
+    tmp_path: Path, servo_cli: ServoCLI, cli_runner: CliRunner, optimizer_env: None
 ) -> None:
     config_file = tmp_path / "invalid.yaml"
     config_file.write_text(
@@ -1218,7 +1249,7 @@ def test_vegeta_cli_validate_invalid_config(
 
 
 def test_vegeta_cli_validate_invalid_syntax(
-    tmp_path: Path, servo_cli: ServoCLI, cli_runner: CliRunner
+    tmp_path: Path, servo_cli: ServoCLI, cli_runner: CliRunner, optimizer_env: None
 ) -> None:
     config_file = tmp_path / "invalid.yaml"
     config_file.write_text(
@@ -1504,28 +1535,23 @@ async def test_logging() -> None:
     request = respx.post(
         "https://api.opsani.com/accounts/example.com/applications/my-app/servo",
     ).mock(httpx.Response(200, json={"status": "ok"}))
-    config = BaseConfiguration(
-        __optimizer__=Optimizer(id="example.com/my-app", token="123456")
-    )
-    assert config.__optimizer__, "expected to have config.__optimizer__"
-    assert config.optimizer, "expected to have config.__optimizer__"
+    config = BaseConfiguration()
     connector = MeasureConnector(config=config)
 
     assert connector.config
-    assert connector.config.__optimizer__, "expected to have config.__optimizer__"
-    assert connector.optimizer, "expected to have config.__optimizer__"
 
     config = servox.configuration.CommonConfiguration(
         proxies="http://localhost:1234", ssl_verify=False
     )
-    optimizer = Optimizer(id="test.com/foo", token="12345")
+    optimizer = OpsaniOptimizer(id="example.com/my-app", token="123456")
     servo = servox.Servo(
-        config={"settings": config, "optimizer": optimizer}, connectors=[]
+        config={"settings": config, "optimizer": optimizer}, connectors=[connector]
     )
+    assert connector.optimizer, "expected to have config._optimizer"
 
     with servo.current():
         with connector.current():
-            handler = ProgressHandler(connector.report_progress, lambda m: print(m))
+            handler = ProgressHandler(servo.report_progress, lambda m: print(m))
             connector.logger.add(handler.sink)
             args = dict(operation="ADJUST", started_at=datetime.datetime.now())
             connector.logger.info("First", progress=0, **args)
@@ -1567,7 +1593,7 @@ def test_report_progress_duration() -> None:
 def test_logger_binds_connector_name() -> None:
     messages = []
     connector = MeasureConnector(
-        optimizer=Optimizer(id="example.com/my-app", token="123456"),
+        _optimizer=OpsaniOptimizer(id="example.com/my-app", token="123456"),
         config=BaseConfiguration(),
     )
     logger = connector.logger
@@ -1596,7 +1622,7 @@ class TestPubSub:
     @pytest.fixture
     async def connector(self) -> "TestPubSub.PubSubConnector":
         pubsub_connector = TestPubSub.PubSubConnector(
-            optimizer=Optimizer(id="example.com/my-app", token="123456"),
+            _optimizer=OpsaniOptimizer(id="example.com/my-app", token="123456"),
             config=BaseConfiguration(),
         )
         pubsub_connector.pubsub_exchange.start()
