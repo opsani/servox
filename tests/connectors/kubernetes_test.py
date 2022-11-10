@@ -2849,14 +2849,14 @@ class TestKubernetesClusterConnectorIntegration:
         await servo_runner.servo.add_connector("kubernetes", connector)
 
         request = respx.post(
-            "https://api.opsani.com/accounts/servox.opsani.com/applications/tests/servo"
+            "https://api.opsani.com/accounts/generated-id.test/applications/generated/servo"
         ).mock(
             return_value=httpx.Response(
                 200, text=f'{{"status": "{servo.api.OptimizerStatuses.ok}"}}'
             )
         )
 
-        await servo_runner._post_event(
+        await servo_runner.servo.post_event(
             servo.api.Events.hello,
             dict(
                 agent=servo.api.user_agent(),

@@ -3,7 +3,7 @@ import asyncio
 import pytest
 from pydantic import Extra
 
-from servo import BaseConfiguration, BaseConnector, Duration, Optimizer
+from servo import BaseConfiguration, BaseConnector, Duration, OpsaniOptimizer
 from servo.repeating import Mixin, repeating
 
 pytestmark = pytest.mark.asyncio
@@ -26,7 +26,7 @@ async def cleanup_tasks() -> None:
 
 
 @pytest.mark.parametrize("every", [0.1, Duration(0.1), "0.1s", "1ms", "1ns"])
-async def test_start_repeating_task(mocker, optimizer: Optimizer, every):
+async def test_start_repeating_task(mocker, every):
     connector = RepeatingConnector.construct()
     spy = mocker.spy(connector, "run_me")
     connector.start_repeating_task("report_progress", every, connector.run_me)
@@ -34,7 +34,7 @@ async def test_start_repeating_task(mocker, optimizer: Optimizer, every):
     spy.assert_called()
 
 
-async def test_start_repeating_lambda_task(mocker, optimizer: Optimizer):
+async def test_start_repeating_lambda_task(mocker):
     connector = RepeatingConnector.construct()
     spy = mocker.spy(connector, "run_me")
     connector.start_repeating_task("report_progress", 0.1, lambda: connector.run_me())
@@ -42,7 +42,7 @@ async def test_start_repeating_lambda_task(mocker, optimizer: Optimizer):
     spy.assert_called_once()
 
 
-async def test_start_repeating_task_name_already_exists(optimizer: Optimizer):
+async def test_start_repeating_task_name_already_exists(optimizer: OpsaniOptimizer):
     connector = RepeatingConnector(config=BaseConfiguration(), optimizer=optimizer)
     task = connector.start_repeating_task(
         "report_progress", 0.1, lambda: connector.run_me()
@@ -56,7 +56,7 @@ async def test_start_repeating_task_name_already_exists(optimizer: Optimizer):
     assert "repeating task already exists named 'report_progress'" in str(e.value)
 
 
-async def test_cancel_repeating_task(optimizer: Optimizer):
+async def test_cancel_repeating_task(optimizer: OpsaniOptimizer):
     connector = RepeatingConnector(config=BaseConfiguration(), optimizer=optimizer)
     task = connector.start_repeating_task(
         "report_progress", 0.1, lambda: connector.run_me()
@@ -66,7 +66,7 @@ async def test_cancel_repeating_task(optimizer: Optimizer):
     assert task.cancelled()
 
 
-async def test_cancel_repeating_tasks(optimizer: Optimizer):
+async def test_cancel_repeating_tasks(optimizer: OpsaniOptimizer):
     connector = RepeatingConnector(config=BaseConfiguration(), optimizer=optimizer)
     task1 = connector.start_repeating_task(
         "report_progress1", 0.1, lambda: connector.run_me()
@@ -84,13 +84,13 @@ async def test_cancel_repeating_tasks(optimizer: Optimizer):
     }
 
 
-async def test_cancel_repeating_task_name_doesnt_exist(optimizer: Optimizer):
+async def test_cancel_repeating_task_name_doesnt_exist(optimizer: OpsaniOptimizer):
     connector = RepeatingConnector(config=BaseConfiguration(), optimizer=optimizer)
     result = connector.cancel_repeating_task("report_progress")
     assert result == None
 
 
-async def test_cancel_repeating_task_already_cancelled(optimizer: Optimizer):
+async def test_cancel_repeating_task_already_cancelled(optimizer: OpsaniOptimizer):
     connector = RepeatingConnector(config=BaseConfiguration(), optimizer=optimizer)
     task = connector.start_repeating_task(
         "report_progress", 0.001, lambda: connector.run_me()
@@ -103,7 +103,7 @@ async def test_cancel_repeating_task_already_cancelled(optimizer: Optimizer):
     assert result.cancelled()
 
 
-async def test_start_repeating_task_for_done_task(optimizer: Optimizer):
+async def test_start_repeating_task_for_done_task(optimizer: OpsaniOptimizer):
     connector = RepeatingConnector(config=BaseConfiguration(), optimizer=optimizer)
     task = connector.start_repeating_task("report_progress", 0.0001, connector.run_me)
     await asyncio.sleep(0.0001)

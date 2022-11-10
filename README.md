@@ -146,7 +146,7 @@ There are a few key components that form the foundation of the architecture:
   config files directly from the connectors.
 * **Optimizer** - The Optimizer class represents an Opsani optimization engine
   that the servo interacts with via an API. The optimizer can be configured via
-  CLI arguments, from the environment, or via assets such as Kubernetes secrets.
+  config file or from the environment; both of these support Kubernetes secrets.
 * **Events** - The Event subsystem provides the primary interaction point
   between the Servo and Connectors in a loosely coupled manner. Events are
   simple string values that have connector defined semantics and can optionally
@@ -207,16 +207,16 @@ activity. These commands are dispatched to the connectors via events.
 The default events are available on the `servo.servo.Events` enumeration and
 include:
 
-| Event | Category | Description |
-|-------|----------|-------------|
-| startup | Lifecycle | Dispatched when the servo is assembled. |
-| shutdown | Lifecycle | Dispatched when the servo is being shutdown. |
-| metrics | Informational | Dispatched to gather the metrics being measured. |
-| components | Informational | Dispatched to gather the components & settings available for adjustment. |
-| check | Operational | Asks connectors to check if they are ready to run by validating settings, etc. |
-| describe | Operational | Gathers the current state of the application under optimization. |
-| measure | Operational | Takes a measurement of target metrics and reports them to the optimizer. |
-| adjust | Operational | Applies a change to the components/settings of the application under optimization and reports status to the optimizer. |
+| Event      | Category      | Description                                                                                                            |
+| ---------- | ------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| startup    | Lifecycle     | Dispatched when the servo is assembled.                                                                                |
+| shutdown   | Lifecycle     | Dispatched when the servo is being shutdown.                                                                           |
+| metrics    | Informational | Dispatched to gather the metrics being measured.                                                                       |
+| components | Informational | Dispatched to gather the components & settings available for adjustment.                                               |
+| check      | Operational   | Asks connectors to check if they are ready to run by validating settings, etc.                                         |
+| describe   | Operational   | Gathers the current state of the application under optimization.                                                       |
+| measure    | Operational   | Takes a measurement of target metrics and reports them to the optimizer.                                               |
+| adjust     | Operational   | Applies a change to the components/settings of the application under optimization and reports status to the optimizer. |
 
 #### Event Handlers & Prepositions
 
@@ -708,16 +708,45 @@ During local development, you may wish to invoke these tools as follows:
 Linting is automatically performed when a new branch is pushed or a PR is opened
 and conformance can be remediated during post-implementation code review.
 
-### Connecting to Development APIs
+### Connecting to Optimization APIs
+
+Optimizer API and authentication can configured be inline with your config yaml (servo.yaml)
+
+```
+optimizer:
+  base_url: some_url
+  id: org.domain/app
+  ...
+```
+
+These details can also be configured via environment variables as highlighted in the following sections.
+Note these sections are mutually exclusive: Opsani API refers to Opsani managed endpoints wheras the Appdynamics
+API refers to upcoming FSO Optimization. Which API type is used is dynamically derived during configuration/env var parsing by
+the [pydantic configuration model (see BaseServoConfiguration.optimizer)](https://github.com/opsani/servox/blob/main/servo/configuration.py).
+
+#### Opsani API
 
 By default, the servo will connect to the primary Opsani API hosted on
 [https://api.opsani.com](https://api.opsani.com). This behavior can be
 overridden via CLI options and environment variables:
 
-| Option | Environment Variable | Description | Example |
-|--------|----------------------|-------------|---------|
-| `--base-url` | `OPSANI_BASE_URL` | Sets an alternate base URL. The path is computed using the optimizer. Useful for staging deployments and integration tests. | `servo --base-url https://staging-api.opsani.com:3456 run` |
-| `--url` | `OPSANI_URL` | Sets an explicit URL target. When given, the base URL is ignored and paths are not computed. Useful in unit tests and workstation development with a partial server stack. | `servo --url http://localhost:1234  run` |
+| Config Option        | Environment Variable | Description                                                                                                                                                                | Example                                                         |
+| -------------------- | -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| `optimizer.base-url` | `OPSANI_BASE_URL`    | Sets an alternate base URL. The path is computed using the provided optimizer id. Useful for staging deployments and integration tests.                                    | `OPSANI_BASE_URL=https://staging-api.opsani.com:3456 servo run` |
+| `optimizer.url`      | `OPSANI_URL`         | Sets an explicit URL target. When given, the base URL is ignored and paths are not computed. Useful in unit tests and workstation development with a partial server stack. | `OPSANI_URL=http://localhost:1234 servo run`                    |
+| `optimizer.id`       | `OPSANI_ID`          | Identifier of the application as provided by the Opsani optimizer provisioned for your application                                                                         | `OPSANI_ID=newco.com/awesome-app1 servo run`                    |
+| `optimizer.token`    | `OPSANI_TOKEN`       | Authentication token as provided by the Opsani optimizer provisioned for your application                                                                                  | `OPSANI_TOKEN=00000000-0000-0000-0000-000000000000 servo run`   |
+
+#### AppDynamics API
+
+| Config Option             | Environment Variable | Description                                                                                                                                                                | Example                                                                    |
+| ------------------------- | -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| `optimizer.base-url`      | `APPD_BASE_URL`      | Sets an alternate base URL. The path is computed using the provided workload and tenant ids.                                                                               | `APPD_BASE_URL=https://optimize-ignite-test.saas.appd-test.com/ servo run` |
+| `optimizer.url`           | `APPD_URL`           | Sets an explicit URL target. When given, the base URL is ignored and paths are not computed. Useful in unit tests and workstation development with a partial server stack. | `APPD_URL=http://localhost:1234 servo run`                                 |
+| `optimizer.tenant_id`     | `APPD_TENANT_ID`     | Identifier of the application tenant                                                                                                                                       | `APPD_TENANT_ID=00000000-0000-0000-0000-000000000000 servo run`            |
+| `optimizer.workload_id`   | `APPD_WORKLOAD_ID`   | Base64 encoded identifier of the workload to be optimized as provided by the provisioned optimizer tenant                                                                  | `APPD_WORKLOAD_ID=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==== servo run`      |
+| `optimizer.client_id`     | `APPD_CLIENT_ID`     | Authentication client ID as provided by the Opsani optimizer provisioned for your application                                                                              | `APPD_CLIENT_ID=<client id text> servo run`                                |
+| `optimizer.client_secret` | `APPD_CLIENT_SECRET` | Authentication client secret as provided by the Opsani optimizer provisioned for your application                                                                          | `APPD_CLIENT_SECRET=<client secret text> servo run`                        |
 
 ### Docker & Compose
 
