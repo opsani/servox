@@ -1,0 +1,33 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "servox.fullname" . }}
+  labels:
+    {{- include "servox.labels" . | nindent 4 }}
+data:
+  log_level: {{ .Values.logLevel }}
+  servo.yaml: |
+    optimizer:
+      workload_id: {{ .Values.workloadId }}
+      tenant_id: {{ .Values.tenantId }}
+      base_url: {{ .Values.baseUrl }}
+      {{- if .Values.clientId -}}
+      {{- printf "client_id: %s" .Values.clientId | nindent 6 }}
+      {{- end }}
+      {{- if .Values.urlOverride -}}
+      {{- printf "url: %s" .Values.urlOverride | nindent 6 }}
+      {{- end }}
+    kubernetes:
+      namespace: {{ include "servox.namespace" . }}
+      deployments:
+      - name: {{ .Values.workloadName }}
+        strategy:
+          type: canary
+        containers:
+        - name: {{ .Values.workloadContainerName }}
+          {{- .Values.cpu | toYaml | nindent 10 }}
+          {{- .Values.memory | toYaml | nindent 10 }}
+        replicas:
+          min: 0
+          max: 1
+          pinned: True
