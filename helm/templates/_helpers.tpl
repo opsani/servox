@@ -2,7 +2,10 @@
 Identifier for the given installation. Supersedes Release.Name
 */}}
 {{- define "servox.identifier" -}}
-{{- default .Release.Name .Values.servoUid | required "Either a release name or Values.servoUid must be specified" }}
+{{- if and (eq .Release.Name "release-name") (empty .Values.servoUid) }}
+{{- fail "Either a release name or Values.servoUid must be specified" }}
+{{- end }}
+{{- default .Release.Name .Values.servoUid }}
 {{- end }}
 
 {{/*
@@ -17,7 +20,10 @@ We truncate at 63 chars because some Kubernetes name fields are limited to this 
 Namespace to deploy servox into. Must be the same as that of the target workload
 */}}
 {{- define "servox.namespace" -}}
-{{- default .Release.Namespace .Values.workloadNamespaceName | required "Must specify a namespace for servox installation" }}
+{{- if and (eq .Release.Namespace "default") (empty .Values.workloadNamespaceName) }}
+{{- fail "Must specify the --namespace argument or .Values.workloadNamespaceName (note: namespace 'default' can only be set via .Values.workloadNamespaceName)" }}
+{{- end }}
+{{- default .Release.Namespace .Values.workloadNamespaceName }}
 {{- end }}
 
 {{/*
@@ -34,7 +40,8 @@ Common labels
 helm.sh/chart: {{ include "servox.chart" . }}
 {{ include "servox.selectorLabels" . }}
 {{- if .Chart.AppVersion }}
-app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
+{{- $version := split ":" (include "servox.servoImage" .) }}
+app.kubernetes.io/version: {{ print $version._1 | quote }}
 {{- end }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- end }}
@@ -46,4 +53,11 @@ Selector labels
 app.kubernetes.io/name: {{ .Chart.Name }}
 app.kubernetes.io/instance: {{ include "servox.identifier" . }}
 app.kubernetes.io/component: core
+{{- end }}
+
+{{/*
+Servo Image
+*/}}
+{{- define "servox.servoImage" -}}
+{{- default (printf "ghcr.io/opsani/servox:%s" .Chart.AppVersion) .Values.servoImageOverride }}
 {{- end }}

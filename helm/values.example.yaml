@@ -1,6 +1,5 @@
-# TODO add this block to defaults
 logLevel: DEBUG
-servoImage: ghcr.io/opsani/servox:edge # TODO pin to specific version once next release is released
+servoImageOverride: ghcr.io/opsani/servox:edge # TODO pin to specific version once next release is released
 cpu:
   min: "125m"
   max: "2.5"
@@ -22,5 +21,6 @@ workloadId: WORKLOAD_ID
 baseUrl: BASE_URL
 urlOverride: URL_OVERRIDE
 
+connectionSettingsType: static
 clientId: CLIENT_ID
 clientSecret: CLIENT_SECRET

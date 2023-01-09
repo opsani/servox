@@ -2,17 +2,18 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: {{ include "servox.fullname" . }}
+  namespace: {{ include "servox.namespace" . }}
   labels:
     {{- include "servox.labels" . | nindent 4 }}
 data:
   log_level: {{ .Values.logLevel }}
   servo.yaml: |
     optimizer:
-      workload_id: {{ .Values.workloadId }}
-      tenant_id: {{ .Values.tenantId }}
-      base_url: {{ .Values.baseUrl }}
-      {{- if .Values.clientId -}}
-      {{- printf "client_id: %s" .Values.clientId | nindent 6 }}
+      workload_id: {{ .Values.workloadId | required ".Values.workloadId is required" }}
+      tenant_id: {{ .Values.tenantId | required ".Values.tenantId is required" }}
+      {{- if eq .Values.connectionSettingsType "static" -}}
+      {{- required ".Values.baseUrl is required for static connection settings type" .Values.baseUrl | printf "base_url: %s" | nindent 6 }}
+      {{- required ".Values.clientId is required for static connection settings type" .Values.clientId | printf "client_id: %s" | nindent 6 }}
       {{- end }}
       {{- if .Values.urlOverride -}}
       {{- printf "url: %s" .Values.urlOverride | nindent 6 }}
@@ -20,13 +21,15 @@ data:
     kubernetes:
       namespace: {{ include "servox.namespace" . }}
       deployments:
-      - name: {{ .Values.workloadName }}
+      - name: {{ .Values.workloadName | required ".Values.workloadName is required for a functional template" }}
         strategy:
           type: canary
         containers:
-        - name: {{ .Values.workloadContainerName }}
-          {{- .Values.cpu | toYaml | nindent 10 }}
-          {{- .Values.memory | toYaml | nindent 10 }}
+        - name: {{ .Values.workloadContainerName | required ".Values.workloadContainerName is required for a functional template" }}
+          cpu:
+            {{- .Values.cpu | toYaml | nindent 12 }}
+          memory:
+            {{- .Values.memory | toYaml | nindent 12 }}
         replicas:
           min: 0
           max: 1

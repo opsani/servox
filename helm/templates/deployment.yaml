@@ -21,13 +21,13 @@ spec:
       serviceAccountName: {{ include "servox.fullname" . }}
       containers:
       - name: servo
-        image: {{ .Values.servoImage }}
+        image: {{ include "servox.servoImage" . }}
         terminationMessagePolicy: FallbackToLogsOnError
         args:
           - 'run'
           - '--check'
         env:
-{{- if .Values.clientSecret }}
+{{- if eq .Values.connectionSettingsType "static" }}
         - name: APPD_CLIENT_SECRET
           valueFrom:
             secretKeyRef:

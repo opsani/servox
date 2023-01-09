@@ -1,1 +1,6 @@
-TODO
+Thank you for installing {{ .Chart.Name }}
+
+To follow the logs, run:
+
+  $ kubectl get pods -n {{ include "servox.namespace" . }} -l app.kubernetes.io/instance={{ include "servox.identifier" . }} -l app.kubernetes.io/name={{ .Chart.Name }}
+  $ kubectl logs -n {{ include "servox.namespace" . }} -f -c servo SERVO_POD_NAME_FROM_PREVIOUS_COMMAND
