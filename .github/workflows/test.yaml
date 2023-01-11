@@ -3,11 +3,13 @@ on:
   push:
     paths-ignore:
     - 'docs/**'
+    - 'helm/**'
     - '*.md'
     - Makefile
   pull_request:
     paths-ignore:
     - 'docs/**'
+    - 'helm/**'
     - '*.md'
     - Makefile
     branches:
