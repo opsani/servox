@@ -29,7 +29,7 @@ jobs:
       # if: steps.cached-pyenvs.outputs.cache-hit != 'true'
     - name: Install Poetry
       run: |
-        curl -sSL https://raw.githubusercontent.com/python-poetry/poetry/master/get-poetry.py | python
+        curl -sSL https://install.python-poetry.org | python
         source $HOME/.poetry/env
         pyenv install -s
         poetry config virtualenvs.in-project true
