@@ -1,7 +1,7 @@
 name: Quick Start
 on:
   push:
-    branches: [main]
+    branches: [main, p3l/2.1.1]
 
 jobs:
   quick_start:
@@ -16,12 +16,12 @@ jobs:
       id: python-version
       run: |
         echo "::set-output name=python-version::$(cat .python-version)"
-    - name: Cache pyenv versions
-      uses: actions/cache@v2.1.1
-      id: cached-pyenvs
-      with:
-        path: /opt/hostedtoolcache/pyenv_root
-        key: ${{ runner.os }}-pyenv
+    # - name: Cache pyenv versions
+    #   uses: actions/cache@v2.1.1
+    #   id: cached-pyenvs
+    #   with:
+    #     path: /opt/hostedtoolcache/pyenv_root
+    #     key: ${{ runner.os }}-pyenv
     - name: Install pyenv versions
       uses: gabrielfalcao/pyenv-action@v11
       with:
