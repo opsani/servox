@@ -17,6 +17,14 @@ based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/). Releases are
 versioned in accordance with [Semantic
 Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.0] "subtle rhapsody" - 2023-01-24
+
+### Added
+
+- Appdynamics authentication
+- Add helm chart
+
+
 ## [2.1.1] "subtle rhapsody" - 2022-08-23
 
 ### Added
