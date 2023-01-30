@@ -13,7 +13,8 @@
 # limitations under the License.
 
 logLevel: DEBUG
-servoImageOverride: ghcr.io/opsani/servox:edge # TODO pin to specific version once next release is released
+servoUid: SERVO_UID
+servoImageOverride: ghcr.io/opsani/servox:edge
 cpu:
   min: "125m"
   max: "2.5"
