@@ -107,7 +107,7 @@ pre-commit:
 
 .PHONY: autotest
 autotest:
-	poetry run watchgod autotest.main
+	poetry run watchfiles autotest.main
 
 .PHONY: test
 test: test-unit test-integration test-system

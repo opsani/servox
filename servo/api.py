@@ -16,13 +16,16 @@ from __future__ import annotations
 
 import copy
 import enum
+import time
 from typing import Any, Dict, List, Optional, Union, TYPE_CHECKING
 
+from authlib.integrations.httpx_client import AsyncOAuth2Client
 import curlify2
 import httpx
 import pydantic
 
 import servo
+import servo.configuration
 import servo.errors
 import servo.types
 import servo.utilities
@@ -232,3 +235,61 @@ def redacted_to_curl(request: httpx.Request) -> str:
         req_copy.headers["authorization"] = "[REDACTED]"
 
     return curlify2.to_curl(req_copy)
+
+
+def get_api_client_for_optimizer(
+    optimizer: servo.configuration.OptimizerTypes,
+    settings: servo.configuration.CommonConfiguration,
+) -> Union[httpx.AsyncClient, AsyncOAuth2Client]:
+    if optimizer.token:
+        # NOTE httpx useage docs indicate context manager but author states singleton is fine...
+        #   https://github.com/encode/httpx/issues/1042#issuecomment-652951591
+        return httpx.AsyncClient(
+            base_url=optimizer.url,
+            headers={
+                "Authorization": f"Bearer {optimizer.token.get_secret_value()}",
+                "User-Agent": user_agent(),
+                "Content-Type": "application/json",
+            },
+            proxies=settings.proxies,
+            timeout=settings.timeouts,
+            verify=settings.ssl_verify,
+        )
+    elif isinstance(optimizer, servo.configuration.AppdynamicsOptimizer):
+        api_client = AsyncOAuth2Client(
+            base_url=optimizer.url,
+            headers={
+                "User-Agent": user_agent(),
+                "Content-Type": "application/json",
+            },
+            client_id=optimizer.client_id,
+            client_secret=optimizer.client_secret.get_secret_value(),
+            token_endpoint=optimizer.token_url,
+            grant_type="client_credentials",
+            proxies=settings.proxies,
+            timeout=settings.timeouts,
+            verify=settings.ssl_verify,
+        )
+
+        # authlib doesn't check status of token request so we have to do it ourselves
+        def raise_for_resp_status(response: httpx.Response):
+            response.raise_for_status()
+            return response
+
+        api_client.register_compliance_hook(
+            "access_token_response", raise_for_resp_status
+        )
+
+        # Ideally we would call the following but async is not allowed in __init__
+        #   await self.api_client.fetch_token(self.config.optimizer.token_url)
+        # Instead we use an ugly hack to trigger the client's autorefresh capabilities
+        api_client.token = {
+            "expires_at": int(time.time()) - 1,
+            "access_token": "_",
+        }
+        return api_client
+
+    else:
+        raise RuntimeError(
+            f"Unable to construct api_client from Optimizer type {optimizer.__class__.__name__}"
+        )
