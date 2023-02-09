@@ -41,13 +41,13 @@ spec:
           - 'run'
           - '--check'
         env:
-{{- if eq .Values.connectionSettingsType "static" }}
+        {{- if eq .Values.connectionSettingsType "static" }}
         - name: APPD_CLIENT_SECRET
           valueFrom:
             secretKeyRef:
               name: {{ include "servox.fullname" . }}
               key: client_secret
-{{- end }}
+        {{- end }}
         - name: SERVO_LOG_LEVEL
           valueFrom:
             configMapKeyRef:
@@ -66,10 +66,58 @@ spec:
           mountPath: /servo/servo.yaml
           subPath: servo.yaml
           readOnly: true
+        {{- if eq .Values.connectionSettingsType "sidecar" }}
+        - name: agent-management-sidecar
+          mountPath: /agent-management-sidecar
+        {{- end }}
         resources:
           limits:
             cpu: 250m
             memory: 512Mi
+      {{- if eq .Values.connectionSettingsType "sidecar" }}
+      - name: agent-management-sidecar
+        image: {{ required ".Values.agentMgmtSidecarImage is required for sidecar connection settings type" .Values.agentMgmtSidecarImage }}
+        resources:
+          limits:
+            cpu: 100m
+            memory: 128Mi
+        env:
+        - name: SERVICE_URL
+          value: {{ default "<SERVICE_URL>" .Values.agentMgmtServiceUrlOverride }}
+        - name: CLUSTER_NAME
+          value: {{ required ".Values.clusterName is required for sidecar connection settings type" .Values.clusterName }}
+        - name: CLIENT_TYPE
+          value: {{ default "optimize:agent" .Values.agentFmmTypeOverride }}
+        - name: CONFIG_FILE_PATH
+          value: /agent-management-sidecar
+        - name: NAME_SPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: OAUTH_ID
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "servox.fullname" . }}
+              key: OAUTH_ID
+        - name: OAUTH_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "servox.fullname" . }}
+              key: OAUTH_SECRET
+        - name: OAUTH_URL
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "servox.fullname" . }}
+              key: OAUTH_URL
+        - name: OAUTH_TENANT_ID
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "servox.fullname" . }}
+              key: OAUTH_TENANT_ID
+        volumeMounts:
+        - name: agent-management-sidecar
+          mountPath: /agent-management-sidecar
+      {{- end }}
       volumes:
       - name: servo-config-volume
         configMap:
@@ -77,7 +125,10 @@ spec:
           items:
           - key: servo.yaml
             path: servo.yaml
-
+      {{- if eq .Values.connectionSettingsType "sidecar" }}
+      - name: agent-management-sidecar
+        emptyDir: {}
+      {{- end }}
       # Prefer deployment onto a Node labeled role=servo
       # This ensures physical isolation and network transport if possible
       affinity:
