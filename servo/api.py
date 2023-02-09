@@ -244,10 +244,13 @@ def get_api_client_for_optimizer(
     if optimizer.token:
         # NOTE httpx useage docs indicate context manager but author states singleton is fine...
         #   https://github.com/encode/httpx/issues/1042#issuecomment-652951591
+        auth_header_value = optimizer.token.get_secret_value()
+        if "Bearer" not in auth_header_value:
+            auth_header_value = f"Bearer {auth_header_value}"
         return httpx.AsyncClient(
             base_url=optimizer.url,
             headers={
-                "Authorization": f"Bearer {optimizer.token.get_secret_value()}",
+                "Authorization": auth_header_value,
                 "User-Agent": user_agent(),
                 "Content-Type": "application/json",
             },
