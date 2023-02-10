@@ -118,6 +118,10 @@ spec:
         - name: agent-management-sidecar
           mountPath: /agent-management-sidecar
       {{- end }}
+      {{- if .Values.imagePullSecret }}
+      imagePullSecrets:
+      - name: {{ .Values.imagePullSecret }}
+      {{- end }}
       volumes:
       - name: servo-config-volume
         configMap:

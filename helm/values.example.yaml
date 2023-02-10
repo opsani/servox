@@ -46,3 +46,4 @@ clusterName: CLUSTER_NAME
 agentFmmTypeOverride: optimize-test:agent
 agentMgmtSidecarImage: AGENT_MANAGEMENT_SIDECAR_IMAGE # TODO this should have a default value at some point
 agentMgmtServiceUrlOverride: AGENT_MANAGEMENT_SERVICE_URL
+imagePullSecret: IMAGE_PULL_SECRET_NAME
