@@ -25,6 +25,7 @@ import re
 from typing import Any, Callable, Dict, List, Optional, Type, Union
 from typing_extensions import TypeAlias
 
+import backoff
 import pydantic
 import yaml
 
@@ -80,7 +81,11 @@ class AppdynamicsOptimizer(pydantic.BaseSettings):
         super().__init__(**kwargs)
 
         if self.connection_file:
-            self.load_connection_file()
+            # workaround to prevent race condition with sidecar. Only relevant on init
+            init_backoff = backoff.on_exception(
+                backoff.expo, FileNotFoundError, max_time=60
+            )(self.load_connection_file)
+            init_backoff()
         elif (
             self.client_id is None
             or self.client_secret is None
