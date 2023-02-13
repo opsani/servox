@@ -60,7 +60,7 @@ OPTIMIZER_ID_REGEX = f"^{ORGANIZATION_REGEX}/{NAME_REGEX}$"
 class SidecarConnectionFile(pydantic.BaseModel):
     Authorization: pydantic.SecretStr
     Endpoint: pydantic.AnyHttpUrl
-    # TODO TenantId
+    TenantId: str
 
 
 class AppdynamicsOptimizer(pydantic.BaseSettings):
@@ -97,7 +97,7 @@ class AppdynamicsOptimizer(pydantic.BaseSettings):
 
         if not self.url:
             workload_id = base64.b32encode(str.encode(self.workload_id)).decode()
-            self.url = f"{self.base_url}/rest/optimize/v1/workloads/{workload_id}/"
+            self.url = f"{self.base_url}/rest/optimize/co/v1/workloads/{workload_id}/"
         if not self.token_url:
             self.token_url = (
                 f"{self.base_url}/auth/{self.tenant_id}/default/oauth2/token"
@@ -110,9 +110,10 @@ class AppdynamicsOptimizer(pydantic.BaseSettings):
         with open(self.connection_file) as connection_file_stream:
             content = yaml.safe_load(connection_file_stream)
 
-        valdiated_content = SidecarConnectionFile.parse_obj(content)
-        self.token = valdiated_content.Authorization
-        self.base_url = valdiated_content.Endpoint.rstrip("/")
+        validated_content = SidecarConnectionFile.parse_obj(content)
+        self.token = validated_content.Authorization
+        self.base_url = validated_content.Endpoint.rstrip("/")
+        self.tenant_id = validated_content.TenantId
 
     @pydantic.validator("base_url")
     def _rstrip_slash(cls, url: str) -> str:

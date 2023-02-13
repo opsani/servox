@@ -30,9 +30,6 @@ data:
       client_id: {{ required ".Values.clientId is required for static connection settings type" .Values.clientId }}
       {{- else if eq .Values.connectionSettingsType "sidecar" }}
       connection_file: /agent-management-sidecar/connection.yaml
-      {{- if .Values.tenantId }}
-      tenant_id: {{ .Values.tenantId }}
-      {{- end }}
       {{- end }}
       {{- if .Values.urlOverride }}
       url: {{ .Values.urlOverride }}
