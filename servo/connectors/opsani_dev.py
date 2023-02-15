@@ -359,9 +359,11 @@ class OpsaniDevChecks(servo.BaseChecks):
     @servo.checks.require("Optimizer Configuration")
     def check_optimizer(self) -> None:
         assert isinstance(
-            self.optimizer, servo.configuration.OpsaniOptimizer,
+            self.optimizer,
+            servo.configuration.OpsaniOptimizer,
         ) or isinstance(
-            self.optimizer, servo.configuration.AppdynamicsOptimizer,
+            self.optimizer,
+            servo.configuration.AppdynamicsOptimizer,
         ), f"Opsani Dev connector is incompatible with non OpsaniOptimizer type {self.optimizer.__class__.__name__}"
 
     @servo.checks.require("Connectivity to Kubernetes")
