@@ -22,14 +22,13 @@ import contextvars
 from datetime import datetime, timedelta
 import devtools
 import enum
-import functools
 import json
-from typing import Any, Callable, Optional, Protocol, Sequence, Tuple, Union
-import time
+from typing import cast, Any, Callable, Optional, Protocol, Sequence, Tuple, Union
 
 from authlib.integrations.httpx_client import AsyncOAuth2Client
 import httpx
 import pydantic
+import watchfiles
 
 import servo.api
 import servo.checks
@@ -214,59 +213,9 @@ class Servo(servo.connector.BaseConnector):
     ) -> None:  # noqa: D107
         super().__init__(*args, connectors=[], **kwargs)
 
-        if isinstance(self.config.optimizer, servo.configuration.OpsaniOptimizer):
-            # NOTE httpx useage docs indicate context manager but author states singleton is fine...
-            #   https://github.com/encode/httpx/issues/1042#issuecomment-652951591
-            self._api_client = httpx.AsyncClient(
-                base_url=self.config.optimizer.url,
-                headers={
-                    "Authorization": f"Bearer {self.config.optimizer.token.get_secret_value()}",
-                    "User-Agent": servo.api.user_agent(),
-                    "Content-Type": "application/json",
-                },
-                proxies=self.config.settings.proxies,
-                timeout=self.config.settings.timeouts,
-                verify=self.config.settings.ssl_verify,
-            )
-        elif isinstance(
-            self.config.optimizer, servo.configuration.AppdynamicsOptimizer
-        ):
-            self._api_client = AsyncOAuth2Client(
-                base_url=self.config.optimizer.url,
-                headers={
-                    "User-Agent": servo.api.user_agent(),
-                    "Content-Type": "application/json",
-                },
-                client_id=self.config.optimizer.client_id,
-                client_secret=self.config.optimizer.client_secret.get_secret_value(),
-                token_endpoint=self.config.optimizer.token_url,
-                grant_type="client_credentials",
-                proxies=self.config.settings.proxies,
-                timeout=self.config.settings.timeouts,
-                verify=self.config.settings.ssl_verify,
-            )
-
-            # authlib doesn't check status of token request so we have to do it ourselves
-            def raise_for_resp_status(response: httpx.Response):
-                response.raise_for_status()
-                return response
-
-            self._api_client.register_compliance_hook(
-                "access_token_response", raise_for_resp_status
-            )
-
-            # Ideally we would call the following but async is not allowed in __init__
-            #   await self.api_client.fetch_token(self.config.optimizer.token_url)
-            # Instead we use an ugly hack to trigger the client's autorefresh capabilities
-            self._api_client.token = {
-                "expires_at": int(time.time()) - 1,
-                "access_token": "_",
-            }
-
-        else:
-            raise RuntimeError(
-                f"Servo is not compatible with Optimizer type {self.optimizer.__class__.__name__}"
-            )
+        self._api_client = servo.api.get_api_client_for_optimizer(
+            self.config.optimizer, self.config.settings
+        )
 
         # Ensure the connectors refer to the same objects by identity (required for eventing)
         self.connectors.extend(connectors)
@@ -569,6 +518,17 @@ class Servo(servo.connector.BaseConnector):
                 raise
 
         return await _post_event(event, param)
+
+    async def watch_connection_file(self) -> None:
+        connection_file = cast(
+            servo.configuration.AppdynamicsOptimizer, self.config.optimizer
+        ).connection_file
+        async for changes in watchfiles.awatch(connection_file):
+            self.logger.info(f"Loading change to connection file {changes}")
+            self.config.optimizer.load_connection_file()
+            self._api_client = servo.api.get_api_client_for_optimizer(
+                self.config.optimizer, self.config.settings
+            )
 
     async def check_servo(self, print_callback: Callable[[str], None] = None) -> bool:
 

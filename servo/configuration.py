@@ -25,6 +25,7 @@ import re
 from typing import Any, Callable, Dict, List, Optional, Type, Union
 from typing_extensions import TypeAlias
 
+import backoff
 import pydantic
 import yaml
 
@@ -56,26 +57,63 @@ NAME_REGEX = r"[a-zA-Z\_\-\.0-9]{1,64}"
 OPTIMIZER_ID_REGEX = f"^{ORGANIZATION_REGEX}/{NAME_REGEX}$"
 
 
+class SidecarConnectionFile(pydantic.BaseModel):
+    Authorization: pydantic.SecretStr
+    Endpoint: pydantic.AnyHttpUrl
+    TenantId: str
+
+
 class AppdynamicsOptimizer(pydantic.BaseSettings):
     workload_id: str
-    tenant_id: str
-    client_id: str
-    client_secret: pydantic.SecretStr
+    tenant_id: Optional[str] = None
     base_url: pydantic.AnyHttpUrl = "https://optimize-ignite-test.saas.appd-test.com/"
-    # override arguments
+    # static config properties
+    client_id: Optional[str] = None
+    client_secret: Optional[pydantic.SecretStr] = None
+    # dynamic config properties
+    connection_file: Optional[str] = None
+    token: Optional[pydantic.SecretStr] = None
+    # override properties
     url: Optional[pydantic.AnyHttpUrl] = None
     token_url: Optional[pydantic.AnyHttpUrl] = None
 
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
 
+        if self.connection_file:
+            # workaround to prevent race condition with sidecar. Only relevant on init
+            init_backoff = backoff.on_exception(
+                backoff.expo, FileNotFoundError, max_time=60
+            )(self.load_connection_file)
+            init_backoff()
+        elif (
+            self.client_id is None
+            or self.client_secret is None
+            or self.tenant_id is None
+        ):
+            raise ValueError(
+                f"{self.__class__.__name__} must be configured with a connection file or specify client_id, client_secret, and tenant_id"
+            )
+
         if not self.url:
             workload_id = base64.b32encode(str.encode(self.workload_id)).decode()
-            self.url = f"{self.base_url}/ext/optimize/v1/workloads/{workload_id}/"
+            self.url = f"{self.base_url}/rest/optimize/co/v1/workloads/{workload_id}/"
         if not self.token_url:
             self.token_url = (
                 f"{self.base_url}/auth/{self.tenant_id}/default/oauth2/token"
             )
+
+    def load_connection_file(self) -> None:
+        """In place update of properties based on the current state of the configured connection file"""
+        if not self.connection_file:
+            raise ValueError("Unable to load connection file, no file specified")
+        with open(self.connection_file) as connection_file_stream:
+            content = yaml.safe_load(connection_file_stream)
+
+        validated_content = SidecarConnectionFile.parse_obj(content)
+        self.token = validated_content.Authorization
+        self.base_url = validated_content.Endpoint.rstrip("/")
+        self.tenant_id = validated_content.TenantId
 
     @pydantic.validator("base_url")
     def _rstrip_slash(cls, url: str) -> str:
@@ -96,6 +134,8 @@ class AppdynamicsOptimizer(pydantic.BaseSettings):
             "base_url": {"env": "APPD_BASE_URL"},
             "url": {"env": "APPD_URL"},
             "token_url": {"env": "APPD_TOKEN_URL"},
+            "connection_file": {"env": "APPD_CONNECTION_FILE"},
+            "token": {"env": "APPD_TOKEN"},
         }
 
 
@@ -180,7 +220,7 @@ class OpsaniOptimizer(pydantic.BaseSettings):
         }
 
 
-OptimizerTypes: TypeAlias = Union[OpsaniOptimizer, AppdynamicsOptimizer]
+OptimizerTypes: TypeAlias = Union[AppdynamicsOptimizer, OpsaniOptimizer]
 
 
 DEFAULT_TITLE = "Base Connector Configuration Schema"

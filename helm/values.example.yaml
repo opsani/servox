@@ -28,14 +28,22 @@ memory:
   get: ["request", "limit"]
   set: ["request", "limit"]
 
-tenantId: TENANT_ID
 workloadName: WORKLOAD_NAME
 workloadNamespaceName: WORKLOAD_NAMESPACE
 workloadContainerName: WORKLOAD_CONTAINER
 workloadId: WORKLOAD_ID
-baseUrl: BASE_URL
 urlOverride: URL_OVERRIDE
 
 connectionSettingsType: static
+baseUrl: BASE_URL
+tenantId: TENANT_ID
 clientId: CLIENT_ID
 clientSecret: CLIENT_SECRET
+
+# NOTE: Below are only relevant if configured with `connectionSettingsType: sidecar`
+#   baseUrl, tenantId, clientId, clientSecret can still be used to override orchestrator population of sidecar values
+clusterName: CLUSTER_NAME
+agentFmmTypeOverride: optimize-test:agent
+agentMgmtSidecarImage: AGENT_MANAGEMENT_SIDECAR_IMAGE # TODO this should have a default value at some point
+agentMgmtServiceUrlOverride: AGENT_MANAGEMENT_SERVICE_URL
+imagePullSecret: IMAGE_PULL_SECRET_NAME
