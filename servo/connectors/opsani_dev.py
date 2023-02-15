@@ -319,7 +319,7 @@ class OpsaniDevConfiguration(servo.BaseConfiguration):
 
 class OpsaniDevChecks(servo.BaseChecks):
     config: OpsaniDevConfiguration
-    optimizer: servo.OpsaniOptimizer
+    optimizer: servo.configuration.OptimizerTypes
 
     # FIXME make this a property of worklod helper?
     @property
@@ -359,7 +359,9 @@ class OpsaniDevChecks(servo.BaseChecks):
     @servo.checks.require("Optimizer Configuration")
     def check_optimizer(self) -> None:
         assert isinstance(
-            self.optimizer, servo.OpsaniOptimizer
+            self.optimizer, servo.configuration.OpsaniOptimizer,
+        ) or isinstance(
+            self.optimizer, servo.configuration.AppdynamicsOptimizer,
         ), f"Opsani Dev connector is incompatible with non OpsaniOptimizer type {self.optimizer.__class__.__name__}"
 
     @servo.checks.require("Connectivity to Kubernetes")
