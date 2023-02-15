@@ -47,6 +47,7 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin):
     _running: bool = pydantic.PrivateAttr(False)
     _main_loop_task: Optional[asyncio.Task] = pydantic.PrivateAttr(None)
     _diagnostics_loop_task: Optional[asyncio.Task] = pydantic.PrivateAttr(None)
+    _file_watcher_task: Optional[asyncio.Task] = pydantic.PrivateAttr(None)
 
     class Config:
         arbitrary_types_allowed = True
@@ -252,6 +253,9 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin):
         if self._diagnostics_loop_task:
             self._diagnostics_loop_task.cancel()
 
+        if self._file_watcher_task:
+            self._file_watcher_task.cancel()
+
         def _reraise_if_necessary(task: asyncio.Task) -> None:
             try:
                 if not task.cancelled():
@@ -279,6 +283,12 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin):
         else:
             self.logger.info(
                 f"Servo runner initialized with diagnostics polling disabled"
+            )
+
+        if getattr(self.optimizer, "connection_file", None):
+            self._file_watcher_task = asyncio.create_task(
+                self.servo.watch_connection_file(),
+                name=f"connection file watcher for servo {self.optimizer.id}",
             )
 
     async def run(self, *, poll: bool = True) -> None:

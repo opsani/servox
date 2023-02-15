@@ -14,7 +14,7 @@
 
 # Default values for servox chart.
 logLevel: INFO
-connectionSettingsType: static # TODO dynamic will be supported eventually
+connectionSettingsType: sidecar
 cpu:
   min: "125m"
   max: "2.5"

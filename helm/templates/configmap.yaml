@@ -23,14 +23,16 @@ data:
   log_level: {{ .Values.logLevel }}
   servo.yaml: |
     optimizer:
-      workload_id: {{ .Values.workloadId | required ".Values.workloadId is required" }}
-      tenant_id: {{ .Values.tenantId | required ".Values.tenantId is required" }}
-      {{- if eq .Values.connectionSettingsType "static" -}}
-      {{- required ".Values.baseUrl is required for static connection settings type" .Values.baseUrl | printf "base_url: %s" | nindent 6 }}
-      {{- required ".Values.clientId is required for static connection settings type" .Values.clientId | printf "client_id: %s" | nindent 6 }}
+      workload_id: {{ required ".Values.workloadId is required" .Values.workloadId }}
+      {{- if eq .Values.connectionSettingsType "static" }}
+      tenant_id: {{ required ".Values.tenantId is required for static connection settings type" .Values.tenantId  }}
+      base_url: {{ required ".Values.baseUrl is required for static connection settings type" .Values.baseUrl }}
+      client_id: {{ required ".Values.clientId is required for static connection settings type" .Values.clientId }}
+      {{- else if eq .Values.connectionSettingsType "sidecar" }}
+      connection_file: /agent-management-sidecar/connection.yaml
       {{- end }}
-      {{- if .Values.urlOverride -}}
-      {{- printf "url: %s" .Values.urlOverride | nindent 6 }}
+      {{- if .Values.urlOverride }}
+      url: {{ .Values.urlOverride }}
       {{- end }}
     kubernetes:
       namespace: {{ include "servox.namespace" . }}
