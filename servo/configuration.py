@@ -123,6 +123,10 @@ class AppdynamicsOptimizer(pydantic.BaseSettings):
     def id(self) -> str:
         return f"{self.tenant_id} - {self.workload_id}"
 
+    @property
+    def name(self) -> str:
+        return f"{self.workload_id}"
+
     class Config:
         case_sensitive = True
         extra = pydantic.Extra.forbid
