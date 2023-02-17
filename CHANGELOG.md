@@ -17,6 +17,16 @@ based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/). Releases are
 versioned in accordance with [Semantic
 Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.1] "genesis" - 2023-02-17
+
+### Added
+- Modify Opsani dev connector to work with Appd configuration
+- Support for agent management sidecar
+
+### Fixed
+- Fix servo crash on connection error
+
+
 ## [2.2.0] "subtle rhapsody" - 2023-01-24
 
 ### Added
