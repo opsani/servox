@@ -506,7 +506,7 @@ class Servo(servo.connector.BaseConnector):
                 )
 
             except httpx.HTTPError as error:
-                if getattr(error, "response"):
+                if hasattr(error, "response"):
                     response_text = devtools.pformat(error.response.text)
                 else:
                     response_text = "(No response on error)"
