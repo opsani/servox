@@ -85,7 +85,7 @@ spec:
         - name: SERVICE_URL
           value: {{ default "<SERVICE_URL>" .Values.agentMgmtServiceUrlOverride }}
         - name: CLUSTER_NAME
-          value: {{ required ".Values.clusterName is required for sidecar connection settings type" .Values.clusterName }}
+          value: {{ default "<CLUSTER_NAME>" .Values.clusterNameOverride }}
         - name: CLIENT_TYPE
           value: {{ default "optimize:agent" .Values.agentFmmTypeOverride }}
         - name: CONFIG_FILE_PATH

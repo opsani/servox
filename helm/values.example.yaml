@@ -42,7 +42,7 @@ clientSecret: CLIENT_SECRET
 
 # NOTE: Below are only relevant if configured with `connectionSettingsType: sidecar`
 #   baseUrl, tenantId, clientId, clientSecret can still be used to override orchestrator population of sidecar values
-clusterName: CLUSTER_NAME
+clusterNameOverride: CLUSTER_NAME
 agentFmmTypeOverride: optimize-test:agent
 agentMgmtSidecarImage: AGENT_MANAGEMENT_SIDECAR_IMAGE # TODO this should have a default value at some point
 agentMgmtServiceUrlOverride: AGENT_MANAGEMENT_SERVICE_URL
