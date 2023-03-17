@@ -673,7 +673,7 @@ def test_aliased_connector_error(
         result.exit_code == 2
     ), f"Expected status code of 1 but got {result.exit_code} -- stdout: {result.stdout}\nstderr: {result.stderr}"
     assert re.search(
-        "multiple instances of \"MeasureConnector\" found in servo \"dev.opsani.com/servox\": select one of \\['first', 'second'\\]",
+        "multiple instances of \"MeasureConnector\" found in servo       │\n│ \"dev.opsani.com/servox\": select one of \\['first', 'second'\\]",
         result.stderr,
     )
 
@@ -696,7 +696,7 @@ def test_aliased_connector_invalid_name(
         result.exit_code == 2
     ), f"Expected status code of 2 but got {result.exit_code} -- stdout: {result.stdout}\nstderr: {result.stderr}"
     assert re.search(
-        'no connector named "INVALID" of type "MeasureConnector" found in servo "dev.opsani.com/servox": select one of \\[\'first\', \'second\'\\]',
+        'no connector named "INVALID" of type "MeasureConnector" found │\n│ in servo "dev.opsani.com/servox": select one of \\[\'first\', \'second\'\\]',
         result.stderr,
     )
 
@@ -709,7 +709,7 @@ def test_connector_cli_not_active_in_assembly(
         result.exit_code == 2
     ), f"Expected status code of 2 but got {result.exit_code} -- stdout: {result.stdout}\nstderr: {result.stderr}"
     assert re.search(
-        'no instances of "VegetaConnector" are active the in servo "dev.opsani.com/servox"',
+        'no instances of "VegetaConnector" are active the in servo     │\n│ "dev.opsani.com/servox"',
         result.stderr,
     )
 
@@ -1134,7 +1134,9 @@ class TestCLIFoundation:
         result = cli_runner.invoke(servo_cli, "--help", catch_exceptions=False)
         assert result.exit_code == 0
         assert (
-            re.search(r"zzzz\n.*aaaa\n.*mmmm\n", result.stdout, flags=re.MULTILINE)
+            re.search(
+                r"zzzz\s+|\n.*aaaa\s+|\n.*mmmm\s+|\n", result.stdout, flags=re.MULTILINE
+            )
             is not None
         )
 
@@ -1287,7 +1289,7 @@ def test_adjust_incomplete_identifier(
     )
     assert result.exit_code == 2
     assert re.search(
-        "Error: Invalid value: unable to parse setting descriptor 'setting=value'",
+        "Invalid value: unable to parse setting descriptor 'setting=value'",
         result.stderr,
     )
 

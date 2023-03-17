@@ -48,6 +48,7 @@ import pydantic
 import pygments
 import pygments.formatters
 import typer
+import typer.core
 import yaml
 
 # Expose helpers
@@ -187,7 +188,7 @@ class ContextMixin:
         return ctx
 
 
-class Command(click.Command, ContextMixin):
+class Command(typer.core.TyperCommand, ContextMixin):
     @property
     def section(self) -> Optional[Section]:
         # NOTE: The `callback` property is the decorated function. See `command()` on CLI
@@ -197,7 +198,7 @@ class Command(click.Command, ContextMixin):
         return ContextMixin.make_context(self, info_name, args, parent, **extra)
 
 
-class Group(click.Group, ContextMixin):
+class Group(typer.core.TyperGroup, ContextMixin):
     @property
     def section(self) -> Optional[Section]:
         # NOTE: For Groups, Typer doesn't give us a great way to pass the state (can't decorate callback fn)
@@ -278,7 +279,6 @@ class CLI(typer.Typer, servo.logging.Mixin):
         section: Section = Section.commands,
         **kwargs,
     ) -> None:  # noqa: D107
-
         # NOTE: Set default command class to get custom context
         if command_type is None:
             command_type = Group
@@ -286,7 +286,13 @@ class CLI(typer.Typer, servo.logging.Mixin):
             callback = self.root_callback
         self.section = section
         super().__init__(
-            *args, name=name, help=help, cls=command_type, callback=callback, **kwargs
+            *args,
+            name=name,
+            help=help,
+            cls=command_type,
+            callback=callback,
+            pretty_exceptions_enable=False,
+            **kwargs,
         )
 
     def command(
@@ -742,7 +748,7 @@ class ServoCLI(CLI):
                     )
                 )
             else:
-                connectors = None
+                connectors = []
 
             typer_click_object = typer.main.get_group(self)
             context.invoke(
@@ -1050,7 +1056,7 @@ class ServoCLI(CLI):
             for connector_type in servo.Assembly.all_connector_types():
                 row = [
                     connector_type.__default_name__,
-                    connector_type.version,
+                    str(connector_type.version),
                     connector_type.description,
                 ]
                 if verbose:
