@@ -26,7 +26,7 @@ jobs:
     - name: Install dependencies
       run: poetry install
     - name: Run pytest
-      run: poetry run pytest tests
+      run: TERM=dumb poetry run pytest tests
     - name: Build artifacts
       run: poetry build
     - name: Publish to PyPI
