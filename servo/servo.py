@@ -531,7 +531,6 @@ class Servo(servo.connector.BaseConnector):
             )
 
     async def check_servo(self, print_callback: Callable[[str], None] = None) -> bool:
-
         connectors = self.config.checks.connectors
         name = self.config.checks.name
         id = self.config.checks.id

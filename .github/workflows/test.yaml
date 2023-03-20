@@ -121,7 +121,7 @@ jobs:
     - name: Run tests
       run: |
         source .venv/bin/activate
-        pytest -T unit -n 6 \
+        TERM=dumb pytest -T unit -n 6 \
           --cov=servo --cov-config=setup.cfg --doctest-modules \
           --cov-report=term-missing:skip-covered \
           --cov-report=xml:artifacts/unit-test-coverage.xml --cov-report=html:artifacts/unit-test-coverage-html \

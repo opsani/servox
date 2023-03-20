@@ -19,7 +19,8 @@ from typing import Any, Callable, Union
 def get_hash(data: Union[list[Any], dict[Any, Any]]) -> str:
     """md5 hash of Python data. This is limited to scalars that are convertible to string and container
     structures (list, dict) containing such scalars. Some data items are not distinguishable, if they have
-    the same representation as a string, e.g., hash(b'None') == hash('None') == hash(None)"""
+    the same representation as a string, e.g., hash(b'None') == hash('None') == hash(None)
+    """
     hasher = hashlib.md5()
     dump_container(data, hasher.update)
     return hasher.hexdigest()

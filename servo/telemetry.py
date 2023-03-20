@@ -86,7 +86,6 @@ class Telemetry(pydantic.BaseModel):
 
 
 class DiagnosticsHandler(servo.logging.Mixin):
-
     servo: servo.Servo = None
     _running: bool = False
 
@@ -94,7 +93,6 @@ class DiagnosticsHandler(servo.logging.Mixin):
         self.servo = servo
 
     async def diagnostics_check(self) -> None:
-
         self._running = True
 
         while self._running:
@@ -147,7 +145,6 @@ class DiagnosticsHandler(servo.logging.Mixin):
                 self._running = False
 
     async def _get_diagnostics(self) -> Diagnostics:
-
         async with aiofiles.open(servo.logging.logs_path, "r") as log_file:
             logs = await log_file.read()
 

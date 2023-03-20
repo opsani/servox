@@ -77,6 +77,7 @@ CheckHandler = TypeVar(
 )
 CHECK_HANDLER_SIGNATURE = inspect.Signature(return_annotation=CheckHandlerResult)
 
+
 # https://stackoverflow.com/a/67408276
 class Tag(pydantic.ConstrainedStr):
     strip_whitespace = True
@@ -760,7 +761,6 @@ class CheckHelpers(pydantic.BaseModel, servo.logging.Mixin):
         results: list[servo.events.EventResult],
         passing: set[str],
     ) -> bool:
-
         ready = False
         failure = None
 
@@ -822,7 +822,6 @@ class CheckHelpers(pydantic.BaseModel, servo.logging.Mixin):
 
     @classmethod
     async def checks_to_table(cls, checks_config, results) -> str:
-
         output = None
         table = []
 

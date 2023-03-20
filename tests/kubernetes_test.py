@@ -22,7 +22,6 @@ import tests.helpers
 from servo.types.settings import _is_step_aligned, _suggest_step_aligned_values
 
 pytestmark = [
-    pytest.mark.asyncio,
     pytest.mark.integration,
     pytest.mark.usefixtures("kubernetes_asyncio_config"),
 ]

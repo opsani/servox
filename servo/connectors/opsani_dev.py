@@ -939,7 +939,6 @@ class OpsaniDevChecks(servo.BaseChecks):
 
     @servo.check("Tuning pod is running")
     async def check_tuning_is_running(self) -> None:
-
         if self.config.create_tuning_pod:
             # Generate a KubernetesConfiguration to initialize the optimization class
             kubernetes_config = self.config.generate_kubernetes_config()

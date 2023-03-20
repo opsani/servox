@@ -63,7 +63,6 @@ class TestDiagnosticStates:
 async def test_diagnostics_request_200(
     monkeypatch, optimizer: servo.configuration.OpsaniOptimizer
 ) -> None:
-
     # Simulate running as a k8s pod
     monkeypatch.setenv("POD_NAMESPACE", "test-namespace")
 
@@ -93,7 +92,6 @@ async def test_diagnostics_request_200(
 async def test_diagnostics_request_404(
     monkeypatch, optimizer: servo.configuration.OpsaniOptimizer
 ) -> None:
-
     # Simulate running as a k8s pod
     monkeypatch.setenv("POD_NAMESPACE", "test-namespace")
 
@@ -123,7 +121,6 @@ async def test_diagnostics_request_404(
 async def test_diagnostics_put(
     monkeypatch, optimizer: servo.configuration.OpsaniOptimizer
 ) -> None:
-
     monkeypatch.setenv("POD_NAMESPACE", "test-namespace")
 
     servo_runner = servo.runner.ServoRunner(
@@ -156,7 +153,6 @@ async def test_diagnostics_put(
 async def test_diagnostics_reset(
     monkeypatch, optimizer: servo.configuration.OpsaniOptimizer
 ) -> None:
-
     monkeypatch.setenv("POD_NAMESPACE", "test-namespace")
 
     servo_runner = servo.runner.ServoRunner(

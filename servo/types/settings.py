@@ -67,7 +67,8 @@ class Setting(BaseModel, abc.ABC):
 
     def safe_set_value_copy(self, value: Any) -> "Setting":
         """Returns a copy of itself with the value updated, bypassing any failing validation checks.
-        Ideal for readonly operations (eg. describe) where values are already in place and shouldn't be subject to validation"""
+        Ideal for readonly operations (eg. describe) where values are already in place and shouldn't be subject to validation
+        """
         try:
             new_setting = self.copy()
             new_setting.value = value
