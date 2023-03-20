@@ -204,7 +204,7 @@ async def test_dispatch_event_exclude(servo: Servo) -> None:
     assert results[0].connector == second_connector
 
 
-def test_get_event_handlers_all(servo: servo) -> None:
+def test_get_event_handlers_all(servo: Servo) -> None:
     connector = servo.get_connector("first_test_servo")
     event_handlers = connector.get_event_handlers("promote")
     assert len(event_handlers) == 3
@@ -218,7 +218,7 @@ def test_get_event_handlers_all(servo: servo) -> None:
 from servo.events import get_event
 
 
-async def test_add_event_handler_programmatically(mocker, servo: servo) -> None:
+async def test_add_event_handler_programmatically(mocker, servo: Servo) -> None:
     async def fn(self, results: List[EventResult]) -> None:
         print("Test!")
 
@@ -231,7 +231,7 @@ async def test_add_event_handler_programmatically(mocker, servo: servo) -> None:
     spy.assert_called_once()
 
 
-async def test_before_event(mocker, servo: servo) -> None:
+async def test_before_event(mocker, servo: Servo) -> None:
     connector = servo.get_connector("first_test_servo")
     event_handler = connector.get_event_handlers("measure", Preposition.before)[0]
     spy = mocker.spy(event_handler, "handler")
@@ -239,7 +239,7 @@ async def test_before_event(mocker, servo: servo) -> None:
     spy.assert_called_once()
 
 
-async def test_after_event(mocker, servo: servo) -> None:
+async def test_after_event(mocker, servo: Servo) -> None:
     connector = servo.get_connector("first_test_servo")
     event_handler = connector.get_event_handlers("promote", Preposition.after)[0]
     spy = mocker.spy(event_handler, "handler")
@@ -248,7 +248,7 @@ async def test_after_event(mocker, servo: servo) -> None:
     spy.assert_called_once()
 
 
-async def test_on_event(mocker, servo: servo) -> None:
+async def test_on_event(mocker, servo: Servo) -> None:
     connector = servo.get_connector("first_test_servo")
     assert connector
     assert servo.connectors
@@ -258,7 +258,7 @@ async def test_on_event(mocker, servo: servo) -> None:
     spy.assert_called_once()
 
 
-async def test_cancellation_of_event_from_before_handler(mocker, servo: servo):
+async def test_cancellation_of_event_from_before_handler(mocker, servo: Servo):
     connector = servo.get_connector("first_test_servo")
     before_handler = connector.get_event_handlers("promote", Preposition.before)[0]
     on_handler = connector.get_event_handlers("promote", Preposition.on)[0]
@@ -288,7 +288,7 @@ async def test_cancellation_of_event_from_before_handler(mocker, servo: servo):
     )
 
 
-async def test_cannot_cancel_from_on_handlers_warning(mocker, servo: servo):
+async def test_cannot_cancel_from_on_handlers_warning(mocker, servo: Servo):
     connector = servo.get_connector("first_test_servo")
     event_handler = connector.get_event_handlers("promote", Preposition.on)[0]
 
@@ -308,7 +308,7 @@ async def test_cannot_cancel_from_on_handlers_warning(mocker, servo: servo):
 from servo.errors import EventCancelledError
 
 
-async def test_cannot_cancel_from_on_handlers(mocker, servo: servo):
+async def test_cannot_cancel_from_on_handlers(mocker, servo: Servo):
     connector = servo.get_connector("first_test_servo")
     event_handler = connector.get_event_handlers("promote", Preposition.on)[0]
 
@@ -319,7 +319,7 @@ async def test_cannot_cancel_from_on_handlers(mocker, servo: servo):
     assert str(error.value) == "Cannot cancel an event from an on handler"
 
 
-async def test_cannot_cancel_from_after_handlers_warning(mocker, servo: servo):
+async def test_cannot_cancel_from_after_handlers_warning(mocker, servo: Servo):
     connector = servo.get_connector("first_test_servo")
     event_handler = connector.get_event_handlers("promote", Preposition.after)[0]
 
@@ -331,7 +331,7 @@ async def test_cannot_cancel_from_after_handlers_warning(mocker, servo: servo):
     assert str(error.value) == "Cannot cancel an event from an after handler"
 
 
-async def test_after_handlers_are_not_called_on_failure_raises(mocker, servo: servo):
+async def test_after_handlers_are_not_called_on_failure_raises(mocker, servo: Servo):
     connector = servo.get_connector("first_test_servo")
     after_handler = connector.get_event_handlers("promote", Preposition.after)[0]
     spy = mocker.spy(after_handler, "handler")
@@ -346,7 +346,7 @@ async def test_after_handlers_are_not_called_on_failure_raises(mocker, servo: se
     spy.assert_not_called()
 
 
-async def test_after_handlers_are_called_on_failure(mocker, servo: servo):
+async def test_after_handlers_are_called_on_failure(mocker, servo: Servo):
     connector = servo.get_connector("first_test_servo")
     after_handler = connector.get_event_handlers("promote", Preposition.after)[0]
     spy = mocker.spy(after_handler, "handler")
@@ -371,7 +371,7 @@ async def test_after_handlers_are_called_on_failure(mocker, servo: servo):
     assert result.preposition == Preposition.on
 
 
-async def test_dispatching_specific_prepositions(mocker, servo: servo) -> None:
+async def test_dispatching_specific_prepositions(mocker, servo: Servo) -> None:
     connector = servo.get_connector("first_test_servo")
     before_handler = connector.get_event_handlers("promote", Preposition.before)[0]
     before_spy = mocker.spy(before_handler, "handler")
@@ -385,7 +385,7 @@ async def test_dispatching_specific_prepositions(mocker, servo: servo) -> None:
     after_spy.assert_not_called()
 
 
-async def test_dispatching_multiple_specific_prepositions(mocker, servo: servo) -> None:
+async def test_dispatching_multiple_specific_prepositions(mocker, servo: Servo) -> None:
     connector = servo.get_connector("first_test_servo")
     before_handler = connector.get_event_handlers("promote", Preposition.before)[0]
     before_spy = mocker.spy(before_handler, "handler")
@@ -401,13 +401,13 @@ async def test_dispatching_multiple_specific_prepositions(mocker, servo: servo) 
     after_spy.assert_not_called()
 
 
-async def test_startup_event(mocker, servo: servo) -> None:
+async def test_startup_event(mocker, servo: Servo) -> None:
     connector = servo.get_connector("first_test_servo")
     await servo.startup()
     assert connector.started_up == True
 
 
-async def test_startup_starts_pubsub_exchange(mocker, servo: servo) -> None:
+async def test_startup_starts_pubsub_exchange(mocker, servo: Servo) -> None:
     servo.get_connector("first_test_servo")
     assert not servo.pubsub_exchange.running
     await servo.startup()
@@ -415,7 +415,7 @@ async def test_startup_starts_pubsub_exchange(mocker, servo: servo) -> None:
     await servo.pubsub_exchange.shutdown()
 
 
-async def test_shutdown_event(mocker, servo: servo) -> None:
+async def test_shutdown_event(mocker, servo: Servo) -> None:
     await servo.startup()
     connector = servo.get_connector("first_test_servo")
     on_handler = connector.get_event_handlers("shutdown", Preposition.on)[0]
@@ -424,14 +424,14 @@ async def test_shutdown_event(mocker, servo: servo) -> None:
     on_spy.assert_called()
 
 
-async def test_shutdown_event_stops_pubsub_exchange(mocker, servo: servo) -> None:
+async def test_shutdown_event_stops_pubsub_exchange(mocker, servo: Servo) -> None:
     await servo.startup()
     assert servo.pubsub_exchange.running
     await servo.shutdown()
     assert not servo.pubsub_exchange.running
 
 
-async def test_dispatching_event_that_doesnt_exist(mocker, servo: servo) -> None:
+async def test_dispatching_event_that_doesnt_exist(mocker, servo: Servo) -> None:
     with pytest.raises(KeyError) as error:
         await servo.dispatch_event("this_is_not_an_event", _prepositions=Preposition.on)
     assert str(error.value) == "'this_is_not_an_event'"
@@ -534,7 +534,9 @@ def test_registering_event_handler_with_missing_keyword_param_fails() -> None:
         assert expected_error_substring in str(error.value)
 
 
-def test_registering_event_handler_with_missing_keyword_param_succeeds_with_var_keywords() -> None:
+def test_registering_event_handler_with_missing_keyword_param_succeeds_with_var_keywords() -> (
+    None
+):
     @on_event("measure")
     def invalid_measure(self, *, control: Control = Control(), **kwargs) -> Measurement:
         pass
@@ -1203,6 +1205,12 @@ class TestAssembly:
                                 },
                                 {
                                     "type": "object",
+                                    "additionalProperties": {
+                                        "format": "uri",
+                                        "maxLength": 65536,
+                                        "minLength": 1,
+                                        "type": "string",
+                                    },
                                     "patternProperties": {
                                         "^(https?|all)://": {
                                             "type": "string",

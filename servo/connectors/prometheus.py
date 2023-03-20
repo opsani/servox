@@ -1029,7 +1029,6 @@ class PrometheusConnector(servo.BaseConnector):
         return response
 
     async def observe(self, progress: servo.EventProgress) -> None:
-
         return self.logger.info(
             progress.annotate(
                 f"measuring Prometheus metrics for {progress.timeout}", False

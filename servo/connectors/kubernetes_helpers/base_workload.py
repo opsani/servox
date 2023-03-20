@@ -214,7 +214,7 @@ class BaseKubernetesWorkloadHelper(BaseKubernetesHelper):
         ]
         if restarted_pods_container_statuses:
             pod_to_counts: dict[str, list] = defaultdict(list)
-            for (pod, cont_stat) in restarted_pods_container_statuses:
+            for pod, cont_stat in restarted_pods_container_statuses:
                 # TODO config to enable logs on per container basis
                 log_portion = ""
                 if include_container_logs:

@@ -193,7 +193,6 @@ class Duration(datetime.timedelta):
         duration: Union[str, Numeric, datetime.timedelta] = 0,
         **kwargs,
     ) -> datetime.timedelta:
-
         seconds = kwargs.pop("seconds", 0)
         microseconds = kwargs.pop("microseconds", 0)
 

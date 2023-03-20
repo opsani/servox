@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import contextlib
 import datetime
 import enum
 import io
@@ -192,55 +193,56 @@ class VegetaConfiguration(servo.BaseConfiguration):
             return value
 
         format: TargetFormat = values.get("format")
-        if field.name == "target":
-            value_stream = io.StringIO(value)
-        elif field.name == "targets":
-            value_stream = open(value)
-        else:
-            raise ValueError(f"unknown field '{field.name}'")
+        with contextlib.ExitStack() as stack:
+            if field.name == "target":
+                value_stream = io.StringIO(value)
+            elif field.name == "targets":
+                value_stream = stack.enter_context(open(value))
+            else:
+                raise ValueError(f"unknown field '{field.name}'")
 
-        if format == TargetFormat.http:
-            # Scan through the targets and run basic heuristics
-            # We don't validate ordering to avoid building a full parser
-            count = 0
-            for line in value_stream:
-                count = count + 1
-                line = line.strip()
-                if len(line) == 0 or line[0] in ("#", "@"):
-                    continue
-
-                maybe_method_and_url = line.split(" ", 2)
-                if (
-                    len(maybe_method_and_url) == 2
-                    and maybe_method_and_url[0] in servo.HTTP_METHODS
-                ):
-                    if re.match("https?://*", maybe_method_and_url[1]):
+            if format == TargetFormat.http:
+                # Scan through the targets and run basic heuristics
+                # We don't validate ordering to avoid building a full parser
+                count = 0
+                for line in value_stream:
+                    count = count + 1
+                    line = line.strip()
+                    if len(line) == 0 or line[0] in ("#", "@"):
                         continue
 
-                maybe_header_and_value = line.split(":", 2)
-                if len(maybe_header_and_value) == 2 and maybe_header_and_value[1]:
-                    continue
+                    maybe_method_and_url = line.split(" ", 2)
+                    if (
+                        len(maybe_method_and_url) == 2
+                        and maybe_method_and_url[0] in servo.HTTP_METHODS
+                    ):
+                        if re.match("https?://*", maybe_method_and_url[1]):
+                            continue
 
-                raise ValueError(f"invalid target: {line}")
+                    maybe_header_and_value = line.split(":", 2)
+                    if len(maybe_header_and_value) == 2 and maybe_header_and_value[1]:
+                        continue
 
-            if count == 0:
-                raise ValueError(f"no targets found")
+                    raise ValueError(f"invalid target: {line}")
 
-        elif format == TargetFormat.json:
-            try:
-                data = json.load(value_stream)
-            except json.JSONDecodeError as e:
-                raise ValueError(f"{field.name} contains invalid JSON") from e
+                if count == 0:
+                    raise ValueError(f"no targets found")
 
-            # Validate the target data with JSON Schema
-            try:
-                jsonschema.validate(instance=data, schema=cls.target_json_schema())
-            except jsonschema.ValidationError as error:
-                raise ValueError(
-                    f"Invalid Vegeta JSON target: {error.message}"
-                ) from error
+            elif format == TargetFormat.json:
+                try:
+                    data = json.load(value_stream)
+                except json.JSONDecodeError as e:
+                    raise ValueError(f"{field.name} contains invalid JSON") from e
 
-        return value
+                # Validate the target data with JSON Schema
+                try:
+                    jsonschema.validate(instance=data, schema=cls.target_json_schema())
+                except jsonschema.ValidationError as error:
+                    raise ValueError(
+                        f"Invalid Vegeta JSON target: {error.message}"
+                    ) from error
+
+            return value
 
     @pydantic.validator("rate")
     @classmethod

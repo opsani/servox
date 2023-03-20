@@ -1217,7 +1217,7 @@ def test_vegeta_cli_validate_no_such_file(
     result = cli_runner.invoke(servo_cli, "validate -f doesntexist.yaml")
     assert result.exit_code == 2
     assert (
-        "Error: Invalid value for '--file' / '-f': File 'doesntexist.yaml' does not exist."
+        "Invalid value for '--file' / '-f': File 'doesntexist.yaml' does not exist."
         in result.stderr
     )
 

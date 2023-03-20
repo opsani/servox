@@ -144,6 +144,7 @@ class SleepResponse(pydantic.BaseModel):
 
 # SleepResponse '{"cmd": "SLEEP", "param": {"duration": 60, "data": {"reason": "no active optimization pipeline"}}}'
 
+
 # Instructions from servo on what to measure
 class MeasureParams(pydantic.BaseModel):
     metrics: List[str]
@@ -173,7 +174,7 @@ class CommandResponse(pydantic.BaseModel):
 
     class Config:
         json_encoders = {
-            Commands: lambda v: str(v),
+            Commands: lambda v: v.value,
         }
 
 

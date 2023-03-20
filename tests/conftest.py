@@ -59,49 +59,52 @@ def pytest_report_header(config) -> str:
     return "servo connectors: " + ", ".join(names)
 
 
-@pytest.fixture
-def event_loop_policy(request) -> str:
-    """Return the active event loop policy for the test.
+uvloop.install()
 
-    Valid values are "default" and "uvloop".
+# FIXME: Below logic causes "OSError: [Errno 24] Too many open files". Fix if really needed
+# @pytest.fixture
+# def event_loop_policy(request) -> str:
+#     """Return the active event loop policy for the test.
 
-    The default implementation defers to the `event_loop_policy` marker
-    when it is set and otherwise selects a default policy based on the
-    characteristics of the test being run.
-    """
-    marker = request.node.get_closest_marker("event_loop_policy")
-    if marker:
-        assert (
-            len(marker.args) == 1
-        ), f"event_loop_policy marker accepts a single argument but received: {repr(marker.args)}"
-        event_loop_policy = marker.args[0]
-    else:
-        event_loop_policy = "uvloop"
+#     Valid values are "default" and "uvloop".
 
-    valid_policies = ("default", "uvloop")
-    assert (
-        event_loop_policy in valid_policies
-    ), f'invalid event_loop_policy marker: "{event_loop_policy}" is not in {repr(valid_policies)}'
+#     The default implementation defers to the `event_loop_policy` marker
+#     when it is set and otherwise selects a default policy based on the
+#     characteristics of the test being run.
+#     """
+#     marker = request.node.get_closest_marker("event_loop_policy")
+#     if marker:
+#         assert (
+#             len(marker.args) == 1
+#         ), f"event_loop_policy marker accepts a single argument but received: {repr(marker.args)}"
+#         event_loop_policy = marker.args[0]
+#     else:
+#         event_loop_policy = "uvloop"
 
-    return event_loop_policy
+#     valid_policies = ("default", "uvloop")
+#     assert (
+#         event_loop_policy in valid_policies
+#     ), f'invalid event_loop_policy marker: "{event_loop_policy}" is not in {repr(valid_policies)}'
+
+#     return event_loop_policy
 
 
-@pytest.fixture
-def event_loop(event_loop_policy: str) -> Iterator[asyncio.AbstractEventLoop]:
-    """Yield an instance of the event loop for each test case.
+# @pytest.fixture
+# def event_loop(event_loop_policy: str) -> Iterator[asyncio.AbstractEventLoop]:
+#     """Yield an instance of the event loop for each test case.
 
-    The effective event loop policy is determined by the `event_loop_policy` fixture.
-    """
-    if event_loop_policy == "default":
-        asyncio.set_event_loop_policy(None)
-    elif event_loop_policy == "uvloop":
-        uvloop.install()
-    else:
-        raise ValueError(f'invalid event loop policy: "{event_loop_policy}"')
+#     The effective event loop policy is determined by the `event_loop_policy` fixture.
+#     """
+#     if event_loop_policy == "default":
+#         asyncio.set_event_loop_policy(None)
+#     elif event_loop_policy == "uvloop":
+#         uvloop.install()
+#     else:
+#         raise ValueError(f'invalid event loop policy: "{event_loop_policy}"')
 
-    loop = asyncio.get_event_loop_policy().new_event_loop()
-    yield loop
-    loop.close()
+#     loop = asyncio.get_event_loop_policy().new_event_loop()
+#     yield loop
+#     loop.close()
 
 
 def pytest_addoption(parser) -> None:
@@ -266,7 +269,9 @@ def gather_marks_for_item(item) -> tuple:
     return (type_mark, env_marks)
 
 
-def pytest_collection_modifyitems(config, items) -> None:
+def pytest_collection_modifyitems(
+    config: pytest.Config, items: list[pytest.Item]
+) -> None:
     """Modify the discovered pytest nodes to configure default markers.
 
     This methods sets asyncio as the async backend and skips
@@ -276,9 +281,6 @@ def pytest_collection_modifyitems(config, items) -> None:
     selected_items = []
     deselected_items = []
     for item in items:
-        # Set asyncio default marker
-        item.add_marker(pytest.mark.asyncio)
-
         # Consider any unmarked item as a unit test
         type_mark, env_marks = gather_marks_for_item(item)
         if not type_mark:

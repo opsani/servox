@@ -992,7 +992,10 @@ class TestConnector:
 
     @respx.mock
     async def test_measure(self, connector) -> None:
-        respx.mock.get(re.compile(r"/api/v1/query_range.+"), name="query",).mock(
+        respx.mock.get(
+            re.compile(r"/api/v1/query_range.+"),
+            name="query",
+        ).mock(
             return_value=httpx.Response(
                 200,
                 json={

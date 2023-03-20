@@ -61,7 +61,7 @@ def microseconds_from_duration_str(duration: str) -> float:
     total: float = 0
     sign = -1 if duration[0] == "-" else 1
 
-    for (value, unit) in matches:
+    for value, unit in matches:
         if unit not in units:
             raise ValueError(f"Unknown unit '{unit}' in duration '{duration}'")
         try:
@@ -127,7 +127,6 @@ def timedelta_to_duration_str(delta: timedelta, extended: bool = False) -> str:
 
 
 def _to_str_small(nanoseconds: Optional[float], extended: bool = False) -> str:
-
     result_str = ""
 
     if not nanoseconds:
@@ -150,11 +149,9 @@ def _to_str_small(nanoseconds: Optional[float], extended: bool = False) -> str:
 
 
 def _to_str_large(nanoseconds: float, extended: bool = False) -> str:
-
     result_str = ""
 
     if extended:
-
         years = int(nanoseconds / _year_size)
         if years:
             nanoseconds -= _year_size * years
