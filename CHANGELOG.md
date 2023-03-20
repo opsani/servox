@@ -17,6 +17,13 @@ based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/). Releases are
 versioned in accordance with [Semantic
 Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.2] "genesis" - 2023-03-20
+
+### Changed
+
+- Updated third party libraries
+
+
 ## [2.2.1] "genesis" - 2023-02-17
 
 ### Added
