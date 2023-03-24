@@ -941,14 +941,14 @@ class TestAssembly:
                             "title": "Url",
                             "type": "string",
                         },
-                        "workload_id": {
-                            "env": "APPD_WORKLOAD_ID",
-                            "env_names": ["APPD_WORKLOAD_ID"],
+                        "optimizer_id": {
+                            "env": "APPD_OPTIMIZER_ID",
+                            "env_names": ["APPD_OPTIMIZER_ID"],
                             "title": "Workload Id",
                             "type": "string",
                         },
                     },
-                    "required": ["workload_id"],
+                    "required": ["optimizer_id"],
                     "title": "AppdynamicsOptimizer",
                     "type": "object",
                 },

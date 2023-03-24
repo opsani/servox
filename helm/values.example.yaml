@@ -31,7 +31,7 @@ memory:
 workloadName: WORKLOAD_NAME
 workloadNamespaceName: WORKLOAD_NAMESPACE
 workloadContainerName: WORKLOAD_CONTAINER
-workloadId: WORKLOAD_ID
+optimizerId: OPTIMIZER_ID
 urlOverride: URL_OVERRIDE
 
 connectionSettingsType: static
