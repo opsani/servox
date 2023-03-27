@@ -23,7 +23,7 @@ data:
   log_level: {{ .Values.logLevel }}
   servo.yaml: |
     optimizer:
-      workload_id: {{ required ".Values.workloadId is required" .Values.workloadId }}
+      optimizer_id: {{ required ".Values.optimizerId is required" .Values.optimizerId }}
       {{- if eq .Values.connectionSettingsType "static" }}
       tenant_id: {{ required ".Values.tenantId is required for static connection settings type" .Values.tenantId  }}
       base_url: {{ required ".Values.baseUrl is required for static connection settings type" .Values.baseUrl }}

@@ -64,7 +64,7 @@ class SidecarConnectionFile(pydantic.BaseModel):
 
 
 class AppdynamicsOptimizer(pydantic.BaseSettings):
-    workload_id: str
+    optimizer_id: str
     tenant_id: Optional[str] = None
     base_url: pydantic.AnyHttpUrl = "https://optimize-ignite-test.saas.appd-test.com/"
     # static config properties
@@ -96,8 +96,9 @@ class AppdynamicsOptimizer(pydantic.BaseSettings):
             )
 
         if not self.url:
-            workload_id = base64.b32encode(str.encode(self.workload_id)).decode()
-            self.url = f"{self.base_url}/rest/optimize/co/v1/workloads/{workload_id}/"
+            self.url = (
+                f"{self.base_url}/rest/optimize/co/v1/optimizer/{self.optimizer_id}/"
+            )
         if not self.token_url:
             self.token_url = (
                 f"{self.base_url}/auth/{self.tenant_id}/default/oauth2/token"
@@ -121,17 +122,17 @@ class AppdynamicsOptimizer(pydantic.BaseSettings):
 
     @property
     def id(self) -> str:
-        return f"{self.tenant_id} - {self.workload_id}"
+        return f"{self.tenant_id} - {self.optimizer_id}"
 
     @property
     def name(self) -> str:
-        return f"{self.workload_id}"
+        return f"{self.optimizer_id}"
 
     class Config:
         case_sensitive = True
         extra = pydantic.Extra.forbid
         fields = {
-            "workload_id": {"env": "APPD_WORKLOAD_ID"},
+            "optimizer_id": {"env": "APPD_OPTIMIZER_ID"},
             "tenant_id": {"env": "APPD_TENANT_ID"},
             "client_id": {"env": "APPD_CLIENT_ID"},
             "client_secret": {"env": "APPD_CLIENT_SECRET"},
