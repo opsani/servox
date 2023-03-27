@@ -944,7 +944,7 @@ class TestAssembly:
                         "optimizer_id": {
                             "env": "APPD_OPTIMIZER_ID",
                             "env_names": ["APPD_OPTIMIZER_ID"],
-                            "title": "Workload Id",
+                            "title": "Optimizer Id",
                             "type": "string",
                         },
                     },
