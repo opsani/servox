@@ -1,0 +1,14 @@
+apiVersion: v1
+entries:
+  servox:
+  - apiVersion: v2
+    appVersion: 2.2.2
+    created: "2023-03-29T15:12:58.963741-05:00"
+    description: A Helm chart for Opsani coninuous optimization Agent
+    digest: 1ed07ed5aaa02841863534e122830c5436344cf5c358c50e809feda4a0cc667d
+    name: servox
+    type: application
+    urls:
+    - https://opsani.github.io/servox/servox-2.2.2.tgz
+    version: 2.2.2
+generated: "2023-03-29T15:12:58.962252-05:00"
