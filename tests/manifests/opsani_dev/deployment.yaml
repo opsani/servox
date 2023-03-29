@@ -1,0 +1,33 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+
+metadata:
+  name: fiber-http
+  labels:
+    app.kubernetes.io/name: fiber-http
+
+spec:
+  replicas: 2
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: fiber-http
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: fiber-http
+    spec:
+      containers:
+      - name: fiber-http
+        image: opsani/fiber-http:latest
+        imagePullPolicy: IfNotPresent
+        resources:
+          requests:
+            cpu: 125m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 1Gi
+        ports:
+          - containerPort: 8480

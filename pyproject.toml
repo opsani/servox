@@ -1,0 +1,146 @@
+[tool.poetry]
+name = "servox"
+version = "2.2.2"
+description = "Opsani Servo: The Next Generation"
+homepage = "https://opsani.com/"
+repository = "https://github.com/opsani/servox"
+authors = ["Blake Watters <blake@opsani.com>"]
+readme = "README.md"
+license = "Apache-2.0"
+packages = [
+    { include = "servo" },
+]
+include = ["README.md", "CHANGELOG.md"]
+
+[tool.poetry.dependencies]
+python = ">=3.8.1,<=3.9.11"
+pydantic = "^1.9.0"
+loguru = "^0.6.0"
+httpx = "^0.23.0"
+python-dotenv = "^1.0.0"
+semver = "^2.10.1"
+pyaml = "^21.10.1"
+tabulate = "^0.9.0"
+pygments = "^2.6.1"
+devtools = "^0.10.0"
+backoff = "^2.2.1"
+typer = "^0.7.0"
+bullet = "^2.1.0"
+jsonschema = "^4.17.3"
+timeago = "^1.0.14"
+orjson = "^3.5.0"
+uvloop = "^0.17.0"
+pytz = "^2022.7.1"
+toml = "^0.10.2"
+colorama = "^0.4.4"
+pyfiglet = "^0.8.post1"
+curlify2 = "^1.0.0"
+kubernetes_asyncio = "^22.6.5"
+aiofiles = "^23.1.0"
+python-dateutil = "^2.8.2"
+Authlib = "^1.1.0"
+watchfiles = "^0.18.1"
+
+[tool.poetry.dev-dependencies]
+pytest = "^7.2.2"
+pytest-asyncio = "^0.20.3"
+pytest-cov = "^4.0.0"
+pytest-mock = "^3.5.1"
+freezegun = "^1.1.0"
+respx = "^0.20.1"
+kubetest = {git = "https://github.com/opsani/kubetest.git", rev = "feature/template-manifests"}
+kubernetes = "^17.17.0"
+pytest-freezegun = "^0.4.2"
+yamlpath = "^3.2.0"
+isort = "^5.12.0"
+autoflake = "^1.7.8"
+flake8-fixme = "^1.1.1"
+flake8-isort = "^4.0.0"
+pre-commit = "^3.1.1"
+pytest-randomly = "^3.12.0"
+flake8-pytest-style = "^1.3.0"
+mypy = "1.1.1"
+nitpick = "^0.32.0"
+flakehell = "^0.9.0"
+flake8-docstrings = "^1.5.0"
+flake8-quotes = "^3.3.0"
+flake8-bugbear = "^23.3.12"
+flake8-builtins = "^2.1.0"
+flake8-eradicate = "^1.0.0"
+flake8-use-fstring = "^1.1"
+flake8-annotations-coverage = "^0.0.6"
+flake8-annotations-complexity = "^0.0.7"
+flake8-annotations = "^3.0.0"
+flake8-markdown = "^0.4.0"
+flake8-bandit = "^4.1.1"
+fastapi = "^0.95.0"
+uvicorn = "^0.21.1"
+pytest-profiling = "^1.7.0"
+pytest-sugar = "^0.9.6"
+pytest-clarity = "^1.0.1"
+pytest-picked = "^0.4.6"
+chevron = "^0.14.0"
+pytest-xdist = "^3.2.0"
+pytest-vscodedebug = "^0.1.0"
+pytest-html = "^4.0.0rc0"
+bandit = "^1.7.0"
+statesman = "^1.0.2.post1"
+types-PyYAML = "^6.0.4"
+types-setuptools = "^63.4.1"
+types-python-dateutil = "^2.8.2"
+types-freezegun = "^1.1.10"
+types-pytz = "^2022.7.1"
+types-toml = "^0.10.2"
+types-aiofiles = "^23.1.0"
+types-tabulate = "^0.9.0"
+black = "^23.1.0"
+coverage = "^7.2.2"
+pytest-timeout = "^2.1.0"
+
+[tool.poetry.scripts]
+servo = "servo.entry_points:run_cli"
+
+[tool.poetry.plugins."servo.connectors"]
+vegeta = "servo.connectors.vegeta:VegetaConnector"
+kubernetes = "servo.connectors.kubernetes:KubernetesConnector"
+prometheus = "servo.connectors.prometheus:PrometheusConnector"
+opsani_dev = "servo.connectors.opsani_dev:OpsaniDevConnector"
+scripts = "servo.connectors.scripts:ScriptsConnector"
+kube_metrics = "servo.connectors.kube_metrics:KubeMetricsConnector"
+wait = "servo.connectors.wait:WaitConnector"
+
+[build-system]
+requires = ["poetry>=0.12"]
+build-backend = "poetry.masonry.api"
+
+[tool.isort]
+profile = "black"
+line_length = 120
+known_first_party = "tests"
+src_paths = ["servo", "tests"]
+
+[tool.nitpick]
+style = "nitpick-style.toml"
+
+[tool.flakehell]
+base = "https://raw.githubusercontent.com/life4/flakehell/master/pyproject.toml"
+exclude = ["README.md", "docs", "tests"]
+format = "grouped"
+max_line_length = 120
+show_source = true
+
+[tool.flakehell.plugins]
+pycodestyle = ["+*"]
+pyflakes = ["+*"]
+nitpick = ["+*"]
+mccabe = ["+*"]
+
+# enable everything that starts from `flake8-`
+"flake8-*" = ["+*"]
+
+# disable pylint -- raising mysterious errors
+pylint = ["-*"]
+
+[tool.flakehell.exceptions."tests/"]
+pycodestyle = ["-*"]
+pyflakes = ["-*"]

@@ -1,0 +1,52 @@
+name: Quick Start
+on:
+  push:
+    branches: [main]
+
+jobs:
+  quick_start:
+    name: Pyenv Quick Start
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v2
+      with:
+          fetch-depth: 1
+    - name: Output Python version
+      id: python-version
+      run: |
+        echo "::set-output name=python-version::$(cat .python-version)"
+    - name: Cache pyenv versions
+      uses: actions/cache@v2.1.1
+      id: cached-pyenvs
+      with:
+        path: /opt/hostedtoolcache/pyenv_root
+        key: ${{ runner.os }}-pyenv
+    - name: Install pyenv versions
+      uses: gabrielfalcao/pyenv-action@v11
+      with:
+        default: ${{ steps.python-version.outputs.python-version }}
+      # if: steps.cached-pyenvs.outputs.cache-hit != 'true'
+    - name: Install Poetry
+      run: |
+        curl -sSL https://install.python-poetry.org | python
+        PATH=$PATH:$HOME/.poetry/bin
+        pyenv install -s
+        poetry config virtualenvs.in-project true
+        poetry env info
+        poetry env use `cat .python-version`
+    - name: Cache dependencies
+      uses: actions/cache@v2.1.1
+      id: cached-poetry-dependencies
+      with:
+        path: .venv
+        key: venv-${{ runner.os }}-poetry-${{ hashFiles('**/poetry.lock') }}
+    - name: Install dependencies
+      run: |
+        PATH=$PATH:$HOME/.poetry/bin
+        poetry install
+      if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
+    - name: Run tests
+      run: |
+        PATH=$PATH:$HOME/.poetry/bin
+        poetry run pytest

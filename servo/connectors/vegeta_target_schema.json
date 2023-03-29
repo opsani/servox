@@ -1,0 +1,41 @@
+{
+    "$schema": "http://json-schema.org/draft-04/schema#",
+    "$ref": "#/definitions/Target",
+    "definitions": {
+      "Target": {
+        "required": [
+          "method",
+          "url"
+        ],
+        "properties": {
+          "body": {
+            "type": "string",
+            "media": {
+              "binaryEncoding": "base64"
+            }
+          },
+          "header": {
+            "patternProperties": {
+              ".*": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "type": "object"
+          },
+          "method": {
+            "type": "string",
+            "enum" : ["GET", "POST", "PUT", "PATCH", "OPTIONS", "TRACE", "HEAD", "DELETE", "CONNECT"]
+          },
+          "url": {
+            "type": "string",
+            "format": "uri"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object"
+      }
+    }
+  }

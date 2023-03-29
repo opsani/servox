@@ -1,0 +1,52 @@
+# Copyright 2023 Cisco Systems, Inc. and/or its affiliates.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "servox.fullname" . }}
+  namespace: {{ include "servox.namespace" . }}
+  labels:
+    {{- include "servox.labels" . | nindent 4 }}
+data:
+  log_level: {{ .Values.logLevel }}
+  servo.yaml: |
+    optimizer:
+      optimizer_id: {{ required ".Values.optimizerId is required" .Values.optimizerId }}
+      {{- if eq .Values.connectionSettingsType "static" }}
+      tenant_id: {{ required ".Values.tenantId is required for static connection settings type" .Values.tenantId  }}
+      base_url: {{ required ".Values.baseUrl is required for static connection settings type" .Values.baseUrl }}
+      client_id: {{ required ".Values.clientId is required for static connection settings type" .Values.clientId }}
+      {{- else if eq .Values.connectionSettingsType "sidecar" }}
+      connection_file: /agent-management-sidecar/connection.yaml
+      {{- end }}
+      {{- if .Values.urlOverride }}
+      url: {{ .Values.urlOverride }}
+      {{- end }}
+    kubernetes:
+      namespace: {{ include "servox.namespace" . }}
+      deployments:
+      - name: {{ .Values.workloadName | required ".Values.workloadName is required for a functional template" }}
+        strategy:
+          type: canary
+        containers:
+        - name: {{ .Values.workloadContainerName | required ".Values.workloadContainerName is required for a functional template" }}
+          cpu:
+            {{- .Values.cpu | toYaml | nindent 12 }}
+          memory:
+            {{- .Values.memory | toYaml | nindent 12 }}
+        replicas:
+          min: 0
+          max: 1
+          pinned: True

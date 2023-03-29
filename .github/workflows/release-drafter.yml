@@ -1,0 +1,15 @@
+name: Release Drafter
+
+on:
+  push:
+    branches:
+      - $default-branch
+
+jobs:
+  update_release_draft:
+    if: ${{ github.repository == 'opsani/servox' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: release-drafter/release-drafter@v5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,46 @@
+name: Release
+on:
+  release:
+    types: [published]
+jobs:
+  release:
+    if: ${{ github.repository == 'opsani/servox' }}
+    runs-on: ubuntu-20.04
+    steps:
+    - uses: actions/checkout@master
+      with:
+        persist-credentials: false
+        fetch-depth: 0
+    - name: Output Python version
+      id: python-version
+      run: |
+        echo "::set-output name=python-version::$(cat .python-version)"
+    - uses: actions/setup-python@v2
+      with:
+        python-version: ${{ steps.python-version.outputs.python-version }}
+        architecture: x64
+    - name: Install and configure Poetry
+      run: |
+        pip install poetry==1.1.*
+        poetry config virtualenvs.in-project true
+    - name: Install dependencies
+      run: poetry install
+    - name: Run pytest
+      run: TERM=dumb poetry run pytest tests
+    - name: Build artifacts
+      run: poetry build
+    - name: Publish to PyPI
+      run: poetry publish --username=__token__ --password=${{ secrets.PYPI_TOKEN }}
+    - name: Update version to prerelease
+      run: |
+        poetry version prerelease
+        git config --local user.email "eng@opsani.com"
+        git config --local user.name "github-actions[bot]"
+        git add pyproject.toml
+        git commit -m "Updating version to prerelease" pyproject.toml
+    - name: Push changes
+      uses: ad-m/github-push-action@master
+      continue-on-error: true
+      with:
+        github_token: ${{ secrets.MIRROR_TOKEN }}
+        branch: ${{ github.ref }}
