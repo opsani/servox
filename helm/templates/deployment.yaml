@@ -87,7 +87,7 @@ spec:
         - name: CLUSTER_NAME
           value: {{ default "<CLUSTER_NAME>" .Values.clusterNameOverride }}
         - name: CLIENT_TYPE
-          value: {{ default "optimize:agent" .Values.agentFmmTypeOverride }}
+          value: {{ default "optimize:servo" .Values.agentFmmTypeOverride }}
         - name: CONFIG_FILE_PATH
           value: /agent-management-sidecar
         - name: NAME_SPACE
@@ -118,9 +118,9 @@ spec:
         - name: agent-management-sidecar
           mountPath: /agent-management-sidecar
       {{- end }}
-      {{- if .Values.imagePullSecret }}
+      {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
-      - name: {{ .Values.imagePullSecret }}
+      {{- toYaml . | nindent 6 }}
       {{- end }}
       volumes:
       - name: servo-config-volume
