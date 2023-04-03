@@ -17,6 +17,12 @@ based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/). Releases are
 versioned in accordance with [Semantic
 Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.3] "genesis" - 2023-03-31
+
+### Changed
+
+- Update ID of appD config to use optimizerID instead of workloadID
+
 ## [2.2.2] "genesis" - 2023-03-20
 
 ### Changed

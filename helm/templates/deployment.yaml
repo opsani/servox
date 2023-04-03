@@ -83,11 +83,11 @@ spec:
             memory: 128Mi
         env:
         - name: SERVICE_URL
-          value: {{ default "<SERVICE_URL>" .Values.agentMgmtServiceUrlOverride }}
-        - name: CLUSTER_NAME
-          value: {{ default "<CLUSTER_NAME>" .Values.clusterNameOverride }}
-        - name: CLIENT_TYPE
+          value: {{ default "SERVICE_URL_VALUE" .Values.agentMgmtServiceUrlOverride }}
+        - name: SERVICE_NAME
           value: {{ default "optimize:servo" .Values.agentFmmTypeOverride }}
+        - name: CLUSTER_NAME
+          value: {{ default "CLUSTER_NAME_VALUE" .Values.clusterNameOverride }}
         - name: CONFIG_FILE_PATH
           value: /agent-management-sidecar
         - name: NAME_SPACE
@@ -95,25 +95,16 @@ spec:
             fieldRef:
               fieldPath: metadata.namespace
         - name: OAUTH_ID
-          valueFrom:
-            secretKeyRef:
-              name: {{ include "servox.fullname" . }}
-              key: OAUTH_ID
+          value: {{ default "OAUTH_ID_VALUE" .Values.clientId }}
         - name: OAUTH_SECRET
           valueFrom:
             secretKeyRef:
               name: {{ include "servox.fullname" . }}
               key: OAUTH_SECRET
         - name: OAUTH_URL
-          valueFrom:
-            secretKeyRef:
-              name: {{ include "servox.fullname" . }}
-              key: OAUTH_URL
+          value: {{ if .Values.baseUrl }}{{ printf "%s/auth" (urlParse .Values.baseUrl).host }}{{ else }}OAUTH_URL_VALUE{{ end }}
         - name: OAUTH_TENANT_ID
-          valueFrom:
-            secretKeyRef:
-              name: {{ include "servox.fullname" . }}
-              key: OAUTH_TENANT_ID
+          value: {{ default "OAUTH_TENANT_ID_VALUE" .Values.tenantId }}
         volumeMounts:
         - name: agent-management-sidecar
           mountPath: /agent-management-sidecar
