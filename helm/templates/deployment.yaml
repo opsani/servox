@@ -85,15 +85,31 @@ spec:
         - name: SERVICE_URL
           value: {{ default "SERVICE_URL_VALUE" .Values.agentMgmtServiceUrlOverride }}
         - name: SERVICE_NAME
-          value: {{ default "optimize:servo" .Values.agentFmmTypeOverride }}
+          value: {{ default "servo" .Values.agentFmmTypeOverride }}
+        - name: SERVICE_NAMESPACE
+          value: {{ default "optimize" .Values.agentFmmNamespaceOverride }}
+        - name: INSTANCE_UID
+          value: {{ default uuidv4 .Values.instanceUidOverride | quote }}
         - name: CLUSTER_NAME
           value: {{ default "CLUSTER_NAME_VALUE" .Values.clusterNameOverride }}
-        - name: CONFIG_FILE_PATH
-          value: /agent-management-sidecar
-        - name: NAME_SPACE
+        - name: CLUSTER_ID
+        {{- if (lookup "v1" "Namespace" "" "kube-system") }}
+          value: {{ (lookup "v1" "Namespace" "" "kube-system").metadata.uid | quote }}
+        {{- else }}
+          value: {{ default "CLUSTER_ID_VALUE" .Values.clusterIdOverride }}
+        {{- end }}
+        - name: K8_OBJECT_ID
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.uid
+        - name: CLUSTER_NAMESPACE
           valueFrom:
             fieldRef:
               fieldPath: metadata.namespace
+        - name: CONFIG_FILE_PATH
+          value: /agent-management-sidecar
+        - name: INSTALLED_TIME
+          value: {{ now | date "2006-01-02T15:04:05Z" }}
         - name: OAUTH_ID
           value: {{ default "OAUTH_ID_VALUE" .Values.clientId }}
         - name: OAUTH_SECRET

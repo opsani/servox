@@ -40,8 +40,10 @@ data:
       - name: {{ .Values.workloadName | required ".Values.workloadName is required for a functional template" }}
         strategy:
           type: canary
+          alias: tuning
         containers:
         - name: {{ .Values.workloadContainerName | required ".Values.workloadContainerName is required for a functional template" }}
+          alias: main
           cpu:
             {{- .Values.cpu | toYaml | nindent 12 }}
           memory:
