@@ -66,7 +66,7 @@ class SidecarConnectionFile(pydantic.BaseModel):
 class AppdynamicsOptimizer(pydantic.BaseSettings):
     optimizer_id: str
     tenant_id: Optional[str] = None
-    base_url: pydantic.AnyHttpUrl = "https://optimize-ignite-test.saas.appd-test.com/"
+    base_url: Optional[pydantic.AnyHttpUrl] = None
     # static config properties
     client_id: Optional[str] = None
     client_secret: Optional[pydantic.SecretStr] = None
@@ -90,14 +90,15 @@ class AppdynamicsOptimizer(pydantic.BaseSettings):
             self.client_id is None
             or self.client_secret is None
             or self.tenant_id is None
+            or self.base_url is None
         ):
             raise ValueError(
-                f"{self.__class__.__name__} must be configured with a connection file or specify client_id, client_secret, and tenant_id"
+                f"{self.__class__.__name__} must be configured with a connection file or specify base_url, client_id, client_secret, and tenant_id"
             )
 
         if not self.url:
             self.url = (
-                f"{self.base_url}/rest/optimize/co/v1/optimizer/{self.optimizer_id}/"
+                f"{self.base_url}/rest/optimize/co/v1/optimizers/{self.optimizer_id}/"
             )
         if not self.token_url:
             self.token_url = (
@@ -118,7 +119,9 @@ class AppdynamicsOptimizer(pydantic.BaseSettings):
 
     @pydantic.validator("base_url")
     def _rstrip_slash(cls, url: str) -> str:
-        return url.rstrip("/")
+        if url:
+            return url.rstrip("/")
+        return url
 
     @property
     def id(self) -> str:
@@ -131,6 +134,7 @@ class AppdynamicsOptimizer(pydantic.BaseSettings):
     class Config:
         case_sensitive = True
         extra = pydantic.Extra.forbid
+        validate_assignment = True
         fields = {
             "optimizer_id": {"env": "APPD_OPTIMIZER_ID"},
             "tenant_id": {"env": "APPD_TENANT_ID"},

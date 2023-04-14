@@ -583,9 +583,9 @@ class EventProgress(BaseProgress):
         # NOTE: Handle the case where reporting interval < timeout (matters mostly for tests)
         if every is None:
             if self.timeout is None:
-                every = Duration("5s")
+                every = Duration("60s")
             else:
-                every = min(Duration("5s"), self.timeout)
+                every = min(Duration("60s"), self.timeout)
 
         return await super().watch(notify, every)
 

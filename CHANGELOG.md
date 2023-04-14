@@ -17,6 +17,13 @@ based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/). Releases are
 versioned in accordance with [Semantic
 Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.4] "genesis" - 2023-04-14
+
+### Changed
+
+- Default interval of progress updates changed from 5 seconds to 60
+- Updated API path used for servo endpoint of optimize solution
+
 ## [2.2.3] "genesis" - 2023-03-31
 
 ### Changed
