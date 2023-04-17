@@ -880,7 +880,6 @@ class TestAssembly:
                     "description": "Base class for settings, allowing values to be overridden by environment variables.\n\nThis is useful in production for secrets you do not wish to save in code, it plays nicely with docker(-compose),\nHeroku and any 12 factor app design.",
                     "properties": {
                         "base_url": {
-                            "default": "https://optimize-ignite-test.saas.appd-test.com/",
                             "env": "APPD_BASE_URL",
                             "env_names": ["APPD_BASE_URL"],
                             "format": "uri",

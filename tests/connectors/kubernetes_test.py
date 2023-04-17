@@ -1969,6 +1969,8 @@ class TestKubernetesConnectorIntegrationUnreadyCmd:
                 in str(e)
             ):
                 pytest.xfail("Tuning pod shutdown took over 30 seconds")
+            else:
+                raise
 
         # Validate the correct error was raised, re-raise if not for additional debugging context
         try:
