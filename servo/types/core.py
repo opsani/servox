@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import abc
 import asyncio
+import contextlib
 import datetime
 import enum
 import inspect
@@ -587,7 +588,25 @@ class EventProgress(BaseProgress):
             else:
                 every = min(Duration("60s"), self.timeout)
 
-        return await super().watch(notify, every)
+        # return await super().watch(notify, every)
+        async def async_notifier() -> None:
+            if asyncio.iscoroutinefunction(notify):
+                await notify(self)
+            else:
+                notify(self)
+
+        if not self.started:
+            self.start()
+
+        while True:
+            if self.finished:
+                break
+
+            with contextlib.suppress(asyncio.TimeoutError):
+                await asyncio.wait_for(
+                    self._event.wait(), timeout=every.total_seconds()
+                )
+            await async_notifier()
 
 
 class Unit(str, enum.Enum):
