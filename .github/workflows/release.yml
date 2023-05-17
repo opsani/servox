@@ -21,7 +21,7 @@ jobs:
         architecture: x64
     - name: Install and configure Poetry
       run: |
-        pip install poetry==1.1.*
+        pip install poetry==1.4.*
         poetry config virtualenvs.in-project true
     - name: Install dependencies
       run: poetry install
