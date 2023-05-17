@@ -39,7 +39,7 @@ from typing import (
 )
 
 import loguru
-import pkg_resources
+import importlib.metadata
 import pydantic
 
 import servo.api
@@ -341,12 +341,12 @@ class ConnectorLoader:
     def __init__(self, group: str = ENTRY_POINT_GROUP) -> None:  # noqa: D107
         self.group = group
 
-    def iter_entry_points(self) -> Generator[pkg_resources.EntryPoint, None, None]:
-        yield from pkg_resources.iter_entry_points(group=self.group, name=None)
+    def iter_entry_points(self) -> tuple[importlib.metadata.EntryPoint]:
+        return importlib.metadata.entry_points()[self.group]
 
     def load(self) -> Generator[Any, None, None]:
         for entry_point in self.iter_entry_points():
-            yield entry_point.resolve()
+            yield entry_point.load()
 
 
 def _normalize_connectors(connectors: Optional[Iterable]) -> Optional[Iterable]:
