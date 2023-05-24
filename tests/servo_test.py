@@ -758,7 +758,7 @@ class TestAssembly:
                     ],
                 },
                 "no_diagnostics": {
-                    "default": False,
+                    "default": True,
                     "description": "Do not poll the Opsani API for diagnostics",
                     "env_names": ["SERVO_NO_DIAGNOSTICS"],
                     "title": "No Diagnostics",
@@ -1101,7 +1101,7 @@ class TestAssembly:
                             "type": "array",
                         },
                         "delay": {
-                            "default": "10s",
+                            "default": "expo",
                             "description": "Delay duration. Requires --wait",
                             "env_names": ["CHECKS_DELAY"],
                             "title": "Delay",
@@ -2005,7 +2005,7 @@ def test_checks_defaults() -> None:
     assert checks_config.verbose == False
     assert checks_config.progressive == True
     assert checks_config.wait == Duration("30m")
-    assert checks_config.delay == Duration("10s")
+    assert checks_config.delay == "expo"
     assert checks_config.halt_on == ErrorSeverity.critical
     assert checks_config.remedy == True
     assert checks_config.check_halting == False
