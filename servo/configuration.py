@@ -579,7 +579,7 @@ class ChecksConfiguration(AbstractBaseConfiguration):
     wait: str = pydantic.Field(default="30m", description="Wait for checks to pass")
 
     delay: str = pydantic.Field(
-        default="10s", description="Delay duration. Requires --wait"
+        default="expo", description="Delay duration. Requires --wait"
     )
 
     halt_on: servo.types.ErrorSeverity = pydantic.Field(
@@ -637,7 +637,7 @@ class BaseServoConfiguration(AbstractBaseConfiguration, abc.ABC):
     """
 
     no_diagnostics: bool = pydantic.Field(
-        default=False, description="Do not poll the Opsani API for diagnostics"
+        default=True, description="Do not poll the Opsani API for diagnostics"
     )
 
     settings: Optional[CommonConfiguration] = pydantic.Field(
