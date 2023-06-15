@@ -26,7 +26,7 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 - Checks delay configuration now defaults to exponential backoff
 - Diagnostics reporting disabled by default
 - Connector discovery now done with importlib.metadata.entry_points instead of deprecated pkg_resources.iter_entry_points
-  
+
 ### Fixed
 
 - Measurement delay (wait driver only)
