@@ -124,9 +124,7 @@ class _EventDefinitions(Protocol):
         metrics: list[str] = None,
         control: servo.types.Control = servo.types.Control(),
     ) -> servo.types.Measurement:
-        if control.delay:
-            await asyncio.sleep(control.delay.total_seconds())
-        yield
+        ...
 
     @servo.events.event(Events.check)
     async def check(
