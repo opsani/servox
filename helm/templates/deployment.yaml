@@ -109,7 +109,7 @@ spec:
         - name: CONFIG_FILE_PATH
           value: /agent-management-sidecar
         - name: INSTALLED_TIME
-          value: {{ default "INSTALLED_TIME" .Values.installedTime }}
+          value: {{ default "INSTALLED_TIME_VALUE" .Values.installedTime }}
         - name: OAUTH_ID
           value: {{ default "OAUTH_ID_VALUE" .Values.clientId }}
         - name: OAUTH_SECRET
