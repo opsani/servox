@@ -89,7 +89,7 @@ spec:
         - name: SERVICE_NAMESPACE
           value: {{ default "optimize" .Values.agentFmmNamespaceOverride }}
         - name: INSTANCE_UID
-          value: {{ default "INSTANCE_UID" .Values.instanceUidOverride | quote }}
+          value: {{ default "INSTANCE_UID_VALUE" .Values.instanceUidOverride }}
         - name: CLUSTER_NAME
           value: {{ default "CLUSTER_NAME_VALUE" .Values.clusterNameOverride }}
         - name: CLUSTER_ID
