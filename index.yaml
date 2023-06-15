@@ -2,8 +2,18 @@ apiVersion: v1
 entries:
   servox:
   - apiVersion: v2
+    appVersion: 2.2.5
+    created: "2023-06-15T16:46:07.202126-05:00"
+    description: A Helm chart for Opsani coninuous optimization Agent
+    digest: 16d5479b10bcb9fb7cf09038dc611087e2b13e92ffa327642fd440b363820ee6
+    name: servox
+    type: application
+    urls:
+    - https://opsani.github.io/servox/servox-2.2.5.tgz
+    version: 2.2.5
+  - apiVersion: v2
     appVersion: 2.2.4
-    created: "2023-05-12T18:32:05.030429-05:00"
+    created: "2023-06-15T16:46:07.201706-05:00"
     description: A Helm chart for Opsani coninuous optimization Agent
     digest: 4b1d9f1d796a642f1356b7039d28db3c028cd6a715b6625669b7698dbde92e83
     name: servox
@@ -13,7 +23,7 @@ entries:
     version: 2.2.4
   - apiVersion: v2
     appVersion: 2.2.3
-    created: "2023-05-12T18:32:05.030125-05:00"
+    created: "2023-06-15T16:46:07.201141-05:00"
     description: A Helm chart for Opsani coninuous optimization Agent
     digest: f9fcc51760160943ee5deb6e7c1e28f520bfefe3c22f969067fbc3ff9c315041
     name: servox
@@ -23,7 +33,7 @@ entries:
     version: 2.2.3
   - apiVersion: v2
     appVersion: 2.2.2
-    created: "2023-05-12T18:32:05.029576-05:00"
+    created: "2023-06-15T16:46:07.200403-05:00"
     description: A Helm chart for Opsani coninuous optimization Agent
     digest: 31c35c9f12fbf88b11cd6894a56f14cbd1f4e55972aaa8c8c3c86f327fa50fd0
     name: servox
@@ -31,4 +41,4 @@ entries:
     urls:
     - https://opsani.github.io/servox/servox-2.2.2.tgz
     version: 2.2.2
-generated: "2023-05-12T18:32:05.027735-05:00"
+generated: "2023-06-15T16:46:07.199694-05:00"
