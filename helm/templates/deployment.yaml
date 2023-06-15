@@ -89,7 +89,7 @@ spec:
         - name: SERVICE_NAMESPACE
           value: {{ default "optimize" .Values.agentFmmNamespaceOverride }}
         - name: INSTANCE_UID
-          value: {{ default uuidv4 .Values.instanceUidOverride | quote }}
+          value: {{ default "INSTANCE_UID_VALUE" .Values.instanceUidOverride }}
         - name: CLUSTER_NAME
           value: {{ default "CLUSTER_NAME_VALUE" .Values.clusterNameOverride }}
         - name: CLUSTER_ID
@@ -109,7 +109,7 @@ spec:
         - name: CONFIG_FILE_PATH
           value: /agent-management-sidecar
         - name: INSTALLED_TIME
-          value: {{ now | date "2006-01-02T15:04:05Z" }}
+          value: {{ default "INSTALLED_TIME_VALUE" .Values.installedTime }}
         - name: OAUTH_ID
           value: {{ default "OAUTH_ID_VALUE" .Values.clientId }}
         - name: OAUTH_SECRET
@@ -121,6 +121,10 @@ spec:
           value: {{ if .Values.baseUrl }}{{ printf "%s/auth" (urlParse .Values.baseUrl).host }}{{ else }}OAUTH_URL_VALUE{{ end }}
         - name: OAUTH_TENANT_ID
           value: {{ default "OAUTH_TENANT_ID_VALUE" .Values.tenantId }}
+        - name: RESOURCE_NAME
+          value: {{ include "servox.fullname" . }}
+        - name: AGENT_NAME
+          value: "servo"
         volumeMounts:
         - name: agent-management-sidecar
           mountPath: /agent-management-sidecar
