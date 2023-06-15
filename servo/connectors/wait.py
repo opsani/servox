@@ -48,7 +48,9 @@ class WaitConnector(servo.BaseConnector):
         self, *, metrics: list[str] = None, control: servo.Control = servo.Control()
     ) -> servo.Measurement:
         if self.config.measure_enabled:
-            measurement_duration = servo.Duration(control.warmup + control.duration)
+            measurement_duration = servo.Duration(
+                control.warmup + control.duration + control.delay
+            )
             self.logger.info(
                 f"Waiting for {measurement_duration} for external measurement to complete"
             )
