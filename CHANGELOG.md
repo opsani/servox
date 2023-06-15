@@ -17,6 +17,20 @@ based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/). Releases are
 versioned in accordance with [Semantic
 Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.5] "genesis" - 2023-06-15
+
+### Changed
+
+- 404 no longer considered fatal status code
+- Checks now support exponential backoff
+- Checks delay configuration now defaults to exponential backoff
+- Diagnostics reporting disabled by default
+- Connector discovery now done with importlib.metadata.entry_points instead of deprecated pkg_resources.iter_entry_points
+  
+### Fixed
+
+- Measurement delay (wait driver only)
+
 ## [2.2.4] "genesis" - 2023-04-14
 
 ### Changed
