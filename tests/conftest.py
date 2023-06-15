@@ -496,9 +496,7 @@ async def kubernetes_asyncio_config(
 
     import kubernetes_asyncio.config
 
-    if request.session.config.getoption("in_cluster") or os.getenv(
-        "KUBERNETES_SERVICE_HOST"
-    ):
+    if request.session.config.getoption("in_cluster"):
         kubernetes_asyncio.config.load_incluster_config()
     else:
         kubeconfig = kubeconfig or os.getenv("KUBECONFIG")

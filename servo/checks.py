@@ -890,6 +890,28 @@ class CheckHelpers(pydantic.BaseModel, servo.logging.Mixin):
 
         return output
 
+    @classmethod
+    def delay_generator(
+        cls,
+        delay: str,
+    ) -> Generator[float, None, None]:
+        if delay == "expo":
+
+            def delay_generator():
+                n = 3  # start with 8 second delay to roughly align with previous static default of 10 seconds
+                while True:
+                    yield 2**n
+                    n += 1
+
+        else:
+            static_duration = servo.Duration(delay).total_seconds()
+
+            def delay_generator():
+                while True:
+                    yield static_duration
+
+        return delay_generator()
+
 
 def _validate_check_handler(fn: CheckHandler) -> None:
     """

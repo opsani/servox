@@ -211,6 +211,9 @@ def adjustments_to_descriptor(
 
 def is_fatal_status_code(error: Exception) -> bool:
     if isinstance(error, httpx.HTTPStatusError):
+        # Include 404 in status codes to backoff on to reduce noise on CO when workload is not onboarded (OPTSERV-606)
+        if error.response.status_code == 404:
+            return False
         if error.response.status_code < 500:
             servo.logger.error(
                 f"Giving up on non-retryable HTTP status code {error.response.status_code} ({error.response.reason_phrase}) "

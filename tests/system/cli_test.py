@@ -46,6 +46,7 @@ async def install_servox(project_path: pathlib.Path, pytestconfig) -> None:
     )
 
 
+@pytest.mark.xfail(reason="poetry init --dependency localpath results in error")
 async def test_generate_opsani_dev(project_path: pathlib.Path, subprocess) -> None:
     # FIXME: Should be unnecessary but another fixture is thrashing us
     os.chdir(project_path)

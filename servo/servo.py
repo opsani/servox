@@ -124,9 +124,7 @@ class _EventDefinitions(Protocol):
         metrics: list[str] = None,
         control: servo.types.Control = servo.types.Control(),
     ) -> servo.types.Measurement:
-        if control.delay:
-            await asyncio.sleep(control.delay.total_seconds())
-        yield
+        ...
 
     @servo.events.event(Events.check)
     async def check(
@@ -540,6 +538,7 @@ class Servo(servo.connector.BaseConnector):
         progressive = self.config.checks.progressive
         wait = self.config.checks.wait
         delay = self.config.checks.delay
+        delay_generator = servo.checks.CheckHelpers.delay_generator(delay=delay)
         halt_on = self.config.checks.halt_on
 
         # Validate that explicit args support check events
@@ -610,11 +609,12 @@ class Servo(servo.connector.BaseConnector):
             if ready:
                 return ready
             else:
-                if wait and delay is not None:
+                if wait:
+                    next_delay = next(delay_generator)
                     servo.logger.info(
-                        f"waiting for {delay} before rerunning failing checks"
+                        f"waiting for {next_delay} seconds before rerunning failing checks"
                     )
-                    await asyncio.sleep(servo.Duration(delay).total_seconds())
+                    await asyncio.sleep(next_delay)
 
                 if progress.finished:
                     # Don't log a timeout if we aren't running in wait mode

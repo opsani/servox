@@ -1019,7 +1019,7 @@ def test_vegeta_cli_generate_with_defaults(
     config_file = tmp_path / "vegeta.yaml"
     config = yaml.full_load(config_file.read_text())
     assert config == {
-        "no_diagnostics": False,
+        "no_diagnostics": True,
         "optimizer": {
             "base_url": "https://api.opsani.com",
             "id": "generated-id.test/generated",
@@ -1047,7 +1047,7 @@ def test_vegeta_cli_generate_with_defaults(
         },
         "checks": {
             "check_halting": False,
-            "delay": "10s",
+            "delay": "expo",
             "halt_on": "critical",
             "progressive": True,
             "quiet": False,
