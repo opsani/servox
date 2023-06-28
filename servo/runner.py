@@ -36,7 +36,7 @@ import servo.telemetry
 import servo.configuration
 import servo.utilities.key_paths
 import servo.utilities.strings
-from servo.servo import _set_current_servo
+from servo.servo import _set_current_servo, set_current_command_uid
 from servo.types import Adjustment, Control, Description, Duration, Measurement
 
 
@@ -135,9 +135,12 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin):
         return aggregate_description
 
     async def exec_command(self) -> servo.api.Status:
-        cmd_response = await self.servo.post_event(servo.api.Events.whats_next, None)
-        self.logger.info(f"What's Next? => {cmd_response.command}")
+        cmd_response: Union[
+            servo.api.CommandResponse, servo.api.Status
+        ] = await self.servo.post_event(servo.api.Events.whats_next, None)
         self.logger.trace(devtools.pformat(cmd_response))
+        self.logger.info(f"What's Next? => {cmd_response.command}")
+        set_current_command_uid(cmd_response.command_uid)
 
         if cmd_response.command == servo.api.Commands.describe:
             description = await self.describe(
@@ -148,7 +151,10 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin):
             )
             self.logger.debug(devtools.pformat(description))
 
-            status = servo.api.Status.ok(descriptor=description.__opsani_repr__())
+            status = servo.api.Status.ok(
+                descriptor=description.__opsani_repr__(),
+                command_uid=cmd_response.command_uid,
+            )
             return await self.servo.post_event(servo.api.Events.describe, status.dict())
 
         elif cmd_response.command == servo.api.Commands.measure:
@@ -158,14 +164,20 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin):
                     f"Measured: {len(measurement.readings)} readings, {len(measurement.annotations)} annotations"
                 )
                 self.logger.trace(devtools.pformat(measurement))
-                param = measurement.__opsani_repr__()
+                status = servo.api.Status.ok(
+                    command_uid=cmd_response.command_uid,
+                    **measurement.__opsani_repr__(),
+                )
             except servo.errors.EventError as error:
                 self.logger.error(f"Measurement failed: {error}")
-                param = servo.api.Status.from_error(error).dict()
-                self.logger.error(f"Responding with {param}")
+                status = servo.api.Status.from_error(
+                    error=error,
+                    command_uid=cmd_response.command_uid,
+                )
+                self.logger.error(f"Responding with {status.dict()}")
                 self.logger.opt(exception=error).debug("Measure failure details")
 
-            return await self.servo.post_event(servo.api.Events.measure, param)
+            return await self.servo.post_event(servo.api.Events.measure, status.dict())
 
         elif cmd_response.command == servo.api.Commands.adjust:
             adjustments = servo.api.descriptor_to_adjustments(
@@ -175,7 +187,10 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin):
 
             try:
                 description = await self.adjust(adjustments, control)
-                status = servo.api.Status.ok(state=description.__opsani_repr__())
+                status = servo.api.Status.ok(
+                    state=description.__opsani_repr__(),
+                    command_uid=cmd_response.command_uid,
+                )
 
                 components_count = len(description.components)
                 settings_count = sum(
@@ -186,7 +201,10 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin):
                 )
             except servo.EventError as error:
                 self.logger.error(f"Adjustment failed: {error}")
-                status = servo.api.Status.from_error(error)
+                status = servo.api.Status.from_error(
+                    error,
+                    command_uid=cmd_response.command_uid,
+                )
                 self.logger.error(f"Responding with {status.dict()}")
                 self.logger.opt(exception=error).debug("Adjust failure details")
 
@@ -229,10 +247,24 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin):
                         f"server reported unexpected event: {status.reason}"
                     )
 
-            except (httpx.TimeoutException, httpx.HTTPStatusError) as error:
+            except httpx.TimeoutException as error:
                 self.logger.warning(
-                    f"command execution failed HTTP client error: {error}"
+                    f"command execution failed HTTP client timeout error: {error}"
                 )
+
+            except httpx.HTTPStatusError as error:
+                if (
+                    error.response.status_code == 410
+                    and error.response.json().get("detail") == "unexpected servo_uid"
+                ):
+                    self.logger.warning(
+                        f"servo UID {self.servo.config.servo_uid} is no longer valid. Waiting for deprovisioning (will sleep for 1 hour)"
+                    )
+                    await asyncio.sleep(3600)
+                else:
+                    self.logger.warning(
+                        f"command execution failed HTTP client status error: {error}"
+                    )
 
             except pydantic.ValidationError as error:
                 self.logger.warning(
@@ -316,13 +348,26 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin):
             )
             async def connect() -> None:
                 self.logger.info("Saying HELLO.", end=" ")
-                await self.servo.post_event(
-                    servo.api.Events.hello,
-                    dict(
-                        agent=servo.api.user_agent(),
-                        telemetry=self.servo.telemetry.values,
-                    ),
-                )
+                try:
+                    await self.servo.post_event(
+                        servo.api.Events.hello,
+                        dict(
+                            agent=servo.api.user_agent(),
+                            telemetry=self.servo.telemetry.values,
+                        ),
+                    )
+                except httpx.HTTPStatusError as error:
+                    if (
+                        error.response.status_code == 410
+                        and error.response.json().get("detail")
+                        == "unexpected servo_uid"
+                    ):
+                        self.logger.warning(
+                            f"servo UID {self.servo.config.servo_uid} is no longer valid. Waiting for deprovisioning (will sleep for 1 hour)"
+                        )
+                        await asyncio.sleep(3600)
+                    raise
+
                 self._connected = True
 
             self.logger.info(
@@ -426,11 +471,27 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
             # Restart the main event loop if we get out of sync with the server
             if isinstance(
                 error,
-                (servo.errors.UnexpectedEventError, servo.errors.EventCancelledError),
+                (
+                    servo.errors.UnexpectedEventError,
+                    servo.errors.EventCancelledError,
+                    servo.errors.UnexpectedCommandIdError,
+                ),
+            ) or (
+                isinstance(error, httpx.HTTPStatusError)
+                and error.response.status_code == 410
+                and error.response.json().get("detail")
             ):
-                if isinstance(error, servo.errors.UnexpectedEventError):
+                if isinstance(error, httpx.HTTPStatusError):
+                    self.logger.error(
+                        f"servo UID {servo.current_servo().config.servo_uid} is no longer valid: shutting down tasks to commence sleep loop"
+                    )
+                elif isinstance(error, servo.errors.UnexpectedEventError):
                     self.logger.error(
                         "servo has lost synchronization with the optimizer: restarting"
+                    )
+                elif isinstance(error, servo.errors.UnexpectedCommandIdError):
+                    self.logger.error(
+                        "servo is processing outdated command: restarting"
                     )
                 elif isinstance(error, servo.errors.EventCancelledError):
                     self.logger.error(
@@ -439,7 +500,10 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
 
                     # Post a status to resolve the operation
                     operation = progress["operation"]
-                    status = servo.api.Status.from_error(error)
+                    command_uid = progress["command_uid"]
+                    status = servo.api.Status.from_error(
+                        error=error, command_uid=command_uid
+                    )
                     self.logger.error(f"Responding with {status.dict()}")
                     runner = self._runner_for_servo(servo.current_servo())
                     await runner.servo.post_event(operation, status.dict())
@@ -566,10 +630,16 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
 
         if len(self.assembly.servos) == 1:
             servo_ = self.assembly.servos[0]
-            optimizer = servo_.optimizer
 
+            servo_uid = typer.style(
+                servo_.config.servo_uid, bold=True, fg=typer.colors.WHITE
+            )
+            secho(f"servo UID: {servo_uid}")
+
+            optimizer = servo_.optimizer
             id = typer.style(optimizer.id, bold=True, fg=typer.colors.WHITE)
             secho(f"optimizer:   {id}")
+
             if optimizer.base_url != "https://api.opsani.com/":
                 base_url = typer.style(
                     f"{optimizer.base_url}", bold=True, fg=typer.colors.RED

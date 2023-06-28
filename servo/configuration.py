@@ -618,6 +618,7 @@ class BaseServoConfiguration(AbstractBaseConfiguration, abc.ABC):
 
     name: Optional[str] = None
     description: Optional[str] = None
+    servo_uid: Union[str, None] = None
     optimizer: OptimizerTypes = {}
     connectors: Optional[Union[List[str], Dict[str, str]]] = pydantic.Field(
         None,

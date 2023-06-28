@@ -22,6 +22,9 @@ metadata:
 data:
   log_level: {{ .Values.logLevel }}
   servo.yaml: |
+    {{- with .Values.servoUid }}
+    servo_uid: {{ . }}
+    {{- end }}
     optimizer:
       optimizer_id: {{ required ".Values.optimizerId is required" .Values.optimizerId }}
       {{- if eq .Values.connectionSettingsType "static" }}
