@@ -30,9 +30,9 @@ from typing import Any, Awaitable, Callable, Optional, Union
 
 import loguru
 
+import servo
 import servo.assembly
 import servo.events
-import servo.servo
 
 __all__ = (
     "Mixin",
@@ -136,7 +136,7 @@ class ProgressHandler:
                 )
             operation = event_context.operation()
 
-        command_uid: Union[str, None] = servo.servo.current_command_uid()
+        command_uid: Union[str, None] = servo.current_command_uid()
 
         started_at = extra.get("started_at", None)
         if not started_at:
