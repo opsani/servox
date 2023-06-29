@@ -300,7 +300,12 @@ class AbstractBaseConfiguration(pydantic.BaseSettings, servo.logging.Mixin):
             prefix = re.sub(r"(?<!^)(?=[A-Z])", "_", base_name).upper() + "_"
 
         for name, field in cls.__fields__.items():
-            field.field_info.extra["env_names"] = {f"{prefix}{name}".upper()}
+            if (env_override := field.field_info.extra.get("env")) and not isinstance(
+                env_override, list
+            ):
+                field.field_info.extra["env_names"] = {env_override}
+            else:
+                field.field_info.extra["env_names"] = {f"{prefix}{name}".upper()}
 
     def yaml(
         self,
@@ -618,7 +623,7 @@ class BaseServoConfiguration(AbstractBaseConfiguration, abc.ABC):
 
     name: Optional[str] = None
     description: Optional[str] = None
-    servo_uid: Union[str, None] = None
+    servo_uid: Union[str, None] = pydantic.Field(default=None, env="SERVO_UID")
     optimizer: OptimizerTypes = {}
     connectors: Optional[Union[List[str], Dict[str, str]]] = pydantic.Field(
         None,

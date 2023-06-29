@@ -51,7 +51,7 @@ import servo.types
 import servo.utilities
 import servo.utilities.pydantic
 
-__all__ = ["Servo", "Events", "current_servo"]
+__all__ = ["Servo", "Events", "current_servo", "current_command_uid"]
 
 
 _current_context_var = contextvars.ContextVar("servox.current_servo", default=None)
