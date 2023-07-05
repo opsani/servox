@@ -142,6 +142,9 @@ class Status(pydantic.BaseModel):
     ) -> DictStrAny:
         return super().dict(exclude_unset=exclude_unset, by_alias=by_alias, **kwargs)
 
+    class Config:
+        allow_population_by_field_name = True
+
 
 class SleepResponse(pydantic.BaseModel):
     pass

@@ -496,7 +496,7 @@ class Servo(servo.connector.BaseConnector):
         params = dict(
             progress=float(progress),
             runtime=float(runtime.total_seconds()),
-            cmd_id=command_uid,
+            cmd_uid=command_uid,
         )
         set_if(params, "message", message)
 
