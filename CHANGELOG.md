@@ -17,6 +17,13 @@ based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/). Releases are
 versioned in accordance with [Semantic
 Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.6] "genesis" - 2023-07-10
+
+### Changed
+
+- A unique identifier for each servo deployment is now supported in configuration and sent with every request to the backend
+- A unique identifier for each command received from the backend is now retrieved from the response to the WHATS_NEXT request and included on all servo requests for the given command (progress and completion)
+
 ## [2.2.5] "genesis" - 2023-06-15
 
 ### Changed
