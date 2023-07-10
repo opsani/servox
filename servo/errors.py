@@ -128,7 +128,11 @@ class EventError(ConnectorError):
 
 
 class UnexpectedEventError(EventError):
-    """The optimizer reported that an unexpected error was submitted."""
+    """The optimizer reported that an unexpected event was submitted."""
+
+
+class UnexpectedCommandIdError(EventError):
+    """The optimizer reported that an unexpected command ID was submitted."""
 
 
 class EventCancelledError(EventError):

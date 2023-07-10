@@ -787,6 +787,12 @@ class TestAssembly:
                         },
                     ],
                 },
+                "servo_uid": {
+                    "env": "SERVO_UID",
+                    "env_names": ["SERVO_UID"],
+                    "title": "Servo Uid",
+                    "type": "string",
+                },
                 "vegeta": {
                     "title": "Vegeta",
                     "env_names": [

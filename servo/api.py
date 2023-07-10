@@ -94,6 +94,7 @@ class Commands(str, enum.Enum):
 class Request(pydantic.BaseModel):
     event: Union[Events, str]  # TODO: Needs to be rethought -- used adhoc in some cases
     param: Optional[Dict[str, Any]]  # TODO: Switch to a union of supported types
+    servo_uid: Union[str, None] = None
 
     class Config:
         json_encoders = {
@@ -107,6 +108,9 @@ class Status(pydantic.BaseModel):
     reason: Optional[str] = None
     state: Optional[Dict[str, Any]] = None
     descriptor: Optional[Dict[str, Any]] = None
+    metrics: Union[dict[str, Any], None] = None
+    annotations: Union[dict[str, str], None] = None
+    command_uid: Union[str, None] = pydantic.Field(default=None, alias="cmd_uid")
 
     @classmethod
     def ok(
@@ -116,7 +120,7 @@ class Status(pydantic.BaseModel):
         return cls(status=ServoStatuses.ok, message=message, reason=reason, **kwargs)
 
     @classmethod
-    def from_error(cls, error: servo.errors.BaseError) -> "Status":
+    def from_error(cls, error: servo.errors.BaseError, **kwargs) -> "Status":
         """Return a status object representation from the given error."""
         if isinstance(error, servo.errors.AdjustmentRejectedError):
             status = ServoStatuses.rejected
@@ -127,15 +131,19 @@ class Status(pydantic.BaseModel):
         else:
             status = ServoStatuses.failed
 
-        return cls(status=status, message=str(error), reason=error.reason)
+        return cls(status=status, message=str(error), reason=error.reason, **kwargs)
 
     def dict(
         self,
         *,
         exclude_unset: bool = True,
+        by_alias: bool = True,
         **kwargs,
     ) -> DictStrAny:
-        return super().dict(exclude_unset=exclude_unset, **kwargs)
+        return super().dict(exclude_unset=exclude_unset, by_alias=by_alias, **kwargs)
+
+    class Config:
+        allow_population_by_field_name = True
 
 
 class SleepResponse(pydantic.BaseModel):
@@ -168,6 +176,7 @@ class MeasureParams(pydantic.BaseModel):
 
 class CommandResponse(pydantic.BaseModel):
     command: Commands = pydantic.Field(alias="cmd")
+    command_uid: Union[str, None] = pydantic.Field(alias="cmd_uid")
     param: Optional[
         Union[MeasureParams, Dict[str, Any]]
     ]  # TODO: Switch to a union of supported types, remove isinstance check from ServoRunner.measure when done

@@ -23,7 +23,17 @@ from datetime import datetime, timedelta
 import devtools
 import enum
 import json
-from typing import cast, Any, Callable, Optional, Protocol, Sequence, Tuple, Union
+from typing import (
+    cast,
+    Any,
+    Callable,
+    Iterable,
+    Optional,
+    Protocol,
+    Sequence,
+    Tuple,
+    Union,
+)
 
 from authlib.integrations.httpx_client import AsyncOAuth2Client
 import httpx
@@ -41,10 +51,13 @@ import servo.types
 import servo.utilities
 import servo.utilities.pydantic
 
-__all__ = ["Servo", "Events", "current_servo"]
+__all__ = ["Servo", "Events", "current_servo", "current_command_uid"]
 
 
 _current_context_var = contextvars.ContextVar("servox.current_servo", default=None)
+_current_command_uid_context_var = contextvars.ContextVar(
+    "servox.current_command_uid", default=None
+)
 
 
 def current_servo() -> Optional["Servo"]:
@@ -61,6 +74,19 @@ def _set_current_servo(servo_: Optional["Servo"]) -> None:
     The value is managed by a contextvar and is concurrency safe.
     """
     _current_context_var.set(servo_)
+
+
+def current_command_uid() -> Union[str, None]:
+    """Return the command ID that the current asyncio task was invoked under.
+
+    A new copy is automatically generated on creation of tasks and functions as a closure of the ID even after it is
+    updated by the main loop task
+    """
+    return _current_command_uid_context_var.get()
+
+
+def set_current_command_uid(value: Union[str, None]) -> None:
+    _current_command_uid_context_var.set(value)
 
 
 class Events(str, enum.Enum):
@@ -423,7 +449,11 @@ class Servo(servo.connector.BaseConnector):
             # Optimizer wants to cancel the operation
             raise servo.errors.EventCancelledError(status.reason or "Command cancelled")
         elif status.status == servo.api.OptimizerStatuses.invalid:
-            self.logger.warning(f"progress report was rejected as invalid")
+            self.logger.warning(
+                f"progress report was rejected as invalid: {devtools.pformat(status.dict())}"
+            )
+            if status.reason == "unexpected cmd_uid":
+                raise servo.errors.UnexpectedCommandIdError(status.reason)
         else:
             raise ValueError(f'unknown error status: "{status.status}"')
 
@@ -434,6 +464,7 @@ class Servo(servo.connector.BaseConnector):
         started_at: datetime,
         message: Optional[str],
         *,
+        command_uid: Union[str, None] = None,
         connector: Optional[str] = None,
         event_context: Optional["servo.events.EventContext"] = None,
         time_remaining: Optional[
@@ -465,6 +496,7 @@ class Servo(servo.connector.BaseConnector):
         params = dict(
             progress=float(progress),
             runtime=float(runtime.total_seconds()),
+            cmd_uid=command_uid,
         )
         set_if(params, "message", message)
 
@@ -483,7 +515,9 @@ class Servo(servo.connector.BaseConnector):
         async def _post_event(
             event: Events, param
         ) -> Union[servo.api.CommandResponse, servo.api.Status]:
-            event_request = servo.api.Request(event=event, param=param)
+            event_request = servo.api.Request(
+                event=event, param=param, servo_uid=self.config.servo_uid
+            )
             self.logger.trace(
                 f"POST event request: {devtools.pformat(event_request.json())}"
             )
@@ -645,8 +679,19 @@ class Servo(servo.connector.BaseConnector):
             A list of check objects that describe the outcomes of the checks that were run.
         """
         try:
-            event_request = servo.api.Request(event=servo.api.Events.hello)
+            event_request = servo.api.Request(
+                event=servo.api.Events.hello, servo_uid=self.config.servo_uid
+            )
             response = await self._api_client.post("servo", data=event_request.json())
+            if (
+                response.status_code == 410
+                and response.json().get("detail") == "unexpected servo_uid"
+            ):
+                self.logger.warning(
+                    f"servo UID {self.config.servo_uid} is no longer valid. Waiting for deprovisioning (will sleep for 1 hour)"
+                )
+                await asyncio.sleep(3600)
+
             success = response.status_code == httpx.codes.OK
             return [
                 servo.checks.Check(

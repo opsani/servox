@@ -26,10 +26,11 @@ import pathlib
 import sys
 import time
 import traceback
-from typing import Any, Awaitable, Callable, Optional
+from typing import Any, Awaitable, Callable, Optional, Union
 
 import loguru
 
+import servo
 import servo.assembly
 import servo.events
 
@@ -135,6 +136,8 @@ class ProgressHandler:
                 )
             operation = event_context.operation()
 
+        command_uid: Union[str, None] = servo.current_command_uid()
+
         started_at = extra.get("started_at", None)
         if not started_at:
             if event_context:
@@ -155,6 +158,7 @@ class ProgressHandler:
                 event_context=event_context,
                 started_at=started_at,
                 message=message,
+                command_uid=command_uid,
             )
         )
 
