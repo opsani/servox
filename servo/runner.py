@@ -547,7 +547,9 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
 
         try:
             for servo_ in self.assembly.servos:
-                servo_runner = ServoRunner(servo_, interactive=interactive)
+                servo_runner = ServoRunner(
+                    servo_, interactive=interactive, _assembly_runner=self
+                )
                 loop.create_task(servo_runner.run(poll=poll))
                 self.runners.append(servo_runner)
 
