@@ -162,6 +162,11 @@ class ProgressHandler:
             )
         )
 
+    def clear_progress_queue(self) -> None:
+        while not self._queue.empty():
+            self._queue.get_nowait()
+            self._queue.task_done()
+
     async def shutdown(self) -> None:
         """Shutdown the progress handler by emptying the queue and releasing the queue processor."""
         await self._queue.join()
