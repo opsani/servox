@@ -21,7 +21,7 @@ cpu:
   step: "125m"
   get: ["request", "limit"]
   set: ["request", "limit"]
-memory:
+mem:
   min: "128.0MiB"
   max: "2.5GiB"
   step: "128MiB"
