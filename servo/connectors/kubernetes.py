@@ -227,7 +227,11 @@ class ShortByteSize(pydantic.ByteSize):
             if re.match(r"^\d*\.\d+$", v):
                 v = f"{v}GiB"
 
-            return super().validate(v)
+            try:
+                return super().validate(v)
+            except:
+                # Append the byte suffix and retry parsing
+                return super().validate(v + "b")
         elif isinstance(v, float):
             # Unitless decimals are not use by k8s API but are used in servo protocol implicitly as GiB
             v = v * GiB
