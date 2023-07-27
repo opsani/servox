@@ -17,6 +17,13 @@ based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/). Releases are
 versioned in accordance with [Semantic
 Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.7] "genesis" - 2023-07-27
+
+### Changed
+
+- Progress reporting queue is cleared on command completion to prevent stale progress from being sent when pileup occurs [544](https://github.com/opsani/servox/pull/544)
+- Memory parsing logic treats unitless decimal strings as GiB (aligns with existing float parsing) per the servo protocol [546](https://github.com/opsani/servox/pull/546)
+
 ## [2.2.6] "genesis" - 2023-07-10
 
 ### Changed
