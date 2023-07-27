@@ -223,12 +223,17 @@ class ShortByteSize(pydantic.ByteSize):
     @classmethod
     def validate(cls, v: pydantic.StrIntFloat) -> "ShortByteSize":
         if isinstance(v, str):
+            # Unitless decimals are not use by k8s API but are used in servo protocol implicitly as GiB
+            if re.match(r"^\d*\.\d+$", v):
+                v = f"{v}GiB"
+
             try:
                 return super().validate(v)
             except:
                 # Append the byte suffix and retry parsing
                 return super().validate(v + "b")
         elif isinstance(v, float):
+            # Unitless decimals are not use by k8s API but are used in servo protocol implicitly as GiB
             v = v * GiB
         return super().validate(v)
 
