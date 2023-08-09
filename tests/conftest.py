@@ -28,6 +28,7 @@ import httpx
 import kubetest
 import kubetest.client
 import kubetest.objects
+import loguru
 import pytest
 import typer.testing
 import uvloop
@@ -460,6 +461,14 @@ def random_string() -> str:
     """Return a random string of characters."""
     letters = string.ascii_letters
     return "".join(random.choice(letters) for i in range(32))
+
+
+@pytest.fixture
+def captured_logs() -> list["loguru.Message"]:
+    messages = []
+    temp_sink_id = servo.logger.add(lambda m: messages.append(m), level=0)
+    yield messages
+    servo.logger.remove(temp_sink_id)
 
 
 @pytest.fixture
