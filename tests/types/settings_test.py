@@ -1,4 +1,5 @@
 import abc
+import loguru
 import pytest
 import re
 
@@ -207,14 +208,14 @@ class TestRangeSetting:
         assert error.value.errors()[0]["type"] == "value_error.const"
         assert error.value.errors()[0]["msg"] == "unexpected value; permitted: 'range'"
 
-    def test_validate_step_alignment_suggestion(self) -> None:
-        with pytest.raises(
-            pydantic.ValidationError,
-            match=re.escape(
-                "RangeSetting('invalid' 3.0-11.0, 3.0) min/max difference is not step aligned: 8.0 is not a multiple of 3.0 (consider min 5.0 or 2.0, max 9.0 or 12.0)."
-            ),
-        ):
-            RangeSetting(name="invalid", min=3.0, max=11.0, step=3.0)
+    def test_validate_step_alignment_suggestion(
+        self, captured_logs: list["loguru.Message"]
+    ) -> None:
+        RangeSetting(name="invalid", min=3.0, max=11.0, step=3.0)
+        assert (
+            captured_logs[0].record["message"]
+            == "RangeSetting('invalid' 3.0-11.0, 3.0) min/max difference is not step aligned: 8.0 is not a multiple of 3.0 (consider min 5.0 or 2.0, max 9.0 or 12.0)."
+        )
 
     @pytest.mark.parametrize(
         ("min", "max", "step", "error_message"),
@@ -236,19 +237,20 @@ class TestRangeSetting:
         ],
     )
     def test_validate_step_alignment(
-        self, min: Numeric, max: Numeric, step: Numeric, error_message: str
+        self,
+        min: Numeric,
+        max: Numeric,
+        step: Numeric,
+        error_message: str,
+        captured_logs: list["loguru.Message"],
     ) -> None:
         if error_message is not None:
-            with pytest.raises(pydantic.ValidationError) as error:
-                RangeSetting(name="invalid", min=min, max=max, step=step)
+            RangeSetting(name="invalid", min=min, max=max, step=step)
+            assert captured_logs[0].record["message"] == error_message
 
-            assert error
-            assert "1 validation error for RangeSetting" in str(error.value)
-            assert error.value.errors()[0]["loc"] == ("__root__",)
-            assert error.value.errors()[0]["type"] == "value_error"
-            assert error.value.errors()[0]["msg"] == error_message
         else:
             RangeSetting(name="valid", min=min, max=max, step=step)
+            assert len(captured_logs) < 1
 
     @pytest.mark.parametrize(
         ("min", "max", "step", "error_message"),
@@ -276,19 +278,19 @@ class TestRangeSetting:
         ],
     )
     def test_validate_all_elements_of_range_are_same_type(
-        self, min: Numeric, max: Numeric, step: Numeric, error_message: str
+        self,
+        min: Numeric,
+        max: Numeric,
+        step: Numeric,
+        error_message: str,
+        captured_logs: list["loguru.Message"],
     ) -> None:
         if error_message is not None:
-            with pytest.raises(pydantic.ValidationError) as error:
-                RangeSetting(name="invalid", min=min, max=max, step=step)
-
-            assert error
-            assert "1 validation error for RangeSetting" in str(error.value)
-            assert error.value.errors()[0]["loc"] == ("__root__",)
-            assert error.value.errors()[0]["type"] == "type_error"
-            assert error.value.errors()[0]["msg"] == error_message
+            RangeSetting(name="invalid", min=min, max=max, step=step)
+            assert captured_logs[0].record["message"] == error_message
         else:
             RangeSetting(name="valid", min=min, max=max, step=step)
+            assert len(captured_logs) < 1
 
     @pytest.mark.parametrize(
         ("min", "max", "step", "value", "error_message"),
@@ -325,18 +327,15 @@ class TestRangeSetting:
         step: Numeric,
         value: Numeric,
         error_message: str,
+        captured_logs: list["loguru.Message"],
     ) -> None:
         if error_message is not None:
-            with pytest.raises(pydantic.ValidationError) as error:
-                RangeSetting(name="invalid", min=min, max=max, step=step, value=value)
+            RangeSetting(name="invalid", min=min, max=max, step=step, value=value)
+            assert captured_logs[0].record["message"] == error_message
 
-            assert error
-            assert "1 validation error for RangeSetting" in str(error.value)
-            assert error.value.errors()[0]["loc"] == ("__root__",)
-            assert error.value.errors()[0]["type"] == "value_error"
-            assert error.value.errors()[0]["msg"] == error_message
         else:
             RangeSetting(name="valid", min=min, max=max, step=step, value=value)
+            assert len(captured_logs) < 1
 
     @pytest.mark.parametrize(
         ("min", "max", "step", "error_message"),
@@ -346,7 +345,7 @@ class TestRangeSetting:
                 1,
                 1,
                 1,
-                "step must be zero when min equals max: step 1 cannot step from 1 to 1",
+                "step must be zero when min equals max: step 1 cannot step from 1 to 1 (consider using the pinned attribute of settings if you have a value you don't want changed)",
             ),
             (1, 0, 1, "min cannot be greater than max (1 > 0)"),
             (1.0, 3.0, 1.0, None),
@@ -354,36 +353,34 @@ class TestRangeSetting:
                 1.0,
                 2.0,
                 3.0,
-                "RangeSetting('invalid' 1.0-2.0, 3.0) min/max difference is not step aligned",
+                "RangeSetting('invalid' 1.0-2.0, 3.0) min/max difference is not step aligned: 1.0 is not a multiple of 3.0 (consider min -1.0 or -4.0, max 4.0 or 7.0).",
             ),
             (1.0, 0.0, 1.0, "min cannot be greater than max (1.0 > 0.0)"),
         ],
     )
     def test_max_validation(
-        self, min: Numeric, max: Numeric, step: Numeric, error_message: str
+        self,
+        min: Numeric,
+        max: Numeric,
+        step: Numeric,
+        error_message: str,
+        captured_logs: list["loguru.Message"],
     ) -> None:
         if error_message is not None:
-            with pytest.raises(pydantic.ValidationError) as error:
-                RangeSetting(name="invalid", min=min, max=max, step=step, value=1)
+            RangeSetting(name="invalid", min=min, max=max, step=step, value=1)
+            assert captured_logs[0].record["message"] == error_message
 
-            assert error
-            assert "1 validation error for RangeSetting" in str(error.value)
-            assert error.value.errors()[0]["type"] == "value_error"
-            assert error.value.errors()[0]["msg"].startswith(error_message)
         else:
             RangeSetting(name="valid", min=min, max=max, step=step, value=1)
+            assert len(captured_logs) < 1
 
-    def test_validation_on_value_mutation(self) -> None:
+    def test_validation_on_value_mutation(
+        self, captured_logs: list["loguru.Message"]
+    ) -> None:
         setting = RangeSetting(name="range", min=0, max=10, step=1)
-        with pytest.raises(pydantic.ValidationError) as error:
-            setting.value = 25
-
-        assert error
-        assert "1 validation error for RangeSetting" in str(error.value)
-        assert error.value.errors()[0]["loc"] == ("__root__",)
-        assert error.value.errors()[0]["type"] == "value_error"
+        setting.value = 25
         assert (
-            error.value.errors()[0]["msg"]
+            captured_logs[0].record["message"]
             == "invalid value: 25 is outside of the range 0-10"
         )
 
@@ -395,23 +392,25 @@ class TestRangeSetting:
         ],
     )
     def test_step_validation(
-        self, min: Numeric, max: Numeric, step: Numeric, error_message: str
+        self,
+        min: Numeric,
+        max: Numeric,
+        step: Numeric,
+        error_message: str,
+        captured_logs: list["loguru.Message"],
     ) -> None:
         if error_message is not None:
-            with pytest.raises(pydantic.ValidationError) as error:
-                RangeSetting(name="invalid", min=min, max=max, step=step, value=1)
+            RangeSetting(name="invalid", min=min, max=max, step=step, value=1)
+            assert captured_logs[0].record["message"] == error_message
 
-            assert error
-            assert "1 validation error for RangeSetting" in str(error.value)
-            assert error.value.errors()[0]["loc"] == ("__root__",)
-            assert error.value.errors()[0]["type"] == "value_error"
-            assert error.value.errors()[0]["msg"] == error_message
         else:
             RangeSetting(name="valid", min=min, max=max, step=step, value=1)
+            assert len(captured_logs) < 1
 
-    def test_step_cannot_be_zero(self) -> None:
-        with pytest.raises(ValueError, match="step cannot be zero") as error:
-            RangeSetting(name="range", min=0, max=10, step=0)
+    def test_step_cannot_be_zero(self, captured_logs: list["loguru.Message"]) -> None:
+        RangeSetting(name="range", min=0, max=10, step=0)
+        assert captured_logs[0].record["message"] == "step cannot be zero"
+        assert captured_logs[0].record["level"].name == "WARNING"
 
     def test_min_can_equal_max(self) -> None:
         RangeSetting(name="range", min=5, max=5, step=0)
@@ -466,15 +465,11 @@ class TestMemory:
         assert error.value.errors()[0]["type"] == "value_error.const"
         assert error.value.errors()[0]["msg"] == "unexpected value; permitted: 'mem'"
 
-    def test_validate_min_cant_be_zero(self) -> None:
-        with pytest.raises(pydantic.ValidationError) as error:
-            Memory(min=0.0, max=10.0, step=1.0)
-
-        assert error
-        assert "1 validation error for Memory" in str(error.value)
-        assert error.value.errors()[0]["loc"] == ("min",)
-        assert error.value.errors()[0]["type"] == "value_error"
-        assert error.value.errors()[0]["msg"] == "min must be greater than zero"
+    def test_validate_min_cant_be_zero(
+        self, captured_logs: list["loguru.Message"]
+    ) -> None:
+        Memory(min=0.0, max=10.0, step=1.0)
+        assert captured_logs[0].record["message"] == "min must be greater than zero"
 
 
 class TestReplicas:

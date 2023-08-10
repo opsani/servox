@@ -7,6 +7,7 @@ import kubetest.client
 from kubetest.objects import Deployment as KubetestDeployment
 import kubernetes.client.models
 import kubernetes.client.exceptions
+import loguru
 import platform
 import pydantic
 import pytest
@@ -812,14 +813,14 @@ class TestCPU:
         assert serialization["max"] == "4"
         assert serialization["step"] == "125m"
 
-    def test_cpu_must_be_step_aligned(self) -> None:
-        with pytest.raises(
-            ValueError,
-            match=re.escape(
-                "min/max difference is not step aligned: 3.875 is not a multiple of 250m"
-            ),
-        ):
-            CPU(min="125m", max=4.0, step=0.250)
+    def test_cpu_must_be_step_aligned(
+        self, captured_logs: list["loguru.Message"]
+    ) -> None:
+        CPU(min="125m", max=4.0, step=0.250)
+        assert (
+            captured_logs[0].record["message"]
+            == "CPU('cpu' 125m-4, 250m) min/max difference is not step aligned: 3.875 is not a multiple of 250m (consider min 250m or 0n, max 3.875 or 4.125)."
+        )
 
     def test_min_can_be_less_than_step(self) -> None:
         CPU(min="125m", max=4.125, step=0.250)
@@ -936,14 +937,14 @@ class TestMemory:
         assert serialization["max"] == "4.0Gi"
         assert serialization["step"] == "128.0Mi"
 
-    def test_mem_must_be_step_aligned(self) -> None:
-        with pytest.raises(
-            ValueError,
-            match=re.escape(
-                "min/max difference is not step aligned: 3.96875Gi is not a multiple of 256Mi"
-            ),
-        ):
-            Memory(min="32 MiB", max=4.0, step="256MiB")
+    def test_mem_must_be_step_aligned(
+        self, captured_logs: list["loguru.Message"]
+    ) -> None:
+        Memory(min="32 MiB", max=4.0, step="256MiB")
+        assert (
+            captured_logs[0].record["message"]
+            == "Memory('mem' 32.0Mi-4.0Gi, 256.0Mi) min/max difference is not step aligned: 3.96875Gi is not a multiple of 256Mi (consider min 256Mi or 0B, max 3.78125Gi or 4.03125Gi)."
+        )
 
     def test_min_can_be_less_than_step(self) -> None:
         Memory(min="32 MiB", max=4.03125, step="256MiB")

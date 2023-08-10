@@ -253,7 +253,9 @@ class RangeSetting(Setting):
                 names = ", ".join(fields)
                 desc += f"{type_.__name__}: {names}."
 
-            raise TypeError(
+            import servo
+
+            servo.logger.warning(
                 f"invalid range: min, max, and step must all be of the same Numeric type ({desc})"
             )
 
@@ -264,7 +266,9 @@ class RangeSetting(Setting):
     def _value_must_fall_in_range(cls, values) -> Numeric:
         value, min, max = values["value"], values["min"], values["max"]
         if value is not None and (value < min or value > max):
-            raise ValueError(
+            import servo
+
+            servo.logger.warning(
                 f"invalid value: {cls.human_readable(value)} is outside of the range {cls.human_readable(min)}-{cls.human_readable(max)}"
             )
 
@@ -279,7 +283,9 @@ class RangeSetting(Setting):
 
         min_ = values["min"]
         if min_ > max_:
-            raise ValueError(
+            import servo
+
+            servo.logger.warning(
                 f"min cannot be greater than max ({cls.human_readable(min_)} > {cls.human_readable(max_)})"
             )
 
@@ -303,16 +309,22 @@ class RangeSetting(Setting):
                 pass
             elif step != 0 and diff == 0:
                 desc = f"{cls.__name__}({repr(name)} {cls.human_readable(min_)}-{cls.human_readable(max_)}, {cls.human_readable(step)})"
-                raise ValueError(
+                import servo
+
+                servo.logger.warning(
                     f"step must be zero when min equals max: step {step} cannot step from {min_} to {max_} "
                     "(consider using the pinned attribute of settings if you have a value you don't want changed)"
                 )
             elif step == 0:
-                raise ValueError(f"step cannot be zero")
+                import servo
+
+                servo.logger.warning(f"step cannot be zero")
 
             if _is_step_aligned(diff, step):
                 return values
             else:
+                import servo
+
                 smaller_range, larger_range = _suggest_step_aligned_values(diff, step)
                 desc = f"{cls.__name__}({repr(name)} {cls.human_readable(min_)}-{cls.human_readable(max_)}, {cls.human_readable(step)})"
                 # try new error handling and fall back to old if bugs
@@ -331,21 +343,19 @@ class RangeSetting(Setting):
                         )
                     )
                 except:
-                    import servo
-
                     servo.logger.exception(
                         f"Failed to apply new formatting to derived RangeSetting validation"
                     )
-                    raise ValueError(
+                    servo.logger.warning(
                         f"{desc} min/max difference is not step aligned: {diff} is not a multiple of {step} (consider "
                         f"min {max_ - smaller_range} or {max_ - larger_range}, max {min_ + smaller_range} or {min_ + larger_range})."
                     )
-
-                raise ValueError(
-                    f"{desc} min/max difference is not step aligned: {cast_diff} is not a multiple of {step} (consider "
-                    f"min {lower_min} or {upper_min}, max {lower_max} "
-                    f"or {upper_max})."
-                )
+                else:
+                    servo.logger.warning(
+                        f"{desc} min/max difference is not step aligned: {cast_diff} is not a multiple of {step} (consider "
+                        f"min {lower_min} or {upper_min}, max {lower_max} "
+                        f"or {upper_max})."
+                    )
 
         return values
 
@@ -362,8 +372,10 @@ class RangeSetting(Setting):
 
 
 def _is_step_aligned(value: Numeric, step: Numeric) -> bool:
-    return value == step or (
-        decimal.Decimal(str(float(value))) % decimal.Decimal(str(float(step))) == 0
+    return (
+        step == 0
+        or value == step
+        or (decimal.Decimal(str(float(value))) % decimal.Decimal(str(float(step))) == 0)
     )
 
 
@@ -424,7 +436,9 @@ class Memory(RangeSetting):
     @classmethod
     def ensure_min_greater_than_zero(cls, value: Numeric) -> Numeric:
         if value == 0:
-            raise ValueError("min must be greater than zero")
+            import servo
+
+            servo.logger.warning("min must be greater than zero")
 
         return value
 
