@@ -2039,6 +2039,12 @@ class KubernetesConfiguration(BaseKubernetesConfiguration):
                 context=self.context,
             )
         elif os.getenv("KUBERNETES_SERVICE_HOST"):
+            if os.getenv("NO_PROXY"):
+                os.environ[
+                    "NO_PROXY"
+                ] = f'{os.environ["NO_PROXY"]},{os.environ["KUBERNETES_SERVICE_HOST"]}'
+            else:
+                os.environ["NO_PROXY"] = os.environ["KUBERNETES_SERVICE_HOST"]
             kubernetes_asyncio.config.load_incluster_config()
         else:
             raise RuntimeError(
