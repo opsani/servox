@@ -147,18 +147,28 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin):
         set_current_command_uid(cmd_response.command_uid)
 
         if cmd_response.command == servo.api.Commands.describe:
-            description = await self.describe(
-                Control(**cmd_response.param.get("control", {}))
-            )
-            self.logger.success(
-                f"Described: {len(description.components)} components, {len(description.metrics)} metrics"
-            )
-            self.logger.debug(devtools.pformat(description))
+            try:
+                description = await self.describe(
+                    Control(**cmd_response.param.get("control", {}))
+                )
+                self.logger.success(
+                    f"Described: {len(description.components)} components, {len(description.metrics)} metrics"
+                )
+                self.logger.debug(devtools.pformat(description))
 
-            status = servo.api.Status.ok(
-                descriptor=description.__opsani_repr__(),
-                command_uid=cmd_response.command_uid,
-            )
+                status = servo.api.Status.ok(
+                    descriptor=description.__opsani_repr__(),
+                    command_uid=cmd_response.command_uid,
+                )
+            except servo.errors.EventError as error:
+                self.logger.error(f"Describe failed: {error}")
+                status = servo.api.Status.from_error(
+                    error=error,
+                    command_uid=cmd_response.command_uid,
+                )
+                self.logger.error(f"Responding with {status.dict()}")
+                self.logger.opt(exception=error).debug("Describe failure details")
+
             self.clear_progress_queue()
             return await self.servo.post_event(servo.api.Events.describe, status.dict())
 
