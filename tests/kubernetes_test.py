@@ -1,6 +1,7 @@
 import asyncio
 import datetime
 import hashlib
+import loguru
 from typing import cast
 import re
 
@@ -699,37 +700,35 @@ def test_step_alignment_calculations_cpu(
     assert _is_step_aligned(servo.connectors.kubernetes.Core.parse(upper), step_cores)
 
 
-def test_cpu_not_step_aligned() -> None:
-    with pytest.raises(
-        pydantic.ValidationError,
-        match=re.escape(
-            "CPU('cpu' 250m-4.1, 125m) min/max difference is not step aligned: 3.85 is not a multiple of 125m (consider min 350m or 225m, max 4 or 4.125)."
-        ),
-    ):
-        servo.connectors.kubernetes.CPU(min="250m", max="4100m", step="125m")
+def test_cpu_not_step_aligned(captured_logs: list["loguru.Message"]) -> None:
+    servo.connectors.kubernetes.CPU(min="250m", max="4100m", step="125m")
+    assert (
+        captured_logs[0].record["message"]
+        == "CPU('cpu' 250m-4.1, 125m) min/max difference is not step aligned: 3.85 is not a multiple of 125m (consider min 350m or 225m, max 4 or 4.125)."
+    )
 
 
-def test_memory_not_step_aligned() -> None:
-    with pytest.raises(
-        pydantic.ValidationError,
-        match=re.escape(
-            "Memory('mem' 256.0Mi-4.1Gi, 128.0Mi) min/max difference is not step aligned: 3.8125Gi is not a multiple of 128Mi (consider min 320Mi or 192Mi, max 4Gi or 4.125Gi)."
-        ),
-    ):
-        servo.connectors.kubernetes.Memory(
-            min="256.0MiB", max="4.0625GiB", step="128.0MiB"
-        )
+def test_memory_not_step_aligned(captured_logs: list["loguru.Message"]) -> None:
+    servo.connectors.kubernetes.Memory(min="256.0MiB", max="4.0625GiB", step="128.0MiB")
+    assert (
+        captured_logs[0].record["message"]
+        == "Memory('mem' 256.0Mi-4.1Gi, 128.0Mi) min/max difference is not step aligned: 3.8125Gi is not a multiple of 128Mi (consider min 320Mi or 192Mi, max 4Gi or 4.125Gi)."
+    )
 
 
-def test_copying_cpu_with_invalid_value_does_not_raise() -> None:
+def test_copying_cpu_with_invalid_value_does_not_raise(
+    captured_logs: list["loguru.Message"],
+) -> None:
     cpu = servo.connectors.kubernetes.CPU(min="250m", max="4", step="125m", value=None)
 
-    # Trigger an error
-    with pytest.raises(
-        pydantic.ValidationError, match=re.escape("5 is outside of the range 250m-4")
-    ):
-        cpu.value = "5"
+    # Trigger a warning log
+    cpu.value = "5"
+    assert (
+        captured_logs[0].record["message"]
+        == "invalid value: 5 is outside of the range 250m-4"
+    )
 
     # Use copy + update to hydrate the value
     cpu_copy = cpu.copy(update={"value": "5"})
     assert cpu_copy.value == "5"
+    assert len(captured_logs) == 1  # assert no new warnings
