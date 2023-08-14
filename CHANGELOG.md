@@ -17,6 +17,18 @@ based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/). Releases are
 versioned in accordance with [Semantic
 Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.8] "genesis" - 2023-08-14
+
+### Changed
+
+- When running in kubernetes, the NO_PROXY environment variable will automatically be set to include the KUBERNETES_SERVICE_HOST [548](https://github.com/opsani/servox/pull/548)
+- Errors that occur during describe are now reported to the CO backend [549](https://github.com/opsani/servox/pull/549)
+- RangeSetting validations now log warnings instead of raising validaiton errors [554](https://github.com/opsani/servox/pull/554)
+
+### Fixed
+
+- Deployment.check_conditions was causing attribute errors when handling certain conditions [552](https://github.com/opsani/servox/pull/552)
+
 ## [2.2.7] "genesis" - 2023-07-27
 
 ### Changed
