@@ -113,7 +113,7 @@ class DeploymentHelper(BaseKubernetesWorkloadHelper):
             elif condition.type == "ReplicaFailure":
                 # TODO/FIXME Can't do RCA without getting the ReplicaSet
                 raise AdjustmentRejectedError(
-                    f"ReplicaFailure: message='{condition.status.message}', reason='{condition.status.reason}'",
+                    f"ReplicaFailure: message='{condition.message}', reason='{condition.reason}'",
                     reason="start-failed",
                 )
 
@@ -126,7 +126,7 @@ class DeploymentHelper(BaseKubernetesWorkloadHelper):
                     break
                 elif condition.status == "False":
                     raise AdjustmentRejectedError(
-                        f"ProgressionFailure: message='{condition.status.message}', reason='{condition.status.reason}'",
+                        f"ProgressionFailure: message='{condition.message}', reason='{condition.reason}'",
                         reason="start-failed",
                     )
                 else:
