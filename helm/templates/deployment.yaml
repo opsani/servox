@@ -61,6 +61,14 @@ spec:
           valueFrom:
               fieldRef:
                 fieldPath: metadata.namespace
+      {{- if eq .Values.connectionSettingsType "sidecar" }}
+        - name: HTTP_PROXY
+          value: {{ default "HTTP_PROXY_VALUE" .Values.servoHttpProxyOverride }}
+        - name: HTTPS_PROXY
+          value: {{ default "HTTPS_PROXY_VALUE" .Values.servoHttpsProxyOverride }}
+        - name: NO_PROXY
+          value: {{ default "NO_PROXY_VALUE" .Values.servoNoProxyOverride }}
+      {{- end }}
         volumeMounts:
         - name: servo-config-volume
           mountPath: /servo/servo.yaml
@@ -82,6 +90,12 @@ spec:
             cpu: 100m
             memory: 128Mi
         env:
+        - name: HTTP_PROXY
+          value: {{ default "HTTP_PROXY_VALUE" .Values.agentMgmtHttpProxyOverride }}
+        - name: HTTPS_PROXY
+          value: {{ default "HTTPS_PROXY_VALUE" .Values.agentMgmtHttpsProxyOverride }}
+        - name: NO_PROXY
+          value: {{ default "NO_PROXY_VALUE" .Values.agentMgmtNoProxyOverride }}
         - name: SERVICE_URL
           value: {{ default "SERVICE_URL_VALUE" .Values.agentMgmtServiceUrlOverride }}
         - name: SERVICE_NAME
