@@ -35,7 +35,7 @@ def __get_version() -> Optional[str]:
 
 
 __version__ = __get_version() or "0.0.0"
-__cryptonym__ = "genesis"
+__cryptonym__ = "speedwagon"
 
 # Add the devtools debug() function to builtins if available
 import builtins
