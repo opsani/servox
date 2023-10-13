@@ -60,6 +60,8 @@ helm.sh/chart: {{ include "servox.chart" . }}
 app.kubernetes.io/version: {{ print $version._1 | quote }}
 {{- end }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
+optimize.appdynamics.com/target-workload: {{ .Values.workloadName }}
+optimize.appdynamics.com/optimizer: {{ .Values.optimizerId }}
 {{- end }}
 
 {{/*
