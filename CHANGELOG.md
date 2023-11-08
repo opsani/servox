@@ -17,6 +17,12 @@ based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/). Releases are
 versioned in accordance with [Semantic
 Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [23.12.0] "speedwagon" - 2023-11-08
+
+### Changed
+
+- Added labels to the helm chart to make it easier to locate the servo for a given optimization
+
 ## [23.10.0] "speedwagon" - 2023-10-04
 
 ### Changed
