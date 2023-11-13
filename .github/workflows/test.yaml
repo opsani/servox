@@ -277,7 +277,7 @@ jobs:
       with:
         name: combined-coverage-report
         path: artifacts/
-    - uses: geekyeggo/delete-artifact@v1
+    - uses: geekyeggo/delete-artifact@v2
       with:
         name: |
           coverage-unit-temp
