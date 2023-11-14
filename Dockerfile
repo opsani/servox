@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-ARG PYTHON_VERSION=3.9.7
+ARG PYTHON_VERSION=3.11.6
 
 FROM peterevans/vegeta AS vegeta
 FROM python:${PYTHON_VERSION}-slim
@@ -20,17 +20,17 @@ FROM python:${PYTHON_VERSION}-slim
 ARG SERVO_ENV=development
 
 ENV SERVO_ENV=${SERVO_ENV} \
-    # Python
-    PYTHONFAULTHANDLER=1 \
-    PYTHONUNBUFFERED=1 \
-    PYTHONHASHSEED=random \
-    # PIP
-    PIP_NO_CACHE_DIR=off \
-    PIP_DISABLE_PIP_VERSION_CHECK=on \
-    PIP_DEFAULT_TIMEOUT=100 \
-    # Poetry
-    POETRY_VIRTUALENVS_CREATE=false \
-    POETRY_CACHE_DIR='/var/cache/pypoetry'
+  # Python
+  PYTHONFAULTHANDLER=1 \
+  PYTHONUNBUFFERED=1 \
+  PYTHONHASHSEED=random \
+  # PIP
+  PIP_NO_CACHE_DIR=off \
+  PIP_DISABLE_PIP_VERSION_CHECK=on \
+  PIP_DEFAULT_TIMEOUT=100 \
+  # Poetry
+  POETRY_VIRTUALENVS_CREATE=false \
+  POETRY_CACHE_DIR='/var/cache/pypoetry'
 
 RUN apt-get update \
   && apt-get install -y --no-install-recommends curl \
