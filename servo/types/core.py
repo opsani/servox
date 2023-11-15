@@ -609,7 +609,7 @@ class EventProgress(BaseProgress):
             await async_notifier()
 
 
-class Unit(str, enum.Enum):
+class Unit(enum.StrEnum):
     """An enumeration of standard units of measure for metrics.
 
     Member names are the name of the unit and values are an abbreviation of the unit.
@@ -733,7 +733,7 @@ class DataPoint(BaseModel):
         return f"DataPoint({self.metric.name}{abbrv}, ({self.time}, {self.value}))"
 
 
-class NormalizationPolicy(str, enum.Enum):
+class NormalizationPolicy(enum.StrEnum):
     """NormalizationPolicy is an enumeration that describes how measurements
     are normalized before being reported to the optimizer.
 
@@ -868,7 +868,7 @@ MARKDOWN_FORMAT = "markdown"
 CONFIGMAP_FORMAT = "configmap"
 
 
-class AbstractOutputFormat(str, enum.Enum):
+class AbstractOutputFormat(enum.StrEnum):
     """Defines common behaviors for command specific output format enumerations"""
 
     def lexer(self) -> Optional["pygments.Lexer"]:
@@ -897,7 +897,7 @@ HTTP_METHODS = (
 )
 
 
-class ErrorSeverity(str, enum.Enum):
+class ErrorSeverity(enum.StrEnum):
     """ErrorSeverity is an enumeration the describes the severity of an error
     and establishes semantics about how it should be handled."""
 

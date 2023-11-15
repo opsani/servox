@@ -63,7 +63,7 @@ import servo.utilities.strings
 from servo.connectors.kubernetes_helpers import DeploymentHelper
 
 
-class Section(str, enum.Enum):
+class Section(enum.StrEnum):
     assembly = "Assembly Commands"
     ops = "Operational Commands"
     config = "Configuration Commands"
@@ -72,7 +72,7 @@ class Section(str, enum.Enum):
     other = "Other Commands"
 
 
-class LogLevel(str, enum.Enum):
+class LogLevel(enum.StrEnum):
     trace = "TRACE"
     debug = "DEBUG"
     info = "INFO"

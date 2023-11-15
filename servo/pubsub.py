@@ -75,7 +75,7 @@ ByteStream = Union[Iterable[bytes], AsyncIterable[bytes]]
 MessageContent = Union[str, bytes, ByteStream]
 
 
-class MimeTypes(str, enum.Enum):
+class MimeTypes(enum.StrEnum):
     text = "text/plain"
     json = "application/json"
     yaml = "application/x-yaml"

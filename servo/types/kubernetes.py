@@ -15,7 +15,7 @@
 import enum
 
 
-class Resource(str, enum.Enum):
+class Resource(enum.StrEnum):
     memory = "memory"
     cpu = "cpu"
 
@@ -56,7 +56,7 @@ class ResourceRequirement(enum.Enum):
             )
 
 
-class ContainerLogOptions(str, enum.Enum):
+class ContainerLogOptions(enum.StrEnum):
     previous = "previous"
     current = "current"
     both = "both"

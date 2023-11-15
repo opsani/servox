@@ -133,7 +133,7 @@ def pytest_addoption(parser) -> None:
     )
 
 
-class TestType(str, enum.Enum):
+class TestType(enum.StrEnum):
     unit = "unit"
     integration = "integration"
     system = "system"
@@ -143,7 +143,7 @@ class TestType(str, enum.Enum):
         return cls.__members__.keys()
 
 
-class Environment(str, enum.Enum):
+class Environment(enum.StrEnum):
     docker = "Docker"
     compose = "Docker Compose"
     kind = "Kind"

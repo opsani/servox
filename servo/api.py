@@ -36,7 +36,7 @@ if TYPE_CHECKING:
 USER_AGENT = "github.com/opsani/servox"
 
 
-class OptimizerStatuses(str, enum.Enum):
+class OptimizerStatuses(enum.StrEnum):
     """An enumeration of status types sent by the optimizer."""
 
     ok = "ok"
@@ -45,7 +45,7 @@ class OptimizerStatuses(str, enum.Enum):
     cancelled = "cancel"
 
 
-class ServoStatuses(str, enum.Enum):
+class ServoStatuses(enum.StrEnum):
     """An enumeration of status types sent from the servo."""
 
     ok = "ok"
@@ -58,13 +58,13 @@ class ServoStatuses(str, enum.Enum):
 Statuses = Union[OptimizerStatuses, ServoStatuses]
 
 
-class Reasons(str, enum.Enum):
+class Reasons(enum.StrEnum):
     success = "success"
     unknown = "unknown"
     unstable = "unstable"
 
 
-class Events(str, enum.Enum):
+class Events(enum.StrEnum):
     hello = "HELLO"
     whats_next = "WHATS_NEXT"
     describe = "DESCRIPTION"
@@ -73,7 +73,7 @@ class Events(str, enum.Enum):
     goodbye = "GOODBYE"
 
 
-class Commands(str, enum.Enum):
+class Commands(enum.StrEnum):
     describe = "DESCRIBE"
     measure = "MEASURE"
     adjust = "ADJUST"

@@ -1749,7 +1749,7 @@ class ContainerConfiguration(servo.BaseConfiguration):
     static_environment_variables: Optional[Dict[str, str]]
 
 
-class OptimizationStrategy(str, enum.Enum):
+class OptimizationStrategy(enum.StrEnum):
     """
     OptimizationStrategy is an enumeration of the possible ways to perform optimization on a Kubernetes Deployment.
     """
@@ -1785,7 +1785,7 @@ class CanaryOptimizationStrategyConfiguration(BaseOptimizationStrategyConfigurat
     alias: Optional[ContainerTagName]
 
 
-class FailureMode(str, enum.Enum):
+class FailureMode(enum.StrEnum):
     """
     The FailureMode enumeration defines how to handle a failed adjustment of a Kubernetes resource.
     """

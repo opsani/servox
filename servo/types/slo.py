@@ -28,7 +28,7 @@ class TriggerConstraints(pydantic.ConstrainedInt):
     multiple_of = 1
 
 
-class SloKeep(str, enum.Enum):
+class SloKeep(enum.StrEnum):
     above = "above"
     below = "below"
 

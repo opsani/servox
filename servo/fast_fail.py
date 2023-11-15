@@ -31,7 +31,7 @@ import servo.types
 SLO_FAILED_REASON = "slo-violation"
 
 
-class SloOutcomeStatus(str, enum.Enum):
+class SloOutcomeStatus(enum.StrEnum):
     passed = "passed"
     failed = "failed"
     zero_metric = "zero_metric"

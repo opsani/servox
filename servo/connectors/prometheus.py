@@ -48,7 +48,7 @@ API_PATH = "/api/v1"
 CHANNEL = "metrics.prometheus"
 
 
-class AbsentMetricPolicy(str, enum.Enum):
+class AbsentMetricPolicy(enum.StrEnum):
     """An enumeration of behaviors for handling absent metrics.
 
     Absent metrics do not exist in Prometheus at query evaluation time.
@@ -191,7 +191,7 @@ class BaseRequest(pydantic.BaseModel, abc.ABC):
         return httpx.URL(self.endpoint, params=self.params)
 
 
-class TargetsStateFilter(str, enum.Enum):
+class TargetsStateFilter(enum.StrEnum):
     """An enumeration of states to filter Prometheus targets by."""
 
     active = "active"
@@ -275,7 +275,7 @@ class RangeQuery(QueryRequest):
         return end
 
 
-class ResultType(str, enum.Enum):
+class ResultType(enum.StrEnum):
     """Types of results returned for Prometheus queries.
 
     See https://prometheus.io/docs/prometheus/latest/querying/api/#expression-query-result-formats
@@ -360,7 +360,7 @@ class RangeVector(BaseVector):
         return iter(self.values)
 
 
-class Status(str, enum.Enum):
+class Status(enum.StrEnum):
     """Prometheus HTTP API response statuses.
 
     See https://prometheus.io/docs/prometheus/latest/querying/api/#format-overview

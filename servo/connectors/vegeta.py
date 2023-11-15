@@ -41,7 +41,7 @@ METRICS = [
 ]
 
 
-class TargetFormat(str, enum.Enum):
+class TargetFormat(enum.StrEnum):
     http = "http"
     json = "json"
 

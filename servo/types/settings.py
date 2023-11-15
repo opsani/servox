@@ -476,7 +476,7 @@ class Replicas(RangeSetting):
     )
 
 
-class InstanceTypeUnits(str, enum.Enum):
+class InstanceTypeUnits(enum.StrEnum):
     """InstanceTypeUnits is an enumeration that defines sources of compute instances."""
 
     ec2 = "ec2"
