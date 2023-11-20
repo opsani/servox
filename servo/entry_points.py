@@ -22,6 +22,7 @@
 # dispatch the intent into focused modules to do the real work.
 # noqa
 
+import asyncio
 import dotenv
 import uvloop
 
@@ -31,7 +32,7 @@ import servo.cli
 
 def run_cli() -> None:
     """Run the Servo CLI."""
-    uvloop.install()
+    asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
     dotenv.load_dotenv(dotenv.find_dotenv(usecwd=True))
 
     # NOTE: We load connectors here because waiting until assembly

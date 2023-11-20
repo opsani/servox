@@ -60,7 +60,9 @@ def pytest_report_header(config) -> str:
     return "servo connectors: " + ", ".join(names)
 
 
-uvloop.install()
+@pytest.fixture(scope="session")
+def event_loop_policy():
+    return uvloop.EventLoopPolicy()
 
 # FIXME: Below logic causes "OSError: [Errno 24] Too many open files". Fix if really needed
 # @pytest.fixture

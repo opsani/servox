@@ -265,15 +265,6 @@ class Check(pydantic.BaseModel, servo.logging.Mixin):
         }
 
 
-@runtime_checkable
-class Checkable(Protocol):
-    """Checkable objects can be represented as a Check."""
-
-    def __check__() -> Check:
-        """Return a Check representation of the object."""
-        ...
-
-
 CheckRunner = TypeVar("CheckRunner", Callable[..., Check], Coroutine[None, None, Check])
 
 
@@ -563,7 +554,7 @@ class BaseChecks(pydantic.BaseModel, servo.logging.Mixin):
         filtered_methods = []
         for method_name, method in self._check_methods():
             if matching and matching.any:
-                if isinstance(method, Checkable):
+                if hasattr(method, "__check__") and isinstance(method.__check__, Check):
                     spec = method.__check__
                 else:
                     self.logger.warning(
@@ -1099,7 +1090,7 @@ def create_checks_from_iterable(
         return fn
 
     for item in iterable:
-        if isinstance(item, Checkable):
+        if hasattr(item, "__check__") and isinstance(item.__check__, Check):
             check = item.__check__().copy()
             fn = create_fn(check.name, item)
             fn.__check__ = check
