@@ -34,8 +34,7 @@ ENV SERVO_ENV=${SERVO_ENV} \
 
 RUN apt-get update \
   && apt-get install -y --no-install-recommends curl \
-  && apt-get purge -y --auto-remove \
-  && rm -rf /var/lib/apt/lists/*
+  && apt-get purge -y --auto-remove
 
 # Install Vegeta
 COPY --from=vegeta /bin/vegeta /bin/vegeta
@@ -57,10 +56,14 @@ RUN pip install --upgrade pip setuptools
 COPY poetry.lock pyproject.toml README.md CHANGELOG.md ./
 COPY servo/entry_points.py servo/entry_points.py
 
-RUN pip install poetry==1.7.0 \
+RUN pip install poetry==1.7.0
+RUN apt-get install -y --no-install-recommends gcc libc6-dev libffi-dev \
   && poetry install --no-dev --no-interaction \
   # Clean poetry cache for production
-  && if [ "$SERVO_ENV" = 'production' ]; then rm -rf "$POETRY_CACHE_DIR"; fi
+  && if [ "$SERVO_ENV" = 'production' ]; then rm -rf "$POETRY_CACHE_DIR"; fi \
+  && apt-get remove --purge -y gcc libc6-dev libffi-dev \
+  && apt-get purge -y --auto-remove \
+  && rm -rf /var/lib/apt/lists/*
 
 # Copy the servo sources
 COPY . ./
