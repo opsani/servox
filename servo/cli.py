@@ -2056,7 +2056,13 @@ def run_async(future: Union[asyncio.Future, asyncio.Task, Awaitable]) -> Any:
     Raises:
         Exception: Any exception raised during execution of the future.
     """
-    return asyncio.get_event_loop().run_until_complete(future)
+    try:
+        return asyncio.get_running_loop().run_until_complete(future)
+    except RuntimeError as e:
+        if str(e) == "no running event loop":
+            return asyncio.run(future)
+        else:
+            raise
 
 
 def print_table(table, headers) -> None:
