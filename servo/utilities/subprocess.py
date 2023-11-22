@@ -342,6 +342,7 @@ async def stream_subprocess_output(
         with contextlib.suppress(ProcessLookupError):
             if process.returncode is None:
                 process.terminate()
+                await process.wait()
 
         with contextlib.suppress(asyncio.CancelledError):
             await gather_task
