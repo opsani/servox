@@ -1129,8 +1129,10 @@ class ServoCLI(CLI):
                     if context.servo:
                         ready = run_async(context.servo.check_servo(print_callback))
                     else:
-                        results = run_async(
-                            asyncio.gather(
+                        # gather() expects a loop to exist at invocation time which is not compatible with the run_async
+                        #  execution model. wrap the gather in a standard async function to work around this
+                        async def gather_checks():
+                            return await asyncio.gather(
                                 *list(
                                     map(
                                         lambda s: s.check_servo(print_callback),
@@ -1138,7 +1140,8 @@ class ServoCLI(CLI):
                                     )
                                 ),
                             )
-                        )
+
+                        results = run_async(gather_checks())
                         ready = functools.reduce(lambda x, y: x and y, results)
 
                 except servo.ConnectorNotFoundError as e:
@@ -2045,7 +2048,8 @@ def _run(args: Union[str, list[str]], **kwargs) -> None:
 def run_async(future: Union[asyncio.Future, asyncio.Task, Awaitable]) -> Any:
     """Run the asyncio event loop until Future is done.
 
-    This function is a convenience alias for `asyncio.get_event_loop().run_until_complete(future)`.
+    This function is similar to asyncio.run but avoids the behavior of always creating a new event loop even if one
+    already exists.
 
     Args:
         future: The future to run.
@@ -2056,13 +2060,22 @@ def run_async(future: Union[asyncio.Future, asyncio.Task, Awaitable]) -> Any:
     Raises:
         Exception: Any exception raised during execution of the future.
     """
+    existing_loop = True
     try:
-        return asyncio.get_running_loop().run_until_complete(future)
+        loop = asyncio.get_running_loop()
     except RuntimeError as e:
         if str(e) == "no running event loop":
-            return asyncio.run(future)
+            existing_loop = False
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
         else:
             raise
+    try:
+        return loop.run_until_complete(future)
+    finally:
+        if not existing_loop:
+            loop.close()
+            asyncio.set_event_loop(None)
 
 
 def print_table(table, headers) -> None:
