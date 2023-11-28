@@ -17,6 +17,13 @@ based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/). Releases are
 versioned in accordance with [Semantic
 Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [23.12.1] "speedwagon" - 2023-11-28
+
+### Changed
+
+- Updated to python 3.12
+- Miscellaneous dependency updates
+
 ## [23.12.0] "speedwagon" - 2023-11-08
 
 ### Changed

@@ -44,7 +44,7 @@ logging.getLogger("diagnostics-backoff").setLevel(logging.ERROR)
 logging.getLogger("diagnostics-backoff").addHandler(InterceptHandler())
 
 
-class DiagnosticStates(str, enum.Enum):
+class DiagnosticStates(enum.StrEnum):
     withhold = "WITHHOLD"
     send = "SEND"
     stop = "STOP"

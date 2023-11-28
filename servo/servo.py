@@ -89,7 +89,7 @@ def set_current_command_uid(value: Union[str, None]) -> None:
     _current_command_uid_context_var.set(value)
 
 
-class Events(str, enum.Enum):
+class Events(enum.StrEnum):
     """An enumeration of the names of standard events defined by the servo."""
 
     # Lifecycle events

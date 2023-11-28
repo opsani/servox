@@ -342,6 +342,14 @@ async def stream_subprocess_output(
         with contextlib.suppress(ProcessLookupError):
             if process.returncode is None:
                 process.terminate()
+                try:
+                    await asyncio.wait_for(process.wait(), timeout=10)
+                except asyncio.TimeoutError:
+                    loguru.logger.warning(
+                        f"Timed out waiting 10 seconds for {process.pid} to terminate. Sending kill signal"
+                    )
+                    process.kill()
+                    await process.wait()
 
         with contextlib.suppress(asyncio.CancelledError):
             await gather_task

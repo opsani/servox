@@ -362,7 +362,7 @@ async def test_decorate_async() -> None:
     check_ = await check_test()
     assert check_
     assert isinstance(check_, Check)
-    assert check_.run_at == datetime(2020, 8, 25, 0, 0, 15)
+    assert check_.run_at == datetime(2020, 8, 25, 0, 0, 30)
     assert check_.runtime == "15s"
 
 

@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-ARG PYTHON_VERSION=3.9.7
+ARG PYTHON_VERSION=3.12.0
 
 FROM peterevans/vegeta AS vegeta
 FROM python:${PYTHON_VERSION}-slim
@@ -20,28 +20,28 @@ FROM python:${PYTHON_VERSION}-slim
 ARG SERVO_ENV=development
 
 ENV SERVO_ENV=${SERVO_ENV} \
-    # Python
-    PYTHONFAULTHANDLER=1 \
-    PYTHONUNBUFFERED=1 \
-    PYTHONHASHSEED=random \
-    # PIP
-    PIP_NO_CACHE_DIR=off \
-    PIP_DISABLE_PIP_VERSION_CHECK=on \
-    PIP_DEFAULT_TIMEOUT=100 \
-    # Poetry
-    POETRY_VIRTUALENVS_CREATE=false \
-    POETRY_CACHE_DIR='/var/cache/pypoetry'
+  # Python
+  PYTHONFAULTHANDLER=1 \
+  PYTHONUNBUFFERED=1 \
+  PYTHONHASHSEED=random \
+  # PIP
+  PIP_NO_CACHE_DIR=off \
+  PIP_DISABLE_PIP_VERSION_CHECK=on \
+  PIP_DEFAULT_TIMEOUT=100 \
+  # Poetry
+  POETRY_VIRTUALENVS_CREATE=false \
+  POETRY_CACHE_DIR='/var/cache/pypoetry'
 
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends curl \
-  && apt-get purge -y --auto-remove \
-  && rm -rf /var/lib/apt/lists/*
+  && apt-get purge -y --auto-remove
 
 # Install Vegeta
 COPY --from=vegeta /bin/vegeta /bin/vegeta
 
 # Add kubectl
-RUN curl -LO https://storage.googleapis.com/kubernetes-release/release/$(curl -s https://storage.googleapis.com/kubernetes-release/release/stable.txt)/bin/linux/amd64/kubectl
+RUN apt-get install -y --no-install-recommends curl \
+  && curl -LO https://storage.googleapis.com/kubernetes-release/release/$(curl -s https://storage.googleapis.com/kubernetes-release/release/stable.txt)/bin/linux/amd64/kubectl \
+  && apt-get remove -y --purge curl
 RUN chmod +x ./kubectl
 RUN mv ./kubectl /usr/local/bin
 
@@ -57,10 +57,14 @@ RUN pip install --upgrade pip setuptools
 COPY poetry.lock pyproject.toml README.md CHANGELOG.md ./
 COPY servo/entry_points.py servo/entry_points.py
 
-RUN pip install poetry==1.4.* \
+RUN pip install poetry==1.7.0
+RUN apt-get install -y --no-install-recommends gcc libc6-dev libffi-dev \
   && poetry install --no-dev --no-interaction \
   # Clean poetry cache for production
-  && if [ "$SERVO_ENV" = 'production' ]; then rm -rf "$POETRY_CACHE_DIR"; fi
+  && if [ "$SERVO_ENV" = 'production' ]; then rm -rf "$POETRY_CACHE_DIR"; fi \
+  && apt-get remove --purge -y gcc libc6-dev libffi-dev \
+  && apt-get purge -y --auto-remove \
+  && rm -rf /var/lib/apt/lists/*
 
 # Copy the servo sources
 COPY . ./

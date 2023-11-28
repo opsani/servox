@@ -447,7 +447,7 @@ class Timeouts(AbstractBaseConfiguration):
 ProxyKey = pydantic.constr(regex=r"^(https?|all)://")
 
 
-class BackoffContexts(str, enum.Enum):
+class BackoffContexts(enum.StrEnum):
     """An enumeration that defines the default set of backoff contexts."""
 
     default = "__default__"

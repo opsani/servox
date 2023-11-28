@@ -341,8 +341,8 @@ class ConnectorLoader:
     def __init__(self, group: str = ENTRY_POINT_GROUP) -> None:  # noqa: D107
         self.group = group
 
-    def iter_entry_points(self) -> tuple[importlib.metadata.EntryPoint]:
-        return importlib.metadata.entry_points()[self.group]
+    def iter_entry_points(self) -> importlib.metadata.EntryPoints:
+        return importlib.metadata.entry_points(group=self.group)
 
     def load(self) -> Generator[Any, None, None]:
         for entry_point in self.iter_entry_points():

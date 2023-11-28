@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "servox"
-version = "23.12.0"
+version = "23.12.1"
 description = "Opsani Servo: The Next Generation"
 homepage = "https://opsani.com/"
 repository = "https://github.com/opsani/servox"
@@ -13,7 +13,7 @@ packages = [
 include = ["README.md", "CHANGELOG.md"]
 
 [tool.poetry.dependencies]
-python = ">=3.8.1,<=3.9.11"
+python = ">=3.8.1,<3.13"
 pydantic = "^1.9.0"
 loguru = "^0.6.0"
 httpx = "^0.23.0"
@@ -29,7 +29,7 @@ bullet = "^2.1.0"
 jsonschema = "^4.17.3"
 timeago = "^1.0.14"
 orjson = "^3.5.0"
-uvloop = "^0.17.0"
+uvloop = "^0.18.0"
 pytz = "^2022.7.1"
 toml = "^0.10.2"
 colorama = "^0.4.4"
@@ -42,7 +42,7 @@ Authlib = "^1.1.0"
 watchfiles = "^0.18.1"
 
 [tool.poetry.dev-dependencies]
-pytest = "^7.2.2"
+pytest = "^7.4.1"
 pytest-asyncio = "^0.20.3"
 pytest-cov = "^4.0.0"
 pytest-mock = "^3.5.1"
@@ -84,7 +84,7 @@ pytest-xdist = "^3.2.0"
 pytest-vscodedebug = "^0.1.0"
 pytest-html = "^4.0.0rc0"
 bandit = "^1.7.0"
-statesman = "^1.0.2.post1"
+statesman = "^1.0.4"
 types-PyYAML = "^6.0.4"
 types-setuptools = "^63.4.1"
 types-python-dateutil = "^2.8.2"

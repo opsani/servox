@@ -284,7 +284,7 @@ This is where the `halt_on` parameter comes in. `halt_on` is a value of the
 `HaltOnFailed`  enumeration which looks like:
 
 ```python
-class HaltOnFailed(str, enum.Enum):
+class HaltOnFailed(enum.StrEnum):
     """HaltOnFailed is an enumeration that describes how to handle check failures.
     """
 

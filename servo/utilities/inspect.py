@@ -155,7 +155,10 @@ def resolve_type_annotations(
         if isinstance(annotation, str):
             type_ = typing._eval_type(typing.ForwardRef(annotation), globalns, localns)
         else:
-            if isinstance(annotation, (type, typing.TypeVar, typing._GenericAlias)):
+            if isinstance(
+                annotation,
+                (type, typing.TypeVar, typing._GenericAlias, typing.GenericAlias),
+            ):
                 type_ = annotation
             else:
                 type_ = annotation.__class__

@@ -462,7 +462,14 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
             raise RuntimeError("Cannot run an assembly that is already running")
 
         self._running = True
-        loop = asyncio.get_event_loop()
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError as e:
+            if str(e) == "no running event loop":
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+            else:
+                raise
 
         # Setup signal handling
         signals = (signal.SIGHUP, signal.SIGTERM, signal.SIGINT, signal.SIGUSR1)

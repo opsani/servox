@@ -60,7 +60,10 @@ def pytest_report_header(config) -> str:
     return "servo connectors: " + ", ".join(names)
 
 
-uvloop.install()
+@pytest.fixture()
+def event_loop_policy():
+    return uvloop.EventLoopPolicy()
+
 
 # FIXME: Below logic causes "OSError: [Errno 24] Too many open files". Fix if really needed
 # @pytest.fixture
@@ -133,7 +136,7 @@ def pytest_addoption(parser) -> None:
     )
 
 
-class TestType(str, enum.Enum):
+class TestType(enum.StrEnum):
     unit = "unit"
     integration = "integration"
     system = "system"
@@ -143,7 +146,7 @@ class TestType(str, enum.Enum):
         return cls.__members__.keys()
 
 
-class Environment(str, enum.Enum):
+class Environment(enum.StrEnum):
     docker = "Docker"
     compose = "Docker Compose"
     kind = "Kind"
