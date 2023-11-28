@@ -33,14 +33,15 @@ ENV SERVO_ENV=${SERVO_ENV} \
   POETRY_CACHE_DIR='/var/cache/pypoetry'
 
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends curl \
   && apt-get purge -y --auto-remove
 
 # Install Vegeta
 COPY --from=vegeta /bin/vegeta /bin/vegeta
 
 # Add kubectl
-RUN curl -LO https://storage.googleapis.com/kubernetes-release/release/$(curl -s https://storage.googleapis.com/kubernetes-release/release/stable.txt)/bin/linux/amd64/kubectl
+RUN apt-get install -y --no-install-recommends curl \
+  && curl -LO https://storage.googleapis.com/kubernetes-release/release/$(curl -s https://storage.googleapis.com/kubernetes-release/release/stable.txt)/bin/linux/amd64/kubectl \
+  && apt-get remove -y --purge curl
 RUN chmod +x ./kubectl
 RUN mv ./kubectl /usr/local/bin
 
