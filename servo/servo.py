@@ -523,9 +523,22 @@ class Servo(servo.connector.BaseConnector):
             )
 
             try:
-                response = await self._api_client.post(
-                    "servo", data=event_request.json()
-                )
+                try:
+                    response = await self._api_client.post(
+                        "servo", data=event_request.json()
+                    )
+                except RuntimeError as e:
+                    if "the handler is closed" in str(e):
+                        self.logger.warning("Instantiating new api client due to closed TCPTransport")
+                        self._api_client = servo.api.get_api_client_for_optimizer(
+                            self.config.optimizer, self.config.settings
+                        )
+                        response = await self._api_client.post(
+                            "servo", data=event_request.json()
+                        )
+                    else:
+                        raise
+
                 response.raise_for_status()
                 response_json = response.json()
                 self.logger.trace(
