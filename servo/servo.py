@@ -529,7 +529,9 @@ class Servo(servo.connector.BaseConnector):
                     )
                 except RuntimeError as e:
                     if "the handler is closed" in str(e):
-                        self.logger.warning("Instantiating new api client due to closed TCPTransport")
+                        self.logger.warning(
+                            "Instantiating new api client due to closed TCPTransport"
+                        )
                         self._api_client = servo.api.get_api_client_for_optimizer(
                             self.config.optimizer, self.config.settings
                         )
