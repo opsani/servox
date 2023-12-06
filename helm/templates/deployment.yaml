@@ -30,7 +30,7 @@ spec:
   template:
     metadata:
       labels:
-        {{- include "servox.selectorLabels" . | nindent 8 }}
+        {{- include "servox.labels" . | nindent 8 }}
     spec:
       serviceAccountName: {{ include "servox.fullname" . }}
       containers:
