@@ -1109,18 +1109,10 @@ class ServoCLI(CLI):
             Run the servo
             """
 
-            def run_servo():
-                poll = not no_poll
-                servo.runner.AssemblyRunner(context.assembly).run(
-                    poll=poll,
-                    interactive=bool(interactive),
-                    debug=debug,
-                )
+            if not context.assembly:
+                raise typer.Abort("failed to assemble servo")
 
             if check or dry_run:
-                if isinstance(context, click.core.Context):
-                    context = context.parent
-
                 # Check all targeted servos
                 def print_callback(input: str) -> None:
                     typer.echo(input)
@@ -1156,18 +1148,16 @@ class ServoCLI(CLI):
                     )
                     raise typer.Exit(1) from e
 
-                if ready:
-                    if not dry_run:
-                        run_servo()
-                    else:
-                        raise typer.Exit(0)
-                else:
+                if not ready:
                     raise typer.Exit(1)
 
-            if context.assembly:
-                run_servo()
-            else:
-                raise typer.Abort("failed to assemble servo")
+            if not dry_run:
+                poll = not no_poll
+                servo.runner.AssemblyRunner(context.assembly).run(
+                    poll=poll,
+                    interactive=bool(interactive),
+                    debug=debug,
+                )
 
         @self.command(section=section)
         def describe(
