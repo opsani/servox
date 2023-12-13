@@ -1415,10 +1415,11 @@ class CanaryOptimization(BaseOptimization):
                         self.shutdown(), timeout=self.timeout.total_seconds()
                     )
                 except asyncio.exceptions.TimeoutError:
-                    self.logger.exception(level="TRACE")
-                    raise RuntimeError(
+                    message = (
                         f"Time out after {self.timeout} waiting for tuning pod shutdown"
                     )
+                    self.logger.exception(message, level="TRACE")
+                    raise RuntimeError(message)
 
                 # create a new canary against baseline
                 self.logger.info(
