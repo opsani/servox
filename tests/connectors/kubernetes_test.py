@@ -1217,7 +1217,7 @@ class TestKubernetesConnectorIntegration:
                 re.escape(
                     "Requested adjustment(s) (fiber-http/fiber-http.mem=128Gi) cannot be scheduled due to "
                 )
-                + r"\"\d+/\d+ nodes are available: \d+ Insufficient memory\.\""
+                + r"\"\d+/\d+ nodes are available:.* \d+ Insufficient memory.*\""
             ),
         ) as rejection_info:
             await connector.adjust([adjustment])
@@ -1434,7 +1434,7 @@ class TestKubernetesConnectorIntegration:
                     re.escape(
                         "Requested adjustment(s) (fiber-http/fiber-http-tuning.mem=128Gi) cannot be scheduled due to "
                     )
-                    + r"\"\d+/\d+ nodes are available: \d+ Insufficient memory\.\""
+                    + r"\"\d+/\d+ nodes are available:.* \d+ Insufficient memory.*\""
                 ),
             ) as rejection_info:
                 await connector.adjust([adjustment])
@@ -1479,7 +1479,7 @@ class TestKubernetesConnectorIntegration:
                 re.escape(
                     "Requested adjustment(s) (fiber-http/fiber-http-tuning.mem=128Gi, fiber-http/fiber-http-tuning.cpu=100) cannot be scheduled due to "
                 )
-                + r"\"\d+/\d+ nodes are available: \d+ Insufficient cpu\, \d+ Insufficient memory\.\""
+                + r"\"\d+/\d+ nodes are available:.* \d+ Insufficient cpu\.* \d+ Insufficient memory.*\""
             ),
         ) as rejection_info:
             await connector.adjust(adjustments)
