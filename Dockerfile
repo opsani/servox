@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-ARG PYTHON_VERSION=3.12.0
+ARG PYTHON_VERSION=3.12.1
 
 FROM peterevans/vegeta AS vegeta
 FROM python:${PYTHON_VERSION}-slim

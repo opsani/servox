@@ -141,147 +141,148 @@ jobs:
         source .venv/bin/activate
         servo version
 
-  integration:
-    name: Run Integration Tests
-    runs-on: ubuntu-20.04
-    needs:
-      - pre_job
-      - setup_build
-    if: |
-      needs.pre_job.outputs.should_skip != 'true' &&
-      github.actor != 'dependabot[bot]' &&
-      (github.ref == 'refs/heads/main' ||
-      startsWith(github.ref, 'refs/heads/release/') ||
-      startsWith(github.ref, 'refs/heads/bugfix/') ||
-      startsWith(github.ref, 'refs/tags/') ||
-      github.event_name == 'pull_request' ||
-      contains(github.event.head_commit.message, '#test:integration'))
-    steps:
-    - uses: actions/checkout@master
-    - uses: actions/setup-python@v2.1.3
-      id: setup-python
-      with:
-        python-version: ${{ needs.setup_build.outputs.python-version }}
-        architecture: x64
-    - name: Install Vegeta
-      run: |
-        wget https://github.com/tsenart/vegeta/releases/download/v12.8.4/vegeta_12.8.4_linux_amd64.tar.gz
-        tar xfz vegeta_12.8.4_linux_amd64.tar.gz
-        sudo mv vegeta /usr/local/bin/vegeta
-    - name: Install Kubectl
-      run: |
-        KUBECTL_RELEASE="https://dl.k8s.io/release/v${{ needs.setup_build.outputs.kubectl-version }}/bin/linux/amd64/kubectl"
-        mkdir -p ${{ github.workspace }}/bin
-        curl -o ${{ github.workspace }}/bin/kubectl -fLO $KUBECTL_RELEASE
-        echo "${{ github.workspace }}/bin" >> $GITHUB_PATH
-        chmod +x ${{ github.workspace }}/bin/kubectl
-    - name: Set up root + dependencies cache
-      uses: actions/cache@v2
-      id: cached-project
-      with:
-        path: .venv
-        key: ".venv-${{ runner.os }}-\
-          python-${{ steps.setup-python.outputs.python-version }}-\
-          ${{ hashFiles('**/poetry.lock', 'servo/**/*.py') }}"
-    - name: Configure AWS credentials
-      uses: aws-actions/configure-aws-credentials@v1
-      with:
-        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        aws-region: us-west-2
-    - name: Create tests/kubeconfig
-      run: |
-        mkdir ~/.kube
-        echo "$KUBE_CONFIG_DATA" | base64 --decode > $HOME/.kube/config
-        kubectl config view --minify --flatten > tests/kubeconfig
-      shell: bash
-      env:
-        KUBE_CONFIG_DATA: ${{ secrets.KUBE_CONFIG_DATA }}
-    - name: Install aws-iam-authenticator
-      run: |
-        AWS_AUTH_RELEASE="https://github.com/kubernetes-sigs/aws-iam-authenticator/releases/download/v${{ needs.setup_build.outputs.aws-iam-auth-version }}/aws-iam-authenticator_${{ needs.setup_build.outputs.aws-iam-auth-version }}_linux_amd64"
-        curl -o ${{ github.workspace }}/bin/aws-iam-authenticator -fLO $AWS_AUTH_RELEASE
-        chmod 0755 ${{ github.workspace }}/bin/aws-iam-authenticator
-    - name: Export coverage file
-      run: |
-        echo "COVERAGE_FILE=${{ github.workspace }}/.coverage-integration-temp" >> $GITHUB_ENV
-    - name: Run integration tests
-      run: |
-        source .venv/bin/activate
-        pytest -n 8 \
-          -T integration --verbose --durations=0 --durations-min=5 \
-          --cov=servo --cov-config=setup.cfg --doctest-modules \
-          --cov-report=term-missing:skip-covered --cov-report=xml:artifacts/integration-test-coverage.xml \
-          --cov-report=html:artifacts/integration-test-coverage-html --junitxml=artifacts/integration-test-report.xml \
-          --html=artifacts/integration-test-report.html --self-contained-html
-    - name: Upload coverage file
-      uses: actions/upload-artifact@v3
-      with:
-        name: coverage-integration-temp
-        path: ${{ github.workspace }}/.coverage-integration-temp
-    - uses: actions/upload-artifact@v2
-      with:
-        name: integration-test-reports
-        path: artifacts/
-    - uses: actions/upload-artifact@v2
-      with:
-        name: integration-test-logs
-        path: logs/
+  # migrated to Teamcity
+  # integration:
+  #   name: Run Integration Tests
+  #   runs-on: ubuntu-20.04
+  #   needs:
+  #     - pre_job
+  #     - setup_build
+  #   if: |
+  #     needs.pre_job.outputs.should_skip != 'true' &&
+  #     github.actor != 'dependabot[bot]' &&
+  #     (github.ref == 'refs/heads/main' ||
+  #     startsWith(github.ref, 'refs/heads/release/') ||
+  #     startsWith(github.ref, 'refs/heads/bugfix/') ||
+  #     startsWith(github.ref, 'refs/tags/') ||
+  #     github.event_name == 'pull_request' ||
+  #     contains(github.event.head_commit.message, '#test:integration'))
+  #   steps:
+  #   - uses: actions/checkout@master
+  #   - uses: actions/setup-python@v2.1.3
+  #     id: setup-python
+  #     with:
+  #       python-version: ${{ needs.setup_build.outputs.python-version }}
+  #       architecture: x64
+  #   - name: Install Vegeta
+  #     run: |
+  #       wget https://github.com/tsenart/vegeta/releases/download/v12.8.4/vegeta_12.8.4_linux_amd64.tar.gz
+  #       tar xfz vegeta_12.8.4_linux_amd64.tar.gz
+  #       sudo mv vegeta /usr/local/bin/vegeta
+  #   - name: Install Kubectl
+  #     run: |
+  #       KUBECTL_RELEASE="https://dl.k8s.io/release/v${{ needs.setup_build.outputs.kubectl-version }}/bin/linux/amd64/kubectl"
+  #       mkdir -p ${{ github.workspace }}/bin
+  #       curl -o ${{ github.workspace }}/bin/kubectl -fLO $KUBECTL_RELEASE
+  #       echo "${{ github.workspace }}/bin" >> $GITHUB_PATH
+  #       chmod +x ${{ github.workspace }}/bin/kubectl
+  #   - name: Set up root + dependencies cache
+  #     uses: actions/cache@v2
+  #     id: cached-project
+  #     with:
+  #       path: .venv
+  #       key: ".venv-${{ runner.os }}-\
+  #         python-${{ steps.setup-python.outputs.python-version }}-\
+  #         ${{ hashFiles('**/poetry.lock', 'servo/**/*.py') }}"
+  #   - name: Configure AWS credentials
+  #     uses: aws-actions/configure-aws-credentials@v1
+  #     with:
+  #       aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+  #       aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+  #       aws-region: us-west-2
+  #   - name: Create tests/kubeconfig
+  #     run: |
+  #       mkdir ~/.kube
+  #       echo "$KUBE_CONFIG_DATA" | base64 --decode > $HOME/.kube/config
+  #       kubectl config view --minify --flatten > tests/kubeconfig
+  #     shell: bash
+  #     env:
+  #       KUBE_CONFIG_DATA: ${{ secrets.KUBE_CONFIG_DATA }}
+  #   - name: Install aws-iam-authenticator
+  #     run: |
+  #       AWS_AUTH_RELEASE="https://github.com/kubernetes-sigs/aws-iam-authenticator/releases/download/v${{ needs.setup_build.outputs.aws-iam-auth-version }}/aws-iam-authenticator_${{ needs.setup_build.outputs.aws-iam-auth-version }}_linux_amd64"
+  #       curl -o ${{ github.workspace }}/bin/aws-iam-authenticator -fLO $AWS_AUTH_RELEASE
+  #       chmod 0755 ${{ github.workspace }}/bin/aws-iam-authenticator
+  #   - name: Export coverage file
+  #     run: |
+  #       echo "COVERAGE_FILE=${{ github.workspace }}/.coverage-integration-temp" >> $GITHUB_ENV
+  #   - name: Run integration tests
+  #     run: |
+  #       source .venv/bin/activate
+  #       pytest -n 8 \
+  #         -T integration --verbose --durations=0 --durations-min=5 \
+  #         --cov=servo --cov-config=setup.cfg --doctest-modules \
+  #         --cov-report=term-missing:skip-covered --cov-report=xml:artifacts/integration-test-coverage.xml \
+  #         --cov-report=html:artifacts/integration-test-coverage-html --junitxml=artifacts/integration-test-report.xml \
+  #         --html=artifacts/integration-test-report.html --self-contained-html
+  #   - name: Upload coverage file
+  #     uses: actions/upload-artifact@v3
+  #     with:
+  #       name: coverage-integration-temp
+  #       path: ${{ github.workspace }}/.coverage-integration-temp
+  #   - uses: actions/upload-artifact@v2
+  #     with:
+  #       name: integration-test-reports
+  #       path: artifacts/
+  #   - uses: actions/upload-artifact@v2
+  #     with:
+  #       name: integration-test-logs
+  #       path: logs/
 
-  combined_coverage:
-    name: Combine coverage reports
-    runs-on: ubuntu-20.04
-    needs:
-      - pre_job
-      - setup_build
-      - unit
-      - integration
-    if: |
-      needs.pre_job.outputs.should_skip != 'true' &&
-      github.actor != 'dependabot[bot]' &&
-      (github.ref == 'refs/heads/main' ||
-      startsWith(github.ref, 'refs/heads/release/') ||
-      startsWith(github.ref, 'refs/heads/bugfix/') ||
-      startsWith(github.ref, 'refs/tags/') ||
-      github.event_name == 'pull_request' ||
-      contains(github.event.head_commit.message, '#test:integration'))
-    steps:
-    - uses: actions/checkout@master
-    - uses: actions/setup-python@v2.1.3
-      id: setup-python
-      with:
-        python-version: ${{ needs.setup_build.outputs.python-version }}
-        architecture: x64
-    - name: Set up root + dependencies cache
-      uses: actions/cache@v2
-      id: cached-project
-      with:
-        path: .venv
-        key: ".venv-${{ runner.os }}-\
-          python-${{ steps.setup-python.outputs.python-version }}-\
-          ${{ hashFiles('**/poetry.lock', 'servo/**/*.py') }}"
-    - name: Download unit coverage
-      uses: actions/download-artifact@v3
-      with:
-        name: coverage-unit-temp
-    - name: Download integration coverage
-      uses: actions/download-artifact@v3
-      with:
-        name: coverage-integration-temp
-    - name: Combine coverage reports
-      run: |
-        source .venv/bin/activate
-        coverage combine --append .coverage-unit-temp .coverage-integration-temp
-        coverage html -d artifacts/combined_coverage --skip-covered
-    - uses: actions/upload-artifact@v2
-      with:
-        name: combined-coverage-report
-        path: artifacts/
-    - uses: geekyeggo/delete-artifact@v1
-      with:
-        name: |
-          coverage-unit-temp
-          coverage-integration-temp
+  # combined_coverage:
+  #   name: Combine coverage reports
+  #   runs-on: ubuntu-20.04
+  #   needs:
+  #     - pre_job
+  #     - setup_build
+  #     - unit
+  #     - integration
+  #   if: |
+  #     needs.pre_job.outputs.should_skip != 'true' &&
+  #     github.actor != 'dependabot[bot]' &&
+  #     (github.ref == 'refs/heads/main' ||
+  #     startsWith(github.ref, 'refs/heads/release/') ||
+  #     startsWith(github.ref, 'refs/heads/bugfix/') ||
+  #     startsWith(github.ref, 'refs/tags/') ||
+  #     github.event_name == 'pull_request' ||
+  #     contains(github.event.head_commit.message, '#test:integration'))
+  #   steps:
+  #   - uses: actions/checkout@master
+  #   - uses: actions/setup-python@v2.1.3
+  #     id: setup-python
+  #     with:
+  #       python-version: ${{ needs.setup_build.outputs.python-version }}
+  #       architecture: x64
+  #   - name: Set up root + dependencies cache
+  #     uses: actions/cache@v2
+  #     id: cached-project
+  #     with:
+  #       path: .venv
+  #       key: ".venv-${{ runner.os }}-\
+  #         python-${{ steps.setup-python.outputs.python-version }}-\
+  #         ${{ hashFiles('**/poetry.lock', 'servo/**/*.py') }}"
+  #   - name: Download unit coverage
+  #     uses: actions/download-artifact@v3
+  #     with:
+  #       name: coverage-unit-temp
+  #   - name: Download integration coverage
+  #     uses: actions/download-artifact@v3
+  #     with:
+  #       name: coverage-integration-temp
+  #   - name: Combine coverage reports
+  #     run: |
+  #       source .venv/bin/activate
+  #       coverage combine --append .coverage-unit-temp .coverage-integration-temp
+  #       coverage html -d artifacts/combined_coverage --skip-covered
+  #   - uses: actions/upload-artifact@v2
+  #     with:
+  #       name: combined-coverage-report
+  #       path: artifacts/
+  #   - uses: geekyeggo/delete-artifact@v1
+  #     with:
+  #       name: |
+  #         coverage-unit-temp
+  #         coverage-integration-temp
 
   system:
     name: Run System Tests

@@ -17,6 +17,16 @@ based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/). Releases are
 versioned in accordance with [Semantic
 Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [24.1.0] "speedwagon" - 2024-01-18
+
+### Changed
+
+- Update to python 3.12.1
+
+### Fixed
+
+- Servo reentrant run invocation occuring after shutdown [562](https://github.com/opsani/servox/pull/562)
+
 ## [23.12.1] "speedwagon" - 2023-11-28
 
 ### Changed
