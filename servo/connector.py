@@ -41,7 +41,6 @@ from typing import (
 import loguru
 import importlib.metadata
 import pydantic
-import semver
 
 import servo.api
 import servo.configuration
@@ -74,9 +73,6 @@ def current_connector() -> Optional["BaseConnector"]:
 _connector_subclasses: Set[Type["BaseConnector"]] = set()
 
 
-Version = semver.VersionInfo
-
-
 # NOTE: Initialize mixins first to control initialization graph
 class BaseConnector(
     servo.utilities.associations.Mixin,
@@ -101,6 +97,7 @@ class BaseConnector(
     """The full name of the connector for referencing it unambiguously.
     """
 
+    # Version defined in servo.types.core
     version: ClassVar[Version] = None
     """Semantic Versioning string of the connector.
     """
