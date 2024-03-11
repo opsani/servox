@@ -43,7 +43,6 @@ import orjson
 import pydantic
 import pydantic.error_wrappers
 import pygments.lexers
-import semver
 
 import servo.utilities.duration_str
 
@@ -168,8 +167,6 @@ class Maturity(enum.Enum):
     def __str__(self) -> str:
         return self.value
 
-
-Version = semver.VersionInfo
 
 # NOTE: Strict values will not be type coerced by Pydantic (e.g., from "1" to 1)
 Numeric = Union[pydantic.StrictFloat, pydantic.StrictInt]
