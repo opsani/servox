@@ -17,6 +17,12 @@ based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/). Releases are
 versioned in accordance with [Semantic
 Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [24.3.0] "speedwagon" - 2024-03-11
+
+### Changed
+
+- Dependency updates
+
 ## [24.1.0] "speedwagon" - 2024-01-18
 
 ### Changed

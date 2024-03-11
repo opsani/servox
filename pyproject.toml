@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "servox"
-version = "24.1.0"
+version = "24.3.0"
 description = "Opsani Servo: The Next Generation"
 homepage = "https://opsani.com/"
 repository = "https://github.com/opsani/servox"
