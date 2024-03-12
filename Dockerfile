@@ -39,7 +39,7 @@ RUN apt-get update \
 COPY --from=vegeta /bin/vegeta /bin/vegeta
 
 # Add kubectl
-RUN apt-get install -y --no-install-recommends software-properties-common curl \
+RUN apt-get install -y --no-install-recommends curl \
   && curl -LO https://storage.googleapis.com/kubernetes-release/release/$(curl -s https://storage.googleapis.com/kubernetes-release/release/stable.txt)/bin/linux/amd64/kubectl \
   && apt-get remove -y --purge curl
 RUN chmod +x ./kubectl
@@ -49,10 +49,10 @@ RUN apt-get install -y --no-install-recommends gcc libc6-dev libffi-dev make
 
 # Install latest libuv and build uvloop workaround for CVE-2024-24806
 # https://github.com/MagicStack/uvloop/issues/589
-RUN add-apt-repository "deb http://httpredir.debian.org/debian trixie main" && \
+RUN echo "deb http://httpredir.debian.org/debian trixie main" > /etc/apt/sources.list.d/archive_uri-http_httpredir_debian_org_debian-bookworm.list && \
   apt-get update && \
-  apt-get install libuv1 && \
-  add-apt-repository "deb http://httpredir.debian.org/debian trixie main" --remove && \
+  apt-get install libuv1 -t trixie && \
+  rm /etc/apt/sources.list.d/archive_uri-http_httpredir_debian_org_debian-bookworm.list && \
   apt-get update && \
   pip install uvloop==0.18.0 --global-option="--use-system-libuv"
 
@@ -72,7 +72,7 @@ RUN pip install poetry==1.7.0
 RUN poetry install --no-dev --no-interaction \
   # Clean poetry cache for production
   && if [ "$SERVO_ENV" = 'production' ]; then rm -rf "$POETRY_CACHE_DIR"; fi \
-  && apt-get remove --purge -y software-properties-common gcc libc6-dev libffi-dev make \
+  && apt-get remove --purge -y gcc libc6-dev libffi-dev make \
   && apt-get purge -y --auto-remove \
   && rm -rf /var/lib/apt/lists/*
 
