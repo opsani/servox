@@ -100,7 +100,7 @@ spec:
           value: {{ default "SERVICE_URL_VALUE" .Values.agentMgmtServiceUrlOverride }}
         - name: SERVICE_NAME
           value: {{ default "servo" .Values.agentFmmTypeOverride }}
-        - name: SERVICE_NAMESPACE
+        - name: AGENT_NAMESPACE
           value: {{ default "optimize" .Values.agentFmmNamespaceOverride }}
         - name: INSTANCE_UID
           value: {{ default "INSTANCE_UID_VALUE" .Values.instanceUidOverride }}
@@ -120,6 +120,14 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: metadata.namespace
+        - name: AGENT_DEPLOYMENT_SCOPE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: AGENT_DEPLOYMENT_UNIT
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
         - name: CONFIG_FILE_PATH
           value: /agent-management-sidecar
         - name: INSTALLED_TIME
@@ -135,10 +143,22 @@ spec:
           value: {{ if .Values.baseUrl }}{{ printf "%s/auth" (urlParse .Values.baseUrl).host }}{{ else }}OAUTH_URL_VALUE{{ end }}
         - name: OAUTH_TENANT_ID
           value: {{ default "OAUTH_TENANT_ID_VALUE" .Values.tenantId }}
-        - name: RESOURCE_NAME
-          value: {{ include "servox.fullname" . }}
         - name: AGENT_NAME
+          value: {{ include "servox.identifier" . }}
+        - name: AGENT_TYPE
           value: "servo"
+        - AGENT_PLATFORM_TYPE:
+          value: "k8s"
+        - AGENT_DEPLOYMENT_NAME:
+          value: {{ include "servox.fullname" . }}
+        - AGENT_DEPLOYMENT_TYPE:
+          value: "deployment"
+        - AGENT_VERSION:
+          value: {{ include "servox.sidecarTag" . }}
+        - name: AGENT_PLATFORM_ID
+          value: {{ default "AGENT_PLATFORM_ID_VALUE" .Values.agentPlatformIdOverride }}
+        - name: AGENT_PLATFORM_NAME
+          value: {{ default "AGENT_PLATFORM_NAME_VALUE" .Values.agentPlatformNameOverride }}
         volumeMounts:
         - name: agent-management-sidecar
           mountPath: /agent-management-sidecar

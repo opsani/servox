@@ -79,3 +79,13 @@ Servo Image
 {{- define "servox.servoImage" -}}
 {{- default (printf "IMAGE_REGISTRY_VALUE/servox:%s" .Chart.AppVersion) .Values.servoImageOverride }}
 {{- end }}
+
+{{/*
+Agent Management Sidecar Image Tag
+*/}}
+{{- define "servox.sidecarTag" -}}
+{{- if eq .Values.connectionSettingsType "sidecar" }}
+{{- required ".Values.agentMgmtSidecarImage is required for sidecar connection settings type" .Values.agentMgmtSidecarImage | split ":" | last }}
+{{- else }}""
+{{- end }}
+{{- end }}
