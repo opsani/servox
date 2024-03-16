@@ -85,7 +85,7 @@ Agent Management Sidecar Image Tag
 */}}
 {{- define "servox.sidecarTag" -}}
 {{- if eq .Values.connectionSettingsType "sidecar" }}
-{{- required ".Values.agentMgmtSidecarImage is required for sidecar connection settings type" .Values.agentMgmtSidecarImage | split ":" | last }}
+{{- required ".Values.agentMgmtSidecarImage is required for sidecar connection settings type" .Values.agentMgmtSidecarImage | splitList ":" | last }}
 {{- else }}""
 {{- end }}
 {{- end }}
