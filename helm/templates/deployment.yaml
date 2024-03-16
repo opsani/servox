@@ -147,13 +147,13 @@ spec:
           value: {{ include "servox.identifier" . }}
         - name: AGENT_TYPE
           value: "servo"
-        - AGENT_PLATFORM_TYPE:
+        - name: AGENT_PLATFORM_TYPE
           value: "k8s"
-        - AGENT_DEPLOYMENT_NAME:
+        - name: AGENT_DEPLOYMENT_NAME
           value: {{ include "servox.fullname" . }}
-        - AGENT_DEPLOYMENT_TYPE:
+        - name: AGENT_DEPLOYMENT_TYPE
           value: "deployment"
-        - AGENT_VERSION:
+        - name: AGENT_VERSION
           value: {{ include "servox.sidecarTag" . }}
         - name: AGENT_PLATFORM_ID
           value: {{ default "AGENT_PLATFORM_ID_VALUE" .Values.agentPlatformIdOverride }}
