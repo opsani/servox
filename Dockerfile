@@ -31,14 +31,12 @@ ENV SERVO_ENV=${SERVO_ENV} \
   # PIP
   PIP_NO_CACHE_DIR=off \
   PIP_DISABLE_PIP_VERSION_CHECK=on \
-  PIP_DEFAULT_TIMEOUT=100 \
-  # Poetry
-  POETRY_VIRTUALENVS_CREATE=false
+  PIP_DEFAULT_TIMEOUT=100
 
 RUN apk -U upgrade && apk add --no-cache curl
 
 RUN if [ "$BASE_IMAGE" = 'alpine:latest' ]; then \
-    apk add --no-cache shadow \ 
+    apk add --no-cache shadow \
     && addgroup -S appdynamics \
     && groupmod -g 9001 appdynamics \
     && adduser -S appdynamics -G appdynamics \
@@ -81,8 +79,8 @@ COPY .python-version ./
 RUN pyenv install --verbose `cat .python-version` && \
   pyenv global `cat .python-version` && \
   echo 'export PYENV_ROOT="$HOME/.pyenv"' >> /home/appdynamics/.bashrc && \
-  echo 'command -v pyenv >/dev/null || export PATH="$PYENV_ROOT/bin:$PATH"' >> /home/appdynamics/.bashrc && \ 
-  echo 'eval "$(pyenv init - bash)"' >> /home/appdynamics/.bashrc && \ 
+  echo 'command -v pyenv >/dev/null || export PATH="$PYENV_ROOT/bin:$PATH"' >> /home/appdynamics/.bashrc && \
+  echo 'eval "$(pyenv init - bash)"' >> /home/appdynamics/.bashrc && \
   ln -s /home/appdynamics/.bashrc /home/appdynamics/.profile
 RUN chown -R appdynamics:appdynamics $PYENV_ROOT /home/appdynamics/.bashrc /home/appdynamics/.profile /servo
 SHELL [ "/bin/bash", "-l", "-c" ]
