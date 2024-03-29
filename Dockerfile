@@ -64,11 +64,12 @@ RUN apk add --no-cache bash git
 
 ENV LANG=C.UTF-8 \
   PYENV_ROOT=/home/appdynamics/.pyenv
-ENV PATH=$PYENV_ROOT/shims:$PYENV_ROOT/plugins/pyenv-virtualenv/shims:$PYENV_ROOT/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ENV PATH=$PYENV_ROOT/shims:$PYENV_ROOT/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 RUN curl -sL https://raw.githubusercontent.com/yyuu/pyenv-installer/master/bin/pyenv-installer | bash
 
 RUN apk add --no-cache \
+  libffi \
   # https://github.com/pyenv/pyenv/wiki#suggested-build-environment
   git bash build-base libffi-dev openssl-dev bzip2-dev zlib-dev xz-dev readline-dev sqlite-dev tk-dev \
   # Install latest libuv and build uvloop workaround for CVE-2024-24806
@@ -82,9 +83,8 @@ RUN pyenv install --verbose `cat .python-version` && \
   echo 'export PYENV_ROOT="$HOME/.pyenv"' >> /home/appdynamics/.bashrc && \
   echo 'command -v pyenv >/dev/null || export PATH="$PYENV_ROOT/bin:$PATH"' >> /home/appdynamics/.bashrc && \ 
   echo 'eval "$(pyenv init - bash)"' >> /home/appdynamics/.bashrc && \ 
-  echo 'eval "$(pyenv virtualenv-init - bash)"' >> /home/appdynamics/.bashrc && \
   ln -s /home/appdynamics/.bashrc /home/appdynamics/.profile
-RUN chown -R appdynamics:appdynamics $PYENV_ROOT /home/appdynamics/.bashrc /home/appdynamics/.profile
+RUN chown -R appdynamics:appdynamics $PYENV_ROOT /home/appdynamics/.bashrc /home/appdynamics/.profile /servo
 SHELL [ "/bin/bash", "-l", "-c" ]
 RUN echo 'eval $(pyenv sh-activate --quiet)' >> /home/appdynamics/.bashrc
 
