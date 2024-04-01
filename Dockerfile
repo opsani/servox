@@ -31,7 +31,9 @@ ENV SERVO_ENV=${SERVO_ENV} \
   # PIP
   PIP_NO_CACHE_DIR=off \
   PIP_DISABLE_PIP_VERSION_CHECK=on \
-  PIP_DEFAULT_TIMEOUT=100
+  PIP_DEFAULT_TIMEOUT=100 \
+  # Poetry
+  POETRY_VIRTUALENVS_CREATE=false
 
 RUN apk -U upgrade && apk add --no-cache curl
 
