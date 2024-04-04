@@ -26,9 +26,9 @@ import fnmatch
 import functools
 import inspect
 import json as json_
-import random
 import re
 import string
+import ulid
 import weakref
 from typing import (
     Any,
@@ -1347,8 +1347,7 @@ class _PublisherMethod:
 
 
 def _random_string() -> str:
-    characters = string.ascii_lowercase + string.digits + "-"
-    return "".join(random.choice(characters) for i in range(32))
+    return str(ulid.ULID())
 
 
 class _ChannelMethod:
