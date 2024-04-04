@@ -43,7 +43,7 @@ import servo.cli
 import servo.configuration
 import servo.fast_fail
 
-DEFAULT_BASE_URL = "http://prometheus:9090"
+DEFAULT_BASE_URL = "https://prometheus:9090"
 API_PATH = "/api/v1"
 CHANNEL = "metrics.prometheus"
 

@@ -21,7 +21,7 @@ def get_hash(data: Union[list[Any], dict[Any, Any]]) -> str:
     structures (list, dict) containing such scalars. Some data items are not distinguishable, if they have
     the same representation as a string, e.g., hash(b'None') == hash('None') == hash(None)
     """
-    hasher = hashlib.md5()
+    hasher = hashlib.sha256()
     dump_container(data, hasher.update)
     return hasher.hexdigest()
 
