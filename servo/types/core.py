@@ -348,12 +348,11 @@ class BaseProgress(abc.ABC, BaseModel):
                 return self
 
             async def __anext__(self) -> Optional[int]:
-                while True:
-                    if self.progress.finished:
-                        raise StopAsyncIteration
+                if self.progress.finished:
+                    raise StopAsyncIteration
 
-                    await asyncio.sleep(self.duration.total_seconds())
-                    return self.progress
+                await asyncio.sleep(self.duration.total_seconds())
+                return self.progress
 
         self.start()
         return _Iterator(self, servo.Duration(duration))

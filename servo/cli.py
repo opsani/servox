@@ -162,7 +162,7 @@ class Context(typer.Context):
         self.connector = connector
         self.section = section
         self.limit = limit
-        return super().__init__(command, *args, **kwargs)
+        super().__init__(command, *args, **kwargs)
 
 
 class ContextMixin:
@@ -933,7 +933,6 @@ class ServoCLI(CLI):
                     )
                     sorted_connector_names = sorted(connector_types_by_name.keys())
                     for connector_name in sorted_connector_names:
-                        connector_types_by_name[connector_name]
                         event_labels = []
                         for event_name in sorted_event_names:
                             for preposition in prepositions:

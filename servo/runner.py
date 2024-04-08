@@ -352,7 +352,7 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin):
         async def giveup(_: dict) -> None:
             loop = asyncio.get_event_loop()
             self.logger.critical("retries exhausted, giving up")
-            asyncio.create_task(self.shutdown(loop))
+            asyncio.create_task(self.shutdown())
 
         try:
 

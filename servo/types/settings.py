@@ -92,7 +92,7 @@ class Setting(BaseModel, abc.ABC):
         ...
 
     @property
-    def human_readable_value(self, **kwargs) -> str:
+    def human_readable_value(self) -> str:
         """
         Returns a human readable representation of the value for use in output.
 
@@ -101,7 +101,7 @@ class Setting(BaseModel, abc.ABC):
         can provide arbitrary implementations to directly control the representation.
         """
         if isinstance(self.value, HumanReadable):
-            return cast(HumanReadable, self.value).human_readable(**kwargs)
+            return cast(HumanReadable, self.value).human_readable()
         return str(self.value)
 
     def __setattr__(self, name, value) -> None:
@@ -391,8 +391,9 @@ class CPU(RangeSetting):
 
     def __init__(self, *args, **kwargs):
         if "unit" in kwargs:
-            return super().__init__(*args, **kwargs)
-        return super().__init__(unit=Unit.cores, *args, **kwargs)
+            super().__init__(*args, **kwargs)
+        else:
+            super().__init__(unit=Unit.cores, *args, **kwargs)
 
     name: str = pydantic.Field(
         "cpu", const=True, description="Identifies the setting as a CPU setting."
@@ -425,8 +426,9 @@ class Memory(RangeSetting):
 
     def __init__(self, *args, **kwargs):
         if "unit" in kwargs:
-            return super().__init__(*args, **kwargs)
-        return super().__init__(unit=Unit.gibibytes, *args, **kwargs)
+            super().__init__(*args, **kwargs)
+        else:
+            super().__init__(unit=Unit.gibibytes, *args, **kwargs)
 
     name: str = pydantic.Field(
         "mem", const=True, description="Identifies the setting as a Memory setting."
