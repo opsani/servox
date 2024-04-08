@@ -1392,7 +1392,9 @@ class TestExchange:
         await publisher(message)
         await event.wait()
         assert current_message is not None
-        current_message = cast(Tuple[servo.pubsub.Message, servo.pubsub.Channel], current_message)
+        current_message = cast(
+            Tuple[servo.pubsub.Message, servo.pubsub.Channel], current_message
+        )
         assert current_message == (message, publisher.channels[0])
         assert current_message[1].exchange == exchange
         assert servo.pubsub.current_message() is None
@@ -1426,7 +1428,9 @@ class TestExchange:
             asyncio.gather(_publisher_func(), _subscriber_func()), timeout=3.0
         )
         assert current_message is not None
-        current_message = cast(Tuple[servo.pubsub.Message, servo.pubsub.Channel], current_message)
+        current_message = cast(
+            Tuple[servo.pubsub.Message, servo.pubsub.Channel], current_message
+        )
         assert current_message == (message, publisher.channels[0])
         assert current_message[1].exchange == exchange
         assert servo.pubsub.current_message() is None
