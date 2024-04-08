@@ -568,6 +568,9 @@ async def minikube(request, subprocess, kubeconfig: pathlib.Path) -> str:
             # https://github.com/kubernetes/minikube/issues/13621
             pytest.xfail("Minikube failed start (CA)")
 
+        if exit_code == 127 and any("minikube: not found" in line for line in stderr):
+            pytest.xfail("Minikube not installed")
+
         raise RuntimeError(
             f"failed running minikube: exited with status code {exit_code}: {stderr}"
         )
