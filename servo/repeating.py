@@ -92,7 +92,7 @@ class Mixin(pydantic.BaseModel):
                     function()
                 else:
                     if asyncio.iscoroutine(function):
-                        TypeError(
+                        raise TypeError(
                             f"function={function} must be Awaitable or Callable, but has "
                             f"type(function)={type(function)}. A developer may have invoked the "
                             "async function while/prior to passing it in here."

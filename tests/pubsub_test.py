@@ -4,7 +4,7 @@ import itertools
 import operator
 import re
 import weakref
-from typing import Callable, List, Optional
+from typing import cast, Callable, List, Optional, Tuple
 
 import freezegun
 import pydantic
@@ -1376,7 +1376,7 @@ class TestExchange:
         message = servo.pubsub.Message(text="Testing")
 
         event = asyncio.Event()
-        current_message = None
+        current_message: Tuple[servo.pubsub.Message, servo.pubsub.Channel] | None = None
 
         async def _callback(
             message: servo.pubsub.Message, channel: servo.pubsub.Channel
@@ -1392,6 +1392,9 @@ class TestExchange:
         await publisher(message)
         await event.wait()
         assert current_message is not None
+        current_message = cast(
+            Tuple[servo.pubsub.Message, servo.pubsub.Channel], current_message
+        )
         assert current_message == (message, publisher.channels[0])
         assert current_message[1].exchange == exchange
         assert servo.pubsub.current_message() is None
@@ -1403,7 +1406,7 @@ class TestExchange:
         publisher = exchange.create_publisher("metrics.http.production")
         message = servo.pubsub.Message(text="Some Message")
         event = asyncio.Event()
-        current_message = None
+        current_message: Tuple[servo.pubsub.Message, servo.pubsub.Channel] | None = None
 
         async def _publisher_func() -> None:
             # Wait for subscriber registration
@@ -1425,6 +1428,9 @@ class TestExchange:
             asyncio.gather(_publisher_func(), _subscriber_func()), timeout=3.0
         )
         assert current_message is not None
+        current_message = cast(
+            Tuple[servo.pubsub.Message, servo.pubsub.Channel], current_message
+        )
         assert current_message == (message, publisher.channels[0])
         assert current_message[1].exchange == exchange
         assert servo.pubsub.current_message() is None

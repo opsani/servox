@@ -821,7 +821,7 @@ def test_multicheck_invalid_return_type() -> None:
         class BadArgs(BaseChecks):
             @multicheck("Check something")
             def check_invalid(self) -> int:
-                123
+                return 123
 
     assert e is not None
     assert (

@@ -296,29 +296,6 @@ class SequencedOptimizer(statesman.SequencingMixin, AbstractOptimizer):
                 await self.done()
 
 
-class RandomOptimizer(AbstractOptimizer):
-    """A fake optimizer that executes state transitions in random order."""
-
-    async def next_transition(self, *args, **kwargs) -> Optional[statesman.Transition]:
-        if not self._queue:
-            return None
-
-        transitionable = random.choice(self._queue)
-        self._queue.remove(transitionable)
-        return await transitionable
-
-
-class ChaosOptimizer(AbstractOptimizer):
-    """A fake optimizer that generates chaos.
-
-    Provides resilience testing through chaos such as non-sensical metrics,
-    invalid adjustment values, etc.
-    """
-
-    async def next_transition(self, *args, **kwargs) -> Optional[statesman.Transition]:
-        pass
-
-
 #########
 
 
@@ -370,24 +347,3 @@ COMPONENTS = [
         ],
     )
 ]
-
-
-def _random_value_for_setting(setting: servo.Setting) -> Union[str, servo.Numeric]:
-    if isinstance(setting, servo.RangeSetting):
-        max = int((setting.max - setting.min) / setting.step)
-        return random.randint(0, max) * setting.step + setting.min
-    elif isinstance(setting, servo.EnumSetting):
-        return random.choice(setting.values)
-    else:
-        raise ValueError(f"unexpected setting: {repr(setting)}")
-
-
-def _random_description() -> servo.Description:
-    components = COMPONENTS.copy()
-    metrics = METRICS.copy()
-
-    for component in components:
-        for setting in component.settings:
-            setting.value = _random_value_for_setting(setting)
-
-    return servo.Description(metrics=metrics, components=components)
