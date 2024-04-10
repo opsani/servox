@@ -35,9 +35,11 @@ ENV SERVO_ENV=${SERVO_ENV} \
   # Poetry
   POETRY_VIRTUALENVS_CREATE=false
 
-RUN apk -U upgrade && apk add --no-cache curl
+# Install Vegeta
+COPY --from=vegeta /bin/vegeta /bin/vegeta
 
-RUN if [ "$BASE_IMAGE" = 'alpine:latest' ]; then \
+RUN apk -U upgrade && apk add --no-cache curl \
+  && if [ "$BASE_IMAGE" = 'alpine:latest' ]; then \
     apk add --no-cache shadow \
     && addgroup -S appdynamics \
     && groupmod -g 9001 appdynamics \
@@ -49,31 +51,26 @@ RUN if [ "$BASE_IMAGE" = 'alpine:latest' ]; then \
     && chmod 777 /var/log; \
   else \
     echo "skipping add user"; \
-  fi
-
-# Install Vegeta
-COPY --from=vegeta /bin/vegeta /bin/vegeta
-
-# Add kubectl
-RUN curl -LO https://storage.googleapis.com/kubernetes-release/release/$(curl -s https://storage.googleapis.com/kubernetes-release/release/stable.txt)/bin/linux/amd64/kubectl \
+  fi \
+  # Add kubectl
+  && curl -LO https://storage.googleapis.com/kubernetes-release/release/$(curl -s https://storage.googleapis.com/kubernetes-release/release/stable.txt)/bin/linux/amd64/kubectl \
   && chmod +x ./kubectl \
   && mv ./kubectl /usr/local/bin
-
-# Install pyenv and python
-RUN apk add --no-cache bash git
 
 ENV LANG=C.UTF-8 \
   PYENV_ROOT=/home/appdynamics/.pyenv
 ENV PATH=$PYENV_ROOT/shims:$PYENV_ROOT/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
-RUN curl -sL https://raw.githubusercontent.com/yyuu/pyenv-installer/master/bin/pyenv-installer | bash
-
-RUN apk add --no-cache \
+# Install pyenv and python
+RUN apk add --no-cache bash git \
+  && curl -sL https://raw.githubusercontent.com/yyuu/pyenv-installer/master/bin/pyenv-installer | bash \
+  && apk add --no-cache \
+  # runtime requirement
   libffi \
   # https://github.com/pyenv/pyenv/wiki#suggested-build-environment
   git bash build-base libffi-dev openssl-dev bzip2-dev zlib-dev xz-dev readline-dev sqlite-dev tk-dev \
   # Install latest libuv and build uvloop workaround for CVE-2024-24806
-  libuv
+  && apk add --no-cache --repository=http://dl-cdn.alpinelinux.org/alpine/edge/main libuv
 
 WORKDIR /servo
 COPY .python-version ./
@@ -83,19 +80,19 @@ RUN pyenv install --verbose `cat .python-version` && \
   echo 'export PYENV_ROOT="$HOME/.pyenv"' >> /home/appdynamics/.bashrc && \
   echo 'command -v pyenv >/dev/null || export PATH="$PYENV_ROOT/bin:$PATH"' >> /home/appdynamics/.bashrc && \
   echo 'eval "$(pyenv init - bash)"' >> /home/appdynamics/.bashrc && \
-  ln -s /home/appdynamics/.bashrc /home/appdynamics/.profile
-RUN chown -R appdynamics:appdynamics $PYENV_ROOT /home/appdynamics/.bashrc /home/appdynamics/.profile /servo
+  ln -s /home/appdynamics/.bashrc /home/appdynamics/.profile && \
+  chown -R appdynamics:appdynamics $PYENV_ROOT /home/appdynamics/.bashrc /home/appdynamics/.profile /servo
 SHELL [ "/bin/bash", "-l", "-c" ]
-RUN echo 'eval $(pyenv sh-activate --quiet)' >> /home/appdynamics/.bashrc
 
 USER appdynamics
 
+# setup bashrc
+RUN echo 'eval $(pyenv sh-activate --quiet)' >> /home/appdynamics/.bashrc \
 # Use system installed latest libuv and build uvloop workaround for CVE-2024-24806
 # https://github.com/MagicStack/uvloop/issues/589
-RUN pip install uvloop==0.18.0 --global-option="--use-system-libuv"
-
+  && pip install uvloop==0.18.0 --global-option="--use-system-libuv" \
 # Build Servo
-RUN pip install --upgrade pip setuptools
+  && pip install --upgrade pip setuptools
 
 # The entry point is copied in ahead of the main sources
 # so that the servo CLI is installed by Poetry. The sequencing
@@ -104,8 +101,8 @@ RUN pip install --upgrade pip setuptools
 COPY poetry.lock pyproject.toml README.md CHANGELOG.md ./
 COPY servo/entry_points.py servo/entry_points.py
 
-RUN pip install poetry==1.7.0
-RUN poetry install --no-dev --no-interaction \
+RUN pip install poetry==1.7.0 \
+  && poetry install --no-dev --no-interaction \
   # Clean poetry cache for production
   && if [ "$SERVO_ENV" = 'production' ]; then rm -rf /home/appdynamics/.cache/pypoetry; fi
 
