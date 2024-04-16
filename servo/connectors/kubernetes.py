@@ -2333,9 +2333,10 @@ class KubernetesConnector(servo.BaseConnector):
 
                         await asyncio.sleep(servo.Duration("50ms").total_seconds())
 
-                await asyncio.gather(
-                    progress.watch(progress_logger), readiness_monitor()
-                )
+                async with asyncio.TaskGroup() as tg:
+                    tg.create_task(progress.watch(progress_logger))
+                    tg.create_task(readiness_monitor())
+
                 if not await state.is_ready():
                     self.logger.warning(
                         "Rejection triggered without running error handler"
@@ -2381,15 +2382,24 @@ class KubernetesConnector(servo.BaseConnector):
             progress=p.progress,
         )
         progress = servo.EventProgress(timeout=self.config.timeout)
-        future = asyncio.create_task(KubernetesOptimizations.create(self.config))
-        future.add_done_callback(lambda _: progress.trigger())
+        try:
+            future = asyncio.create_task(KubernetesOptimizations.create(self.config))
+            future.add_done_callback(lambda _: progress.trigger())
 
-        await asyncio.gather(
-            future,
-            progress.watch(progress_logger),
-        )
+            await asyncio.gather(
+                future,
+                progress.watch(progress_logger),
+            )
 
-        return future.result()
+            return future.result()
+        except Exception as e:
+            # If running as event context, return error that will not trigger shutdown
+            if (cur_ev := servo.current_event()) is not None:
+                raise servo.EventError(
+                    message=f"Failed to created k8s optimizations: {e}", event=cur_ev
+                ) from e
+            else:
+                raise
 
 
 def dns_subdomainify(name: str) -> str:
