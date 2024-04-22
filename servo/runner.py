@@ -250,7 +250,7 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin):
         # FIXME: We have seen exceptions from using `with self.servo.current()` crossing contexts
         _set_current_servo(self.servo)
 
-        while self._running:
+        while self.running:
             try:
                 if self.interactive:
                     if not typer.confirm("Poll for next command?"):
@@ -295,15 +295,24 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin):
                 self.logger.exception(f"failed with unrecoverable error: {error}")
                 raise error
 
-    def run_main_loop(self) -> None:
-        if self._main_loop_task:
+    async def run_main_loop(self) -> None:
+        gather_cancelled = []
+        if self._main_loop_task and not self._main_loop_task.done():
             self._main_loop_task.cancel()
+            gather_cancelled.append(self._main_loop_task)
 
-        if self._diagnostics_loop_task:
+        if self._diagnostics_loop_task and not self._diagnostics_loop_task.done():
             self._diagnostics_loop_task.cancel()
+            gather_cancelled.append(self._diagnostics_loop_task)
 
-        if self._file_watcher_task:
+        if self._file_watcher_task and not self._file_watcher_task.done():
             self._file_watcher_task.cancel()
+            gather_cancelled.append(self._file_watcher_task)
+
+        if gather_cancelled:
+            await asyncio.create_task(
+                asyncio.gather(*gather_cancelled, return_exceptions=True)
+            )
 
         def _reraise_if_necessary(task: asyncio.Task) -> None:
             try:
@@ -311,7 +320,7 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin):
                     task.result()
             except Exception as error:  # pylint: disable=broad-except
                 self.logger.error(
-                    f"Exiting from servo main loop do to error: {error} (task={task})"
+                    f"Exiting from servo main loop due to error: {error} (task={task})"
                 )
                 self.logger.opt(exception=error).trace(
                     f"Exception raised by task {task}"
@@ -404,7 +413,7 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin):
             self.logger.exception("exception encountered during connect")
 
         if poll:
-            self.run_main_loop()
+            await self.run_main_loop()
         else:
             self.logger.warning(
                 f"Servo runner initialized with polling disabled -- command loop is not running"
@@ -433,6 +442,7 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
     progress_handler: Optional[servo.logging.ProgressHandler] = None
     progress_handler_id: Optional[int] = None
     _running: bool = pydantic.PrivateAttr(False)
+    _shutting_down: bool = pydantic.PrivateAttr(False)
 
     class Config:
         arbitrary_types_allowed = True
@@ -450,6 +460,10 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
     @property
     def running(self) -> bool:
         return self._running
+
+    @property
+    def shutting_down(self) -> bool:
+        return self._shutting_down
 
     def run(
         self, *, poll: bool = True, interactive: bool = False, debug: bool = False
@@ -537,6 +551,12 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
                     runner = self._runner_for_servo(servo.current_servo())
                     await runner.servo.post_event(operation, status.dict())
 
+                if self.shutting_down:
+                    self.logger.warning(
+                        "restart attmempted during shutdown of servo. aborting restart"
+                    )
+                    return
+
                 tasks = [
                     t for t in asyncio.all_tasks() if t is not asyncio.current_task()
                 ]
@@ -548,7 +568,7 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
                 # Restart a fresh main loop
                 if poll:
                     runner = self._runner_for_servo(servo.current_servo())
-                    runner.run_main_loop()
+                    await runner.run_main_loop()
 
             else:
                 self.logger.error(
@@ -695,6 +715,8 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
     async def _shutdown(self, loop: asyncio.AbstractEventLoop, signal=None) -> None:
         if not self.running:
             raise RuntimeError("Cannot shutdown an assembly that is not running")
+
+        self._shutting_down = True
 
         if signal:
             self.logger.info(f"Received exit signal {signal.name}...")
