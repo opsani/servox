@@ -994,28 +994,25 @@ class PrometheusConnector(servo.BaseConnector):
                 ),
             )
             fast_fail_progress = servo.EventProgress(timeout=measurement_duration)
-            gather_tasks = [
-                asyncio.create_task(progress.watch(self.observe)),
-                asyncio.create_task(
+            async with asyncio.TaskGroup() as tg:
+                _ = tg.create_task(progress.watch(self.observe))
+                _ = tg.create_task(
                     fast_fail_progress.watch(
-                        fast_fail_observer.observe, every=self.config.fast_fail.period
+                        fast_fail_observer.observe,
+                        every=self.config.fast_fail.period,
                     )
-                ),
-            ]
-            try:
-                await asyncio.gather(*gather_tasks)
-            except:
-                [task.cancel() for task in gather_tasks]
-                await asyncio.gather(*gather_tasks, return_exceptions=True)
-                raise
+                )
+
         else:
             await progress.watch(self.observe)
 
         # Capture the measurements
         self.logger.info(f"Querying Prometheus for {len(metrics__)} metrics...")
-        readings = await asyncio.gather(
-            *list(map(lambda m: self._query_prometheus(m, start, end), metrics__))
-        )
+        async with asyncio.TaskGroup() as tg:
+            q_tasks = [
+                tg.create_task(self._query_prometheus(m, start, end)) for m in metrics__
+            ]
+        readings = (qt.result() for qt in q_tasks)
         all_readings = (
             functools.reduce(lambda x, y: x + y, readings) if readings else []
         )
@@ -1077,9 +1074,11 @@ class PrometheusConnector(servo.BaseConnector):
         self, start: datetime, end: datetime, metrics: List[PrometheusMetric]
     ) -> Dict[str, List[servo.TimeSeries]]:
         """Query prometheus for the provided metrics and return mapping of metric names to their corresponding readings"""
-        readings = await asyncio.gather(
-            *list(map(lambda m: self._query_prometheus(m, start, end), metrics))
-        )
+        async with asyncio.TaskGroup() as tg:
+            q_tasks = [
+                tg.create_task(self._query_prometheus(m, start, end)) for m in metrics
+            ]
+        readings = (qt.result() for qt in q_tasks)
         return dict(map(lambda tup: (tup[0].name, tup[1]), zip(metrics, readings)))
 
 

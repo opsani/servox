@@ -1123,14 +1123,12 @@ class ServoCLI(CLI):
                         # gather() expects a loop to exist at invocation time which is not compatible with the run_async
                         #  execution model. wrap the gather in a standard async function to work around this
                         async def gather_checks():
-                            return await asyncio.gather(
-                                *list(
-                                    map(
-                                        lambda s: s.check_servo(print_callback),
-                                        context.assembly.servos,
-                                    )
-                                ),
-                            )
+                            async with asyncio.TaskGroup() as tg:
+                                tasks = [
+                                    tg.create_task(s.check_servo(print_callback))
+                                    for s in context.assembly.servos
+                                ]
+                            return (t.result() for t in tasks)
 
                         results = run_async(gather_checks())
                         ready = functools.reduce(lambda x, y: x and y, results)

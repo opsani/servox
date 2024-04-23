@@ -745,7 +745,11 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
         except Exception as error:
             self.logger.critical(f"Failed assembly shutdown with error: {error}")
 
-        await asyncio.gather(self.progress_handler.shutdown(), return_exceptions=True)
+        try:
+            await self.progress_handler.shutdown()
+        except Exception as error:
+            self.logger.warning(f"Failed progress handler shutdown with error: {error}")
+
         self.logger.remove(self.progress_handler_id)
 
         # Cancel any outstanding tasks -- under a clean, graceful shutdown this list will be empty

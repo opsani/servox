@@ -1038,36 +1038,31 @@ class _DispatchEvent:
                     if results:
                         break
             else:
-                group = asyncio.gather(
-                    *list(
-                        map(
-                            lambda c: c.run_event_handlers(
+                async with asyncio.TaskGroup() as tg:
+                    ev_tasks = [
+                        tg.create_task(
+                            c.run_event_handlers(
                                 self.event,
                                 Preposition.on,
                                 return_exceptions=self._return_exceptions,
                                 *self._args,
                                 **self._kwargs,
-                            ),
-                            self._connectors,
+                            )
                         )
-                    ),
-                )
-                results = await group
+                        for c in self._connectors
+                    ]
+
+                results = (et.result() for et in ev_tasks)
                 results = list(filter(lambda r: r is not None, results))
                 results = functools.reduce(lambda x, y: x + y, results, [])
 
         # Invoke the after event handlers
         if self._prepositions & Preposition.after:
-            await asyncio.gather(
-                *list(
-                    map(
-                        lambda c: c.run_event_handlers(
-                            self.event, Preposition.after, results
-                        ),
-                        self._connectors,
+            async with asyncio.TaskGroup() as tg:
+                for c in self._connectors:
+                    _ = tg.create_task(
+                        c.run_event_handlers(self.event, Preposition.after, results)
                     )
-                )
-            )
 
         if self.channel:
             await self.channel.close()
