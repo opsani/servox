@@ -1016,7 +1016,7 @@ class _DispatchEvent:
                         **self._kwargs,
                     )
 
-                except servo.errors.EventCancelledError as error:
+                except* servo.errors.EventCancelledError as error:
                     # Return an empty result set
                     servo.logger.warning(
                         f'event cancelled by before event handler on connector "{connector.name}": {error}'

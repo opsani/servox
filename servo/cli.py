@@ -1133,12 +1133,12 @@ class ServoCLI(CLI):
                         results = run_async(gather_checks())
                         ready = functools.reduce(lambda x, y: x and y, results)
 
-                except servo.ConnectorNotFoundError as e:
+                except* servo.ConnectorNotFoundError as e:
                     typer.echo(
                         "A connector named within the checks config was not found in the current Assembly"
                     )
                     raise typer.Exit(1) from e
-                except servo.EventHandlersNotFoundError as e:
+                except* servo.EventHandlersNotFoundError as e:
                     typer.echo(
                         "At least one configured connector must respond to the Check event (Note the servo "
                         "responds to checks so this error should never raise unless something is well and truly wrong"

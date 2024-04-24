@@ -2308,7 +2308,7 @@ class KubernetesConnector(servo.BaseConnector):
                             # Raise a specific exception if the optimization defines one
                             try:
                                 await state.raise_for_status()
-                            except servo.AdjustmentRejectedError as e:
+                            except* servo.AdjustmentRejectedError as e:
                                 # Update rejections with start-failed to indicate the initial rollout was successful
                                 if e.reason == "start-failed":
                                     e.reason = "unstable"
@@ -2333,6 +2333,11 @@ class KubernetesConnector(servo.BaseConnector):
                 )
 
             description = state.to_description()
+        except ExceptionGroup as eg:
+            if any(isinstance(se, servo.EventError) for se in eg.exceptions):
+                raise
+            else:
+                raise servo.AdjustmentFailedError(str(eg.message)) from eg
         except servo.EventError:  # this is recognized by the runner
             raise
         except Exception as e:
