@@ -550,6 +550,7 @@ def event_handler(
             if preposition == Preposition.before:
                 # 'before' event takes same args as 'on' event, but returns None
                 ref_signature = ref_signature.replace(return_annotation="None")
+
             servo.utilities.inspect.assert_equal_callable_descriptors(
                 servo.utilities.inspect.CallableDescriptor(
                     signature=ref_signature,
@@ -891,6 +892,7 @@ class Mixin:
                             value=error,
                         )
 
+                        # TODO refactor to use ExceptionGroups with events retrievable from exceptions
                         if return_exceptions:
                             results.append(error.__event_result__)
                         else:
@@ -1006,36 +1008,34 @@ class _DispatchEvent:
 
         # Invoke the before event handlers
         if self._prepositions & Preposition.before:
-            for connector in self._connectors:
-                try:
-                    results = await connector.run_event_handlers(
-                        self.event,
-                        Preposition.before,
-                        *self._args,
-                        return_exceptions=False,
-                        **self._kwargs,
-                    )
+            try:
+                async with asyncio.TaskGroup() as tg:
+                    for connector in self._connectors:
+                        tg.create_task(
+                            connector.run_event_handlers(
+                                self.event,
+                                Preposition.before,
+                                *self._args,
+                                return_exceptions=False,
+                                **self._kwargs,
+                            )
+                        )
 
-                except servo.errors.EventCancelledError as error:
+            except ExceptionGroup as eg:
+                cancelled_errs = [
+                    sub_e
+                    for sub_e in eg.exceptions
+                    if isinstance(sub_e, servo.errors.EventCancelledError)
+                ]
+                if cancelled_errs:
                     # Return an empty result set
+                    canceller_names = (ce.connector.name for ce in cancelled_errs)
                     servo.logger.warning(
-                        f'event cancelled by before event handler on connector "{connector.name}": {error}'
+                        f'event cancelled by before event handler on connector "{", ".join(canceller_names)}": {eg.exceptions}'
                     )
                     return []
-                except ExceptionGroup as eg:
-                    if any(
-                        (
-                            isinstance(se, servo.errors.EventCancelledError)
-                            for se in eg.exceptions
-                        )
-                    ):
-                        # Return an empty result set
-                        servo.logger.warning(
-                            f'event cancelled by before event handler on connector "{connector.name}": {eg}'
-                        )
-                        return []
-                    else:
-                        raise
+                else:
+                    raise
 
         # Invoke the on event handlers and gather results
         if self._prepositions & Preposition.on:
@@ -1052,21 +1052,23 @@ class _DispatchEvent:
                     if results:
                         break
             else:
-                async with asyncio.TaskGroup() as tg:
-                    ev_tasks = [
-                        tg.create_task(
-                            c.run_event_handlers(
-                                self.event,
-                                Preposition.on,
-                                return_exceptions=self._return_exceptions,
-                                *self._args,
-                                **self._kwargs,
-                            )
-                        )
-                        for c in self._connectors
-                    ]
+                tasks = (
+                    c.run_event_handlers(
+                        self.event,
+                        Preposition.on,
+                        return_exceptions=self._return_exceptions,
+                        *self._args,
+                        **self._kwargs,
+                    )
+                    for c in self._connectors
+                )
+                if self._return_exceptions:
+                    results = await asyncio.gather(*tasks)
+                else:
+                    async with asyncio.TaskGroup() as tg:
+                        tg_tasks = [tg.create_task(t) for t in tasks]
+                    results = (tt.result() for tt in tg_tasks)
 
-                results = (et.result() for et in ev_tasks)
                 results = list(filter(lambda r: r is not None, results))
                 results = functools.reduce(lambda x, y: x + y, results, [])
 

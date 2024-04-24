@@ -272,7 +272,7 @@ async def test_cancellation_of_event_from_before_handler(mocker, servo: Servo):
 
     # Mock the before handler to throw a cancel exception
     mock = mocker.patch.object(before_handler, "handler")
-    mock.side_effect = EventCancelledError("it burns when I pee")
+    mock.side_effect = EventCancelledError("it burns when I pee", connector=connector)
     results = await servo.dispatch_event("promote")
 
     # Check that on and after callbacks were never called
@@ -284,7 +284,7 @@ async def test_cancellation_of_event_from_before_handler(mocker, servo: Servo):
     assert messages[0].record["level"].name == "WARNING"
     assert (
         messages[0].record["message"]
-        == 'event cancelled by before event handler on connector "first_test_servo": it burns when I pee'
+        == "event cancelled by before event handler on connector \"first_test_servo\": (EventCancelledError('it burns when I pee'),)"
     )
 
 
