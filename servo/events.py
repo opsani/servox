@@ -1016,12 +1016,20 @@ class _DispatchEvent:
                         **self._kwargs,
                     )
 
-                except* servo.errors.EventCancelledError as error:
-                    # Return an empty result set
-                    servo.logger.warning(
-                        f'event cancelled by before event handler on connector "{connector.name}": {error}'
-                    )
-                    return []
+                except ExceptionGroup as eg:
+                    if any(
+                        (
+                            isinstance(se, servo.errors.EventCancelledError)
+                            for se in eg.exceptions
+                        )
+                    ):
+                        # Return an empty result set
+                        servo.logger.warning(
+                            f'event cancelled by before event handler on connector "{connector.name}": {eg}'
+                        )
+                        return []
+                    else:
+                        raise
 
         # Invoke the on event handlers and gather results
         if self._prepositions & Preposition.on:
