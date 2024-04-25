@@ -1011,7 +1011,7 @@ class _DispatchEvent:
             try:
                 async with asyncio.TaskGroup() as tg:
                     for connector in self._connectors:
-                        tg.create_task(
+                        _ = tg.create_task(
                             connector.run_event_handlers(
                                 self.event,
                                 Preposition.before,
