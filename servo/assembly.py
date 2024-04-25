@@ -150,9 +150,9 @@ class Assembly(pydantic.BaseModel):
         )
 
         # Attach all connectors to the servo
-        await asyncio.gather(
-            *list(map(lambda s: s.dispatch_event(servo.servo.Events.attach, s), servos))
-        )
+        async with asyncio.TaskGroup() as tg:
+            for s in servos:
+                _ = tg.create_task(s.dispatch_event(servo.servo.Events.attach, s))
 
         return assembly
 

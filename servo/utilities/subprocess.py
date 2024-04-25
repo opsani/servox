@@ -314,29 +314,28 @@ async def stream_subprocess_output(
     :raises asyncio.TimeoutError: Raised if the timeout expires before the subprocess exits.
     :return: The exit status of the subprocess.
     """
-    tasks = []
-    if process.stdout:
-        tasks.append(
-            asyncio.create_task(
-                _read_lines_from_output_stream(process.stdout, stdout_callback),
-                name="stdout",
-            )
-        )
-    if process.stderr:
-        tasks.append(
-            asyncio.create_task(
-                _read_lines_from_output_stream(process.stderr, stderr_callback),
-                name="stderr",
-            )
-        )
 
     timeout_in_seconds = (
         timeout.total_seconds() if isinstance(timeout, datetime.timedelta) else timeout
     )
     try:
-        # Gather the stream output tasks and the parent process
-        gather_task = asyncio.gather(*tasks, process.wait())
-        await asyncio.wait_for(gather_task, timeout=timeout_in_seconds)
+        async with asyncio.timeout(delay=timeout_in_seconds):
+            async with asyncio.TaskGroup() as tg:
+                if process.stdout:
+                    tg.create_task(
+                        _read_lines_from_output_stream(process.stdout, stdout_callback),
+                        name="stdout",
+                    )
+
+                if process.stderr:
+                    tg.create_task(
+                        _read_lines_from_output_stream(process.stderr, stderr_callback),
+                        name="stderr",
+                    )
+
+                tg.create_task(process.wait())
+
+                # Gather the stream output tasks and the parent process (with block does not exit until error or all complete)
 
     except (asyncio.TimeoutError, asyncio.CancelledError):
         with contextlib.suppress(ProcessLookupError):
@@ -350,12 +349,6 @@ async def stream_subprocess_output(
                     )
                     process.kill()
                     await process.wait()
-
-        with contextlib.suppress(asyncio.CancelledError):
-            await gather_task
-
-        [task.cancel() for task in tasks]
-        await asyncio.gather(*tasks, return_exceptions=True)
 
         raise
 

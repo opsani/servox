@@ -1141,27 +1141,15 @@ class CanaryOptimization(BaseOptimization):
             )
         )
         progress.start()
-
-        task = asyncio.create_task(PodHelper.wait_until_ready(tuning_pod))
-        task.add_done_callback(lambda _: progress.complete())
-        gather_task = asyncio.gather(
-            task,
-            progress.watch(progress_logger),
-        )
-
         try:
-            await asyncio.wait_for(gather_task, timeout=self.timeout.total_seconds())
+            async with asyncio.timeout(delay=self.timeout.total_seconds()):
+                async with asyncio.TaskGroup() as tg:
+                    task = tg.create_task(PodHelper.wait_until_ready(tuning_pod))
+                    task.add_done_callback(lambda _: progress.complete())
+                    _ = tg.create_task(progress.watch(progress_logger))
 
         except asyncio.TimeoutError:
             servo.logger.error(f"Timed out waiting for Tuning Pod to become ready...")
-            servo.logger.debug(f"Cancelling Task: {task}, progress: {progress}")
-            for t in {task, gather_task}:
-                t.cancel()
-                with contextlib.suppress(asyncio.CancelledError):
-                    await t
-                    servo.logger.debug(f"Cancelled Task: {t}, progress: {progress}")
-
-            # get latest status of tuning pod for raise_for_status
             await self.raise_for_status()
 
         # Hydrate local state
@@ -1631,34 +1619,32 @@ class KubernetesOptimizations(pydantic.BaseModel, servo.logging.Mixin):
         # TODO: Run sanity checks to look for out of band changes
 
     async def raise_for_status(self) -> None:
-        handle_error_tasks = []
+        # TODO: first handle_error_task to raise will likely interrupt other tasks.
+        #   Gather with return_exceptions=True and aggregate resulting exceptions into group before raising
+        async with asyncio.TaskGroup() as tg:
 
-        def _raise_for_task(task: asyncio.Task, optimization: BaseOptimization) -> None:
-            if task.done() and not task.cancelled():
-                if exception := task.exception():
-                    handle_error_tasks.append(
-                        asyncio.create_task(optimization.handle_error(exception))
-                    )
+            def _raise_for_task(
+                task: asyncio.Task, optimization: BaseOptimization
+            ) -> None:
+                if task.done() and not task.cancelled():
+                    if exception := task.exception():
+                        _ = tg.create_task(optimization.handle_error(exception))
 
-        tasks = []
-        for optimization in self.optimizations:
-            task = asyncio.create_task(optimization.raise_for_status())
-            task.add_done_callback(
-                functools.partial(_raise_for_task, optimization=optimization)
-            )
-            tasks.append(task)
+            tasks = []
+            for optimization in self.optimizations:
+                task = asyncio.create_task(optimization.raise_for_status())
+                task.add_done_callback(
+                    functools.partial(_raise_for_task, optimization=optimization)
+                )
+                tasks.append(task)
 
-        for future in asyncio.as_completed(
-            tasks, timeout=self.config.timeout.total_seconds()
-        ):
-            try:
-                await future
-            except Exception as error:
-                servo.logger.exception(f"Optimization failed with error: {error}")
-
-        # TODO: first handler to raise will likely interrupt other tasks.
-        #   Gather with return_exceptions=True and aggregate resulting exceptions before raising
-        await asyncio.gather(*handle_error_tasks)
+            for future in asyncio.as_completed(
+                tasks, timeout=self.config.timeout.total_seconds()
+            ):
+                try:
+                    await future
+                except Exception as error:
+                    servo.logger.exception(f"Optimization failed with error: {error}")
 
     async def is_ready(self):
         if self.optimizations:
@@ -1666,14 +1652,13 @@ class KubernetesOptimizations(pydantic.BaseModel, servo.logging.Mixin):
                 f"Checking for readiness of {len(self.optimizations)} optimizations"
             )
             try:
-                results = await asyncio.wait_for(
-                    asyncio.gather(
-                        *list(map(lambda a: a.is_ready(), self.optimizations)),
-                    ),
-                    timeout=self.config.timeout.total_seconds(),
-                )
+                async with asyncio.timeout(delay=self.config.timeout.total_seconds()):
+                    async with asyncio.TaskGroup() as tg:
+                        results = [
+                            tg.create_task(o.is_ready()) for o in self.optimizations
+                        ]
 
-                return all(results)
+                return all((r.result() for r in results))
 
             except asyncio.TimeoutError:
                 return False
@@ -2297,15 +2282,13 @@ class KubernetesConnector(servo.BaseConnector):
             progress=p.progress,
         )
         progress = servo.EventProgress(timeout=self.config.timeout)
-        future = asyncio.create_task(state.apply(adjustments))
-        future.add_done_callback(lambda _: progress.trigger())
 
         # Catch-all for spaghettified non-EventError usage
         try:
-            await asyncio.gather(
-                future,
-                progress.watch(progress_logger),
-            )
+            async with asyncio.TaskGroup() as tg:
+                future = tg.create_task(state.apply(adjustments))
+                future.add_done_callback(lambda _: progress.trigger())
+                _ = tg.create_task(progress.watch(progress_logger))
 
             # Handle settlement
             settlement = control.settlement or self.config.settlement
@@ -2325,7 +2308,7 @@ class KubernetesConnector(servo.BaseConnector):
                             # Raise a specific exception if the optimization defines one
                             try:
                                 await state.raise_for_status()
-                            except servo.AdjustmentRejectedError as e:
+                            except* servo.AdjustmentRejectedError as e:
                                 # Update rejections with start-failed to indicate the initial rollout was successful
                                 if e.reason == "start-failed":
                                     e.reason = "unstable"
@@ -2350,6 +2333,11 @@ class KubernetesConnector(servo.BaseConnector):
                 )
 
             description = state.to_description()
+        except ExceptionGroup as eg:
+            if any(isinstance(sub_e, servo.EventError) for sub_e in eg.exceptions):
+                raise
+            else:
+                raise servo.AdjustmentFailedError(str(eg.message)) from eg
         except servo.EventError:  # this is recognized by the runner
             raise
         except Exception as e:
@@ -2383,13 +2371,10 @@ class KubernetesConnector(servo.BaseConnector):
         )
         progress = servo.EventProgress(timeout=self.config.timeout)
         try:
-            future = asyncio.create_task(KubernetesOptimizations.create(self.config))
-            future.add_done_callback(lambda _: progress.trigger())
-
-            await asyncio.gather(
-                future,
-                progress.watch(progress_logger),
-            )
+            async with asyncio.TaskGroup() as tg:
+                future = tg.create_task(KubernetesOptimizations.create(self.config))
+                future.add_done_callback(lambda _: progress.trigger())
+                _ = tg.create_task(progress.watch(progress_logger))
 
             return future.result()
         except Exception as e:

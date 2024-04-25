@@ -160,7 +160,7 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin):
                     descriptor=description.__opsani_repr__(),
                     command_uid=cmd_response.command_uid,
                 )
-            except servo.errors.EventError as error:
+            except* servo.errors.EventError as error:
                 self.logger.error(f"Describe failed: {error}")
                 status = servo.api.Status.from_error(
                     error=error,
@@ -183,7 +183,7 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin):
                     command_uid=cmd_response.command_uid,
                     **measurement.__opsani_repr__(),
                 )
-            except servo.errors.EventError as error:
+            except* servo.errors.EventError as error:
                 self.logger.error(f"Measurement failed: {error}")
                 status = servo.api.Status.from_error(
                     error=error,
@@ -215,7 +215,7 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin):
                 self.logger.success(
                     f"Adjusted: {components_count} components, {settings_count} settings"
                 )
-            except servo.EventError as error:
+            except* servo.EventError as error:
                 self.logger.error(f"Adjustment failed: {error}")
                 status = servo.api.Status.from_error(
                     error,
@@ -557,6 +557,7 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
                     )
                     return
 
+                # TODO try to abort a TaskGroup here
                 tasks = [
                     t for t in asyncio.all_tasks() if t is not asyncio.current_task()
                 ]
@@ -745,11 +746,16 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
         except Exception as error:
             self.logger.critical(f"Failed assembly shutdown with error: {error}")
 
-        await asyncio.gather(self.progress_handler.shutdown(), return_exceptions=True)
+        try:
+            await self.progress_handler.shutdown()
+        except Exception as error:
+            self.logger.warning(f"Failed progress handler shutdown with error: {error}")
+
         self.logger.remove(self.progress_handler_id)
 
         # Cancel any outstanding tasks -- under a clean, graceful shutdown this list will be empty
         # The shutdown of the assembly and the servo should clean up its tasks
+        # TODO try killing a task group here instead
         tasks = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
         if len(tasks):
             [task.cancel() for task in tasks]

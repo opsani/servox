@@ -272,7 +272,7 @@ async def test_cancellation_of_event_from_before_handler(mocker, servo: Servo):
 
     # Mock the before handler to throw a cancel exception
     mock = mocker.patch.object(before_handler, "handler")
-    mock.side_effect = EventCancelledError("it burns when I pee")
+    mock.side_effect = EventCancelledError("it burns when I pee", connector=connector)
     results = await servo.dispatch_event("promote")
 
     # Check that on and after callbacks were never called
@@ -284,7 +284,7 @@ async def test_cancellation_of_event_from_before_handler(mocker, servo: Servo):
     assert messages[0].record["level"].name == "WARNING"
     assert (
         messages[0].record["message"]
-        == 'event cancelled by before event handler on connector "first_test_servo": it burns when I pee'
+        == "event cancelled by before event handler on connector \"first_test_servo\": (EventCancelledError('it burns when I pee'),)"
     )
 
 
@@ -314,9 +314,9 @@ async def test_cannot_cancel_from_on_handlers(mocker, servo: Servo):
 
     mock = mocker.patch.object(event_handler, "handler")
     mock.side_effect = EventCancelledError()
-    with pytest.raises(TypeError) as error:
+    with pytest.raises(ExceptionGroup) as error:
         await servo.dispatch_event("promote")
-    assert str(error.value) == "Cannot cancel an event from an on handler"
+    assert str(error.value.exceptions[0]) == "Cannot cancel an event from an on handler"
 
 
 async def test_cannot_cancel_from_after_handlers_warning(mocker, servo: Servo):
@@ -326,9 +326,11 @@ async def test_cannot_cancel_from_after_handlers_warning(mocker, servo: Servo):
     mock = mocker.patch.object(event_handler, "handler")
     mock.side_effect = EventCancelledError()
 
-    with pytest.raises(TypeError) as error:
+    with pytest.raises(ExceptionGroup) as error:
         await servo.dispatch_event("promote")
-    assert str(error.value) == "Cannot cancel an event from an after handler"
+    assert (
+        str(error.value.exceptions[0]) == "Cannot cancel an event from an after handler"
+    )
 
 
 async def test_after_handlers_are_not_called_on_failure_raises(mocker, servo: Servo):
@@ -340,9 +342,10 @@ async def test_after_handlers_are_not_called_on_failure_raises(mocker, servo: Se
     on_handler = connector.get_event_handlers("promote", Preposition.on)[0]
     mock = mocker.patch.object(on_handler, "handler")
     mock.side_effect = EventError()
-    with pytest.raises(EventError):
+    with pytest.raises(ExceptionGroup) as error:
         await servo.dispatch_event("promote", return_exceptions=False)
 
+    assert isinstance(error.value.exceptions[0], EventError)
     spy.assert_not_called()
 
 
