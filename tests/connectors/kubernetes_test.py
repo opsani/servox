@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Type
+from typing import Annotated, Type
 
 import httpx
 import kubetest.client
@@ -68,7 +68,7 @@ class TestDNSSubdomainName:
     @pytest.fixture
     def model(self) -> Type[BaseModel]:
         class Model(BaseModel):
-            name: DNSSubdomainName
+            name: Annotated[str, DNSSubdomainName()]
 
         return Model
 
@@ -120,10 +120,10 @@ class TestDNSSubdomainName:
         assert e
         assert {
             "loc": ("name",),
-            "msg": f'string does not match regex "{DNSSubdomainName.regex.pattern}"',
+            "msg": f'string does not match regex "{DNSSubdomainName().regex.pattern}"',
             "type": "value_error.str.regex",
             "ctx": {
-                "pattern": DNSSubdomainName.regex.pattern,
+                "pattern": DNSSubdomainName().regex.pattern,
             },
         } in e.value.errors()
 
@@ -137,10 +137,10 @@ class TestDNSSubdomainName:
         assert e
         assert {
             "loc": ("name",),
-            "msg": f'string does not match regex "{DNSSubdomainName.regex.pattern}"',
+            "msg": f'string does not match regex "{DNSSubdomainName().regex.pattern}"',
             "type": "value_error.str.regex",
             "ctx": {
-                "pattern": DNSSubdomainName.regex.pattern,
+                "pattern": DNSSubdomainName().regex.pattern,
             },
         } in e.value.errors()
 
@@ -154,10 +154,10 @@ class TestDNSSubdomainName:
         assert e
         assert {
             "loc": ("name",),
-            "msg": f'string does not match regex "{DNSSubdomainName.regex.pattern}"',
+            "msg": f'string does not match regex "{DNSSubdomainName().regex.pattern}"',
             "type": "value_error.str.regex",
             "ctx": {
-                "pattern": DNSSubdomainName.regex.pattern,
+                "pattern": DNSSubdomainName().regex.pattern,
             },
         } in e.value.errors()
 

@@ -262,7 +262,11 @@ class FakeAPI(uvicorn.Server):
     """
 
     def __init__(
-        self, app: fastapi.FastAPI, host: str = "127.0.0.1", port: int = 8000
+        self,
+        app: fastapi.FastAPI,
+        host: str = "127.0.0.1",
+        port: int = 8000,
+        task_group: asyncio.TaskGroup | None = None,
     ) -> None:
         """Initialize a FakeAPI instance by mounting a FastAPI app and starting Uvicorn.
 
@@ -272,6 +276,7 @@ class FakeAPI(uvicorn.Server):
             port (int, optional): the port. Defaults to 8000.
         """
         self._startup_done = asyncio.Event()
+        self._task_group = task_group
         super().__init__(config=uvicorn.Config(app, host=host, port=port))
 
     async def startup(self, sockets: Optional[List] = None) -> None:
@@ -281,7 +286,10 @@ class FakeAPI(uvicorn.Server):
 
     async def start(self) -> None:
         """Start up the server and wait for it to initialize."""
-        self._serve_task = asyncio.create_task(self.serve())
+        if self._task_group:
+            self._serve_task = self._task_group.create_task(self.serve())
+        else:
+            self._serve_task = asyncio.create_task(self.serve())
         await self._startup_done.wait()
 
     async def stop(self) -> None:

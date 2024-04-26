@@ -95,12 +95,14 @@ class ProgressHandler:
         exception_handler: Optional[
             Callable[[dict[str, Any], Exception], Optional[Awaitable[None]]]
         ] = None,
+        task_group: Optional[asyncio.TaskGroup] = None,
     ) -> None:  # noqa: D107
         self._progress_reporter = progress_reporter
         self._error_reporter = error_reporter
         self._exception_handler = exception_handler
         self._queue: asyncio.Queue[Any] = asyncio.Queue()
         self._queue_processor: Optional[asyncio.Task[Any]] = None
+        self._task_group: Optional[asyncio.TaskGroup] = task_group
 
     async def sink(self, message: loguru.Message) -> None:
         """Enqueue asynchronous tasks for reporting status of operations in progress.
@@ -110,13 +112,26 @@ class ProgressHandler:
         Implemented as a sink versus a `logging.Handler` because the Python stdlib logging package isn't async.
         """
         if self._queue_processor is None:
-            self._queue_processor = asyncio.create_task(self._process_queue())
+            if self._task_group:
+                self._queue_processor = self._task_group.create_task(
+                    self._process_queue()
+                )
+            else:
+                self._queue_processor = asyncio.create_task(self._process_queue())
 
         record = message.record
         extra = record["extra"]
         progress = extra.get("progress", None)
         if not progress:
             return
+
+        # Favor explicit connector in extra (see Mixin) else use the context var
+        servo_ = extra.get("servo", servo.current_servo())
+        if not servo_:
+            return await self._report_error(
+                "declining request to report progress for record without a servo_ attribute",
+                record,
+            )
 
         # Favor explicit connector in extra (see Mixin) else use the context var
         connector = extra.get("connector", servo.current_connector())
@@ -152,13 +167,14 @@ class ProgressHandler:
 
         self._queue.put_nowait(
             dict(
-                operation=operation,
-                progress=progress,
+                command_uid=command_uid,
                 connector=connector_name,
                 event_context=event_context,
-                started_at=started_at,
                 message=message,
-                command_uid=command_uid,
+                operation=operation,
+                progress=progress,
+                servo=servo_,
+                started_at=started_at,
             )
         )
 

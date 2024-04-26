@@ -28,6 +28,8 @@ import pathlib
 import pydantic
 import re
 from typing import (
+    Annotated,
+    Any,
     AsyncIterator,
     Collection,
     Dict,
@@ -1670,12 +1672,22 @@ class KubernetesOptimizations(pydantic.BaseModel, servo.logging.Mixin):
         arbitrary_types_allowed = True
 
 
-DNSSubdomainName = pydantic.constr(
-    strip_whitespace=True,
-    min_length=1,
-    max_length=253,
-    regex="^[0-9a-zA-Z]([0-9a-zA-Z\\.-])*[0-9A-Za-z]$",
-)
+def DNSSubdomainName(description: str | None = None) -> Any:
+    return pydantic.Field(
+        strip_whitespace=True,
+        min_length=1,
+        max_length=253,
+        regex="^[0-9a-zA-Z]([0-9a-zA-Z\\.-])*[0-9A-Za-z]$",
+        description=description,
+    )
+
+
+# DNSSubdomainName = pydantic.constr(
+#     strip_whitespace=True,
+#     min_length=1,
+#     max_length=253,
+#     regex="^[0-9a-zA-Z]([0-9a-zA-Z\\.-])*[0-9A-Za-z]$",
+# )
 DNSSubdomainName.__doc__ = """DNSSubdomainName models a Kubernetes DNS Subdomain Name used as the name for most resource types.
 
     Valid DNS Subdomain Names conform to [RFC 1123](https://tools.ietf.org/html/rfc1123) and must:
@@ -1687,13 +1699,21 @@ DNSSubdomainName.__doc__ = """DNSSubdomainName models a Kubernetes DNS Subdomain
     See https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#dns-subdomain-names
     """
 
-
-DNSLabelName = pydantic.constr(
-    strip_whitespace=True,
-    min_length=1,
-    max_length=63,
-    regex="^[0-9a-zA-Z]([0-9a-zA-Z-])*[0-9A-Za-z]$",
-)
+DNSLabelName = Annotated[
+    str,
+    pydantic.Field(
+        strip_whitespace=True,
+        min_length=1,
+        max_length=63,
+        regex="^[0-9a-zA-Z]([0-9a-zA-Z-])*[0-9A-Za-z]$",
+    ),
+]
+# DNSLabelName = pydantic.constr(
+#     strip_whitespace=True,
+#     min_length=1,
+#     max_length=63,
+#     regex="^[0-9a-zA-Z]([0-9a-zA-Z-])*[0-9A-Za-z]$",
+# )
 DNSLabelName.__doc__ = """DNSLabelName models a Kubernetes DNS Label Name identified used to name some resource types.
 
     Valid DNS Label Names conform to [RFC 1123](https://tools.ietf.org/html/rfc1123) and must:
@@ -1706,12 +1726,20 @@ DNSLabelName.__doc__ = """DNSLabelName models a Kubernetes DNS Label Name identi
     """
 
 
-ContainerTagName = pydantic.constr(
-    strip_whitespace=True,
-    min_length=1,
-    max_length=128,
-    regex="^[0-9a-zA-Z]([0-9a-zA-Z_\\.\\-/:@])*$",
-)  # NOTE: This regex is not a full validation
+ContainerTagName = Annotated[
+    str,
+    pydantic.Field(
+        min_length=1,
+        max_length=128,
+        pattern="^[0-9a-zA-Z]([0-9a-zA-Z_\\.\\-/:@])*$",
+        strip_whitespace=True,
+    ),
+]
+# ContainerTagName = pydantic.constr(
+#     min_length=1,
+#     max_length=128,
+#     regex="^[0-9a-zA-Z]([0-9a-zA-Z_\\.\\-/:@])*$",
+# )  # NOTE: This regex is not a full validation
 ContainerTagName.__doc__ = """ContainerTagName models the name of a container referenced in a Kubernetes manifest.
 
     Valid container tags must:
@@ -1844,9 +1872,14 @@ class BaseKubernetesConfiguration(servo.BaseConfiguration):
     context: Optional[str] = pydantic.Field(
         description="Name of the kubeconfig context to use."
     )
-    namespace: Optional[DNSSubdomainName] = pydantic.Field(
-        description="Kubernetes namespace where the target deployments are running.",
-    )
+    namespace: Optional[
+        Annotated[
+            str,
+            DNSSubdomainName(
+                "Kubernetes namespace where the target deployments are running."
+            ),
+        ]
+    ]
     settlement: Optional[servo.Duration] = pydantic.Field(
         description="Duration to observe the application after an adjust to ensure the deployment is stable. May be overridden by optimizer supplied `control.adjust.settlement` value."
     )
@@ -1887,7 +1920,7 @@ class DeploymentConfiguration(BaseKubernetesConfiguration):
     The DeploymentConfiguration class models the configuration of an optimizable Kubernetes Deployment.
     """
 
-    name: DNSSubdomainName
+    name: Annotated[str, DNSSubdomainName()]
     containers: List[ContainerConfiguration]
     strategy: StrategyTypes = OptimizationStrategy.default
     replicas: servo.Replicas
@@ -1904,7 +1937,7 @@ class StatefulSetConfiguration(DeploymentConfiguration):
 
 
 class KubernetesConfiguration(BaseKubernetesConfiguration):
-    namespace: DNSSubdomainName = DNSSubdomainName("default")
+    namespace: Annotated[str, DNSSubdomainName()] = "default"
     timeout: servo.Duration = "5m"
     permissions: List[PermissionSet] = pydantic.Field(
         STANDARD_PERMISSIONS,

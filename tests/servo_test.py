@@ -7,8 +7,10 @@ from pathlib import Path
 from typing import List
 from httpcore import Origin
 
+from devtools import debug
 import httpx
 import pytest
+import respx
 import yaml
 from pydantic import Extra, ValidationError
 
@@ -404,12 +406,20 @@ async def test_dispatching_multiple_specific_prepositions(mocker, servo: Servo) 
     after_spy.assert_not_called()
 
 
+api_mock = respx.mock(base_url="https://api.opsani.com/", assert_all_called=True)
+api_mock.post("/accounts/dev.opsani.com/applications/servox/servo", name="servo").mock(
+    return_value=httpx.Response(200, json={"status": "ok"}),
+)
+
+
+@api_mock
 async def test_startup_event(mocker, servo: Servo) -> None:
     connector = servo.get_connector("first_test_servo")
     await servo.startup()
     assert connector.started_up == True
 
 
+@api_mock
 async def test_startup_starts_pubsub_exchange(mocker, servo: Servo) -> None:
     servo.get_connector("first_test_servo")
     assert not servo.pubsub_exchange.running
@@ -418,6 +428,7 @@ async def test_startup_starts_pubsub_exchange(mocker, servo: Servo) -> None:
     await servo.pubsub_exchange.shutdown()
 
 
+@api_mock
 async def test_shutdown_event(mocker, servo: Servo) -> None:
     await servo.startup()
     connector = servo.get_connector("first_test_servo")
@@ -427,6 +438,7 @@ async def test_shutdown_event(mocker, servo: Servo) -> None:
     on_spy.assert_called()
 
 
+@api_mock
 async def test_shutdown_event_stops_pubsub_exchange(mocker, servo: Servo) -> None:
     await servo.startup()
     assert servo.pubsub_exchange.running

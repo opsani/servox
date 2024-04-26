@@ -18,13 +18,6 @@ class RepeatingConnector(BaseConnector):
         extra = Extra.allow
 
 
-@pytest.fixture(autouse=True)
-async def cleanup_tasks() -> None:
-    yield
-    tasks = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
-    [task.cancel() for task in tasks]
-
-
 @pytest.mark.parametrize("every", [0.1, Duration(0.1), "0.1s", "1ms", "1ns"])
 async def test_start_repeating_task(mocker, every):
     connector = RepeatingConnector.construct()

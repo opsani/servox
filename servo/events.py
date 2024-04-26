@@ -27,6 +27,7 @@ import weakref
 from typing import (
     Any,
     AsyncContextManager,
+    AsyncGenerator,
     Awaitable,
     Callable,
     Dict,
@@ -364,7 +365,7 @@ def create_event(
 
     def _default_context_manager() -> AsyncContextManager:
         # Simply yield to the on event handler
-        async def fn(self) -> None:
+        async def fn(_) -> AsyncGenerator[None, None, None]:
             yield
 
         return contextlib.asynccontextmanager(fn)

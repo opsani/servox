@@ -757,53 +757,52 @@ class CheckHelpers(pydantic.BaseModel, servo.logging.Mixin):
 
         checks: list[Check] = functools.reduce(lambda a, b: a + b.value, results, [])
 
-        for check in checks:
-            if check.success:
-                # FIXME: This should hold Check objects but hashing isn't matching
-                if check.id not in passing:
-                    # calling loguru with kwargs (component) triggers a str.format call which trips up on names with single curly braces
-                    servo.logger.success(
-                        f"✅ Check '{check.escaped_name}' passed",
-                        component=check.id,
+        async with asyncio.TaskGroup() as tg:
+            for check in checks:
+                if check.success:
+                    # FIXME: This should hold Check objects but hashing isn't matching
+                    if check.id not in passing:
+                        # calling loguru with kwargs (component) triggers a str.format call which trips up on names with single curly braces
+                        servo.logger.success(
+                            f"✅ Check '{check.escaped_name}' passed",
+                            component=check.id,
+                        )
+                        passing.add(check.id)
+                else:
+                    failure = check
+                    servo.logger.warning(
+                        f"❌ Check '{failure.name}' failed ({len(passing)} passed): {failure.message}"
                     )
-                    passing.add(check.id)
-            else:
-                failure = check
-                servo.logger.warning(
-                    f"❌ Check '{failure.name}' failed ({len(passing)} passed): {failure.message}"
-                )
-                if failure.hint:
-                    servo.logger.info(f"Hint: {failure.hint}")
+                    if failure.hint:
+                        servo.logger.info(f"Hint: {failure.hint}")
 
-                if failure.exception:
-                    servo.logger.opt(exception=failure.exception).debug(
-                        "check.exception"
-                    )
+                    if failure.exception:
+                        servo.logger.opt(exception=failure.exception).debug(
+                            "check.exception"
+                        )
 
-                if failure.remedy:
-                    if asyncio.iscoroutinefunction(failure.remedy):
-                        task = asyncio.create_task(failure.remedy())
-                    elif asyncio.iscoroutine(failure.remedy):
-                        task = asyncio.create_task(failure.remedy)
-                    else:
-
-                        async def fn() -> None:
-                            result = failure.remedy()
-                            if asyncio.iscoroutine(result):
-                                await result
-
-                        task = asyncio.create_task(fn())
-
-                    if checks_config.remedy:
-                        servo.logger.info("💡 Attempting to apply remedy...")
+                    if failure.remedy and checks_config.remedy:
                         try:
-                            await asyncio.wait_for(task, 10.0)
-                        except asyncio.TimeoutError as error:
+                            async with asyncio.timeout(10.0):
+                                if asyncio.iscoroutinefunction(failure.remedy):
+                                    awaitable = failure.remedy()
+                                elif asyncio.iscoroutine(failure.remedy):
+                                    awaitable = failure.remedy
+                                else:
+
+                                    async def awaitable() -> None:
+                                        result = failure.remedy()
+                                        if asyncio.iscoroutine(result):
+                                            await result
+
+                                    _ = tg.create_task(awaitable)
+                                    servo.logger.info("💡 Attempting to apply remedy...")
+
+                        except asyncio.TimeoutError:
                             servo.logger.warning("💡 Remedy attempt timed out after 10s")
-                    else:
-                        task.cancel()
-                if checks_config.check_halting:
-                    break
+
+                    if checks_config.check_halting:
+                        break
 
         if not failure:
             servo.logger.info("🔥 All checks passed.")

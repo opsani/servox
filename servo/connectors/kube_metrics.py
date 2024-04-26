@@ -24,7 +24,7 @@ import os
 import pathlib
 import pydantic
 import time
-from typing import Any, Dict, List, Optional, FrozenSet, Union
+from typing import Annotated, Any, Dict, List, Optional, FrozenSet, Union
 
 import servo
 from servo.checks import CheckError
@@ -99,9 +99,9 @@ MAIN_METRICS_REQUIRE_CUST_OBJ: FrozenSet[SupportedKubeMetrics] = {
 
 
 class KubeMetricsConfiguration(servo.BaseConfiguration):
-    namespace: DNSSubdomainName = pydantic.Field(
-        description="Namespace of the target resource"
-    )
+    namespace: Annotated[
+        str, DNSSubdomainName(description="Namespace of the target resource")
+    ]
     name: str = pydantic.Field(description="Name of the target resource")
     kind: str = pydantic.Field(
         default="Deployment",
