@@ -158,7 +158,9 @@ class TestProgressHandler:
 
     @pytest.fixture()
     def logger(self, handler: ProgressHandler) -> loguru.Logger:
-        logger = loguru.logger.bind(connector="progress")
+        logger = loguru.logger.bind(
+            connector="progress", servo="servo"
+        )  # note this would be broken in prod
         logger.add(handler.sink)
         return logger
 

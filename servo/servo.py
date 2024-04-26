@@ -241,9 +241,10 @@ class Servo(servo.connector.BaseConnector):
         self,
         *args,
         connectors: list[servo.connector.BaseConnector] | None = None,
+        __connectors__=[],
         **kwargs,
     ) -> None:  # noqa: D107
-        super().__init__(*args, connectors=[], __connectors__=[], **kwargs)
+        super().__init__(*args, connectors=[], __connectors__=__connectors__, **kwargs)
 
         self._api_client = servo.api.get_api_client_for_optimizer(
             self.config.optimizer, self.config.settings
@@ -550,12 +551,14 @@ class Servo(servo.connector.BaseConnector):
         message: Optional[str],
         *,
         command_uid: Union[str, None] = None,
-        connector: Optional[str] = None,
-        event_context: Optional["servo.events.EventContext"] = None,
         time_remaining: Optional[
             Union[servo.types.Numeric, servo.types.Duration]
         ] = None,
-        logs: Optional[list[str]] = None,
+        **kwargs
+        # logs: Optional[list[str]] = None,
+        # _servo: Optional[Servo] = None,
+        # connector: Optional[servo.connector.BaseConnector] = None,
+        # event_context: Optional["servo.events.EventContext"] = None,
     ) -> Tuple[str, dict[str, Any]]:
         def set_if(d: dict, k: str, v: Any):
             if v is not None:

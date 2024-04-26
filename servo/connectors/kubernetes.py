@@ -1699,15 +1699,13 @@ DNSSubdomainName.__doc__ = """DNSSubdomainName models a Kubernetes DNS Subdomain
     See https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#dns-subdomain-names
     """
 
-DNSLabelName = Annotated[
-    str,
-    pydantic.Field(
-        strip_whitespace=True,
-        min_length=1,
-        max_length=63,
-        regex="^[0-9a-zA-Z]([0-9a-zA-Z-])*[0-9A-Za-z]$",
-    ),
-]
+DNSLabelNameField = pydantic.Field(
+    strip_whitespace=True,
+    min_length=1,
+    max_length=63,
+    regex="^[0-9a-zA-Z]([0-9a-zA-Z-])*[0-9A-Za-z]$",
+)
+DNSLabelName = Annotated[str, DNSLabelNameField]
 # DNSLabelName = pydantic.constr(
 #     strip_whitespace=True,
 #     min_length=1,
@@ -1726,15 +1724,13 @@ DNSLabelName.__doc__ = """DNSLabelName models a Kubernetes DNS Label Name identi
     """
 
 
-ContainerTagName = Annotated[
-    str,
-    pydantic.Field(
-        min_length=1,
-        max_length=128,
-        pattern="^[0-9a-zA-Z]([0-9a-zA-Z_\\.\\-/:@])*$",
-        strip_whitespace=True,
-    ),
-]
+ContainerTagNameField = pydantic.Field(
+    min_length=1,
+    max_length=128,
+    regex="^[0-9a-zA-Z]([0-9a-zA-Z_\\.\\-/:@])*$",
+    strip_whitespace=True,
+)
+ContainerTagName = Annotated[str, ContainerTagNameField]
 # ContainerTagName = pydantic.constr(
 #     min_length=1,
 #     max_length=128,

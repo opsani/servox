@@ -36,9 +36,11 @@ from servo.connectors.kubernetes import (
     CanaryOptimizationStrategyConfiguration,
     ContainerConfiguration,
     ContainerTagName,
+    ContainerTagNameField,
     DefaultOptimizationStrategyConfiguration,
     DeploymentConfiguration,
     DNSLabelName,
+    DNSLabelNameField,
     DNSSubdomainName,
     FailureMode,
     KubernetesChecks,
@@ -120,10 +122,10 @@ class TestDNSSubdomainName:
         assert e
         assert {
             "loc": ("name",),
-            "msg": f'string does not match regex "{DNSSubdomainName().regex.pattern}"',
+            "msg": f'string does not match regex "{DNSSubdomainName().regex}"',
             "type": "value_error.str.regex",
             "ctx": {
-                "pattern": DNSSubdomainName().regex.pattern,
+                "pattern": DNSSubdomainName().regex,
             },
         } in e.value.errors()
 
@@ -137,10 +139,10 @@ class TestDNSSubdomainName:
         assert e
         assert {
             "loc": ("name",),
-            "msg": f'string does not match regex "{DNSSubdomainName().regex.pattern}"',
+            "msg": f'string does not match regex "{DNSSubdomainName().regex}"',
             "type": "value_error.str.regex",
             "ctx": {
-                "pattern": DNSSubdomainName().regex.pattern,
+                "pattern": DNSSubdomainName().regex,
             },
         } in e.value.errors()
 
@@ -154,10 +156,10 @@ class TestDNSSubdomainName:
         assert e
         assert {
             "loc": ("name",),
-            "msg": f'string does not match regex "{DNSSubdomainName().regex.pattern}"',
+            "msg": f'string does not match regex "{DNSSubdomainName().regex}"',
             "type": "value_error.str.regex",
             "ctx": {
-                "pattern": DNSSubdomainName().regex.pattern,
+                "pattern": DNSSubdomainName().regex,
             },
         } in e.value.errors()
 
@@ -218,10 +220,10 @@ class TestDNSLabelName:
         assert e
         assert {
             "loc": ("name",),
-            "msg": f'string does not match regex "{DNSLabelName.regex.pattern}"',
+            "msg": f'string does not match regex "{DNSLabelNameField.regex}"',
             "type": "value_error.str.regex",
             "ctx": {
-                "pattern": DNSLabelName.regex.pattern,
+                "pattern": DNSLabelNameField.regex,
             },
         } in e.value.errors()
 
@@ -235,10 +237,10 @@ class TestDNSLabelName:
         assert e
         assert {
             "loc": ("name",),
-            "msg": f'string does not match regex "{DNSLabelName.regex.pattern}"',
+            "msg": f'string does not match regex "{DNSLabelNameField.regex}"',
             "type": "value_error.str.regex",
             "ctx": {
-                "pattern": DNSLabelName.regex.pattern,
+                "pattern": DNSLabelNameField.regex,
             },
         } in e.value.errors()
 
@@ -252,10 +254,10 @@ class TestDNSLabelName:
         assert e
         assert {
             "loc": ("name",),
-            "msg": f'string does not match regex "{DNSLabelName.regex.pattern}"',
+            "msg": f'string does not match regex "{DNSLabelNameField.regex}"',
             "type": "value_error.str.regex",
             "ctx": {
-                "pattern": DNSLabelName.regex.pattern,
+                "pattern": DNSLabelNameField.regex,
             },
         } in e.value.errors()
 
@@ -312,10 +314,10 @@ class TestContainerTagName:
             assert e
             assert {
                 "loc": ("name",),
-                "msg": f'string does not match regex "{ContainerTagName.regex.pattern}"',
+                "msg": f'string does not match regex "{ContainerTagNameField.regex}"',
                 "type": "value_error.str.regex",
                 "ctx": {
-                    "pattern": ContainerTagName.regex.pattern,
+                    "pattern": ContainerTagNameField.regex,
                 },
             } in e.value.errors()
 
