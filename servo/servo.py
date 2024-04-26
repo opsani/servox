@@ -241,9 +241,11 @@ class Servo(servo.connector.BaseConnector):
         self,
         *args,
         connectors: list[servo.connector.BaseConnector] | None = None,
-        __connectors__=[],
+        __connectors__: list[servo.connector.BaseConnector] | None = None,
         **kwargs,
     ) -> None:  # noqa: D107
+        if __connectors__ is None:
+            __connectors__ = []
         super().__init__(*args, connectors=[], __connectors__=__connectors__, **kwargs)
 
         self._api_client = servo.api.get_api_client_for_optimizer(
