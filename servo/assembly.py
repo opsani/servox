@@ -244,12 +244,12 @@ class Assembly(pydantic.BaseModel):
             )
         )
 
-    async def shutdown(self):
+    async def shutdown(self, reason: str | None = None):
         """Notify all servos that the assembly is shutting down."""
         await asyncio.gather(
             *list(
                 map(
-                    lambda s: s.shutdown(),
+                    lambda s: s.shutdown(reason=reason),
                     filter(
                         lambda s: s.is_running,
                         self.servos,

@@ -26,7 +26,7 @@ async def assembly(servo_yaml: pathlib.Path) -> servo.assembly.Assembly:
     )
     # TODO: This needs a real optimizer ID
     optimizer = servo.configuration.OpsaniOptimizer(
-        id="dev.opsani.com/servox-integration-tests",
+        id="dev.opsani.com/servox",
         token="00000000-0000-0000-0000-000000000000",
     )
     config = config_model.generate(optimizer=optimizer)
@@ -46,6 +46,7 @@ def assembly_runner(assembly: servo.Assembly) -> servo.runner.AssemblyRunner:
     return servo.runner.AssemblyRunner(assembly)
 
 
+@tests.helpers.api_mock
 async def test_assembly_shutdown_with_non_running_servo(
     assembly_runner: servo.runner.AssemblyRunner,
 ):
@@ -86,7 +87,7 @@ async def test_assembly_shutdown_with_non_running_servo(
                 raise
             finally:
                 # Teardown runner asyncio tasks so they don't raise errors when the loop is closed by pytest
-                await assembly_runner._shutdown(event_loop)
+                await assembly_runner.shutdown(event_loop)
 
 
 @pytest.fixture

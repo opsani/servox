@@ -120,8 +120,12 @@ class Status(pydantic.BaseModel):
         return cls(status=ServoStatuses.ok, message=message, reason=reason, **kwargs)
 
     @classmethod
-    def from_error(cls, error: servo.errors.BaseError, **kwargs) -> "Status":
-        """Return a status object representation from the given error."""
+    def from_error(
+        cls, error: servo.errors.BaseError | ExceptionGroup, **kwargs
+    ) -> "Status":
+        """Return a status object representation from the given error (first if multiple in group)."""
+        if isinstance(error, ExceptionGroup):
+            error = error.exceptions[0]
         if isinstance(error, servo.errors.AdjustmentRejectedError):
             status = ServoStatuses.rejected
         elif isinstance(error, servo.errors.EventAbortedError):

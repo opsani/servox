@@ -20,7 +20,9 @@ from typing import (
 )
 
 import fastapi
+import httpx
 import kubernetes_asyncio.client
+import respx
 import uvicorn
 import yaml
 from pydantic.json import pydantic_encoder
@@ -236,6 +238,12 @@ class Subprocess:
             log_output=log_output,
             **kwargs,
         )
+
+
+api_mock = respx.mock(base_url="https://api.opsani.com/", assert_all_called=True)
+api_mock.post("/accounts/dev.opsani.com/applications/servox/servo", name="servo").mock(
+    return_value=httpx.Response(200, json={"status": "ok", "command": "SLEEP"}),
+)
 
 
 class FakeAPI(uvicorn.Server):

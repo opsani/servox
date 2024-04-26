@@ -1214,7 +1214,7 @@ class TestKubernetesConnectorIntegration:
             value="128Gi",
         )
         with pytest.raises(
-            AdjustmentRejectedError,
+            ExceptionGroup,
             match=(
                 re.escape(
                     "Requested adjustment(s) (fiber-http/fiber-http.mem=128Gi) cannot be scheduled due to "
@@ -1252,7 +1252,7 @@ class TestKubernetesConnectorIntegration:
         )
 
         with pytest.raises(
-            AdjustmentFailedError, match="Container image pull failure detected"
+            ExceptionGroup, match="Container image pull failure detected"
         ):
             await connector.adjust([adjustment])
 
@@ -1431,7 +1431,7 @@ class TestKubernetesConnectorIntegration:
         )
         try:
             with pytest.raises(
-                AdjustmentRejectedError,
+                ExceptionGroup,
                 match=(
                     re.escape(
                         "Requested adjustment(s) (fiber-http/fiber-http-tuning.mem=128Gi) cannot be scheduled due to "
@@ -1476,7 +1476,7 @@ class TestKubernetesConnectorIntegration:
             ),
         ]
         with pytest.raises(
-            AdjustmentRejectedError,
+            ExceptionGroup,
             match=(
                 re.escape(
                     "Requested adjustment(s) (fiber-http/fiber-http-tuning.mem=128Gi, fiber-http/fiber-http-tuning.cpu=100) cannot be scheduled due to "
@@ -1546,14 +1546,14 @@ class TestKubernetesConnectorIntegration:
         messages = []
         connector.logger.add(lambda m: messages.append(m.record["message"]), level=10)
 
-        with pytest.raises(servo.AdjustmentFailedError) as error:
+        with pytest.raises(ExceptionGroup) as error:
             await connector.adjust([adjustment])
 
         # Check logs
         assert "no tuning pod exists, ignoring destroy" in messages[-30:]
         # Check error
         assert "quantities must match the regular expression" in str(error.value)
-        assert error.value.__cause__.status == 400
+        assert error.value.exceptions[0].__cause__.status == 400
 
     async def test_adjust_tuning_cpu_with_settlement(
         self, tuning_config, namespace, kube
@@ -1605,7 +1605,7 @@ class TestKubernetesConnectorIntegration:
             value="128Gi",
         )
         with pytest.raises(
-            AdjustmentRejectedError, match="Insufficient memory."
+            ExceptionGroup, match="Insufficient memory."
         ) as rejection_info:
             description = await connector.adjust([adjustment])
             debug(description)
@@ -1865,18 +1865,19 @@ class TestKubernetesConnectorIntegrationUnreadyCmd:
             value="128Mi",
         )
 
-        with pytest.raises(AdjustmentRejectedError) as rejection_info:
+        with pytest.raises(ExceptionGroup) as exception_group:
             await connector.adjust([adjustment])
 
         # Validate the correct error was raised, re-raise if not for additional debugging context
+        rejection_exc = exception_group.value.exceptions[0]
         try:
             assert (
                 "(reason ContainersNotReady) containers with unready status: [fiber-http"
-                in str(rejection_info.value)
+                in str(rejection_exc)
             )
-            assert rejection_info.value.reason == "start-failed"
+            assert rejection_exc.reason == "start-failed"
         except AssertionError as e:
-            raise e from rejection_info.value
+            raise e from exception_group
 
     async def test_adjust_deployment_oom_killed(
         self,
@@ -1893,22 +1894,21 @@ class TestKubernetesConnectorIntegrationUnreadyCmd:
             value="128Mi",
         )
 
-        with pytest.raises(AdjustmentRejectedError) as rejection_info:
+        with pytest.raises(ExceptionGroup) as exception_group:
             await connector.adjust([adjustment])
 
         # Validate the correct error was raised, re-raise if not for additional debugging context
+        rejection_exc = exception_group.value.exceptions[0]
         try:
             assert (
                 "Deployment fiber-http pod(s) crash restart detected: fiber-http-"
-                in str(rejection_info.value)
+                in str(rejection_exc)
             )
-            assert rejection_info.value.reason == "unstable"
+            assert rejection_exc.reason == "unstable"
         except AssertionError as e:
-            if "Found 1 unready pod(s) for deployment fiber-http" in str(
-                rejection_info.value
-            ):
+            if "Found 1 unready pod(s) for deployment fiber-http" in str(rejection_exc):
                 pytest.xfail("Restart count update took too long")
-            raise e from rejection_info.value
+            raise e from exception_group
 
     async def test_adjust_deployment_settlement_failed(
         self,
@@ -1926,21 +1926,22 @@ class TestKubernetesConnectorIntegrationUnreadyCmd:
             setting_name="mem",
             value="128Mi",
         )
-        with pytest.raises(AdjustmentRejectedError) as rejection_info:
+        with pytest.raises(ExceptionGroup) as exception_group:
             await connector.adjust([adjustment])
 
         # Validate the correct error was raised, re-raise if not for additional debugging context
+        rejection_exc = exception_group.value.exceptions[0]
         try:
             assert "(reason ContainersNotReady) containers with unready status: [fiber-http]" in str(
-                rejection_info.value
+                rejection_exc
             ) or "Deployment fiber-http pod(s) crash restart detected" in str(
-                rejection_info.value
+                rejection_exc
             ), str(
-                rejection_info.value
+                rejection_exc
             )
-            assert rejection_info.value.reason == "unstable"
+            assert rejection_exc.reason == "unstable"
         except AssertionError as e:
-            raise e from rejection_info.value
+            raise e from exception_group.value
 
         # Validate deployment scaled down to 0 instances
         kubetest_deployment_becomes_unready.refresh()
@@ -1964,9 +1965,9 @@ class TestKubernetesConnectorIntegrationUnreadyCmd:
         )
 
         try:
-            with pytest.raises(AdjustmentRejectedError) as rejection_info:
+            with pytest.raises(ExceptionGroup) as exception_group:
                 await connector.adjust([adjustment])
-        except RuntimeError as e:
+        except* RuntimeError as e:
             if (
                 f"Time out after {tuning_config.timeout} waiting for tuning pod shutdown"
                 in str(e)
@@ -1976,14 +1977,15 @@ class TestKubernetesConnectorIntegrationUnreadyCmd:
                 raise
 
         # Validate the correct error was raised, re-raise if not for additional debugging context
+        rejection_exc = exception_group.value.exceptions[0]
         try:
             assert (
                 "(reason ContainersNotReady) containers with unready status: [fiber-http"
-                in str(rejection_info.value)
+                in str(rejection_exc)
             )
-            assert rejection_info.value.reason == "start-failed"
+            assert rejection_exc.reason == "start-failed"
         except AssertionError as e:
-            raise e from rejection_info.value
+            raise e from exception_group.value
 
         # Validate baseline was restored during handle_error
         tuning_pod = kube.get_pods()["fiber-http-tuning"]
@@ -2012,18 +2014,22 @@ class TestKubernetesConnectorIntegrationUnreadyCmd:
             value="128Mi",
         )
 
-        with pytest.raises(AdjustmentRejectedError) as rejection_info:
+        # with pytest.raises(AdjustmentRejectedError) as rejection_info:
+        #     await connector.adjust([adjustment])
+
+        with pytest.raises(ExceptionGroup) as exception_group:
             await connector.adjust([adjustment])
 
         # Validate the correct error was raised, re-raise if not for additional debugging context
+        rejection_exc = exception_group.value.exceptions[0]
         try:
             assert (
                 "Tuning optimization fiber-http-tuning crash restart detected on container(s): fiber-http"
-                in str(rejection_info.value)
+                in str(rejection_exc)
             )
-            assert rejection_info.value.reason == "unstable"
+            assert rejection_exc.reason == "unstable"
         except AssertionError as e:
-            raise e from rejection_info.value
+            raise e from exception_group
 
         # Validate baseline was restored during handle_error
         tuning_pod = kube.get_pods()["fiber-http-tuning"]
@@ -2052,19 +2058,20 @@ class TestKubernetesConnectorIntegrationUnreadyCmd:
             setting_name="mem",
             value="128Mi",
         )
-        with pytest.raises(AdjustmentRejectedError) as rejection_info:
+        with pytest.raises(ExceptionGroup) as exception_group:
             await connector.adjust([adjustment])
 
         # Validate the correct error was raised, re-raise if not for additional debugging context
+        rejection_exc = exception_group.value.exceptions[0]
         try:
             assert "(reason ContainersNotReady) containers with unready status: [fiber-http]" in str(
-                rejection_info.value
+                rejection_exc
             ) or "Tuning optimization fiber-http-tuning crash restart detected on container(s): fiber-http" in str(
-                rejection_info.value
+                rejection_exc
             )
-            rejection_info.value.reason == "unstable"
+            rejection_exc.reason == "unstable"
         except AssertionError as e:
-            raise e from rejection_info.value
+            raise e from exception_group
 
         # Validate baseline was restored during handle_error
         tuning_pod = kube.get_pods()["fiber-http-tuning"]

@@ -630,7 +630,7 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
         else:
             self.logger.info(f"Shutting down {len(self.runners)} running servos...")
         for fut in asyncio.as_completed(
-            list(map(lambda r: r.shutdown(reason=reason), self.runners)), timeout=30.0
+            list(map(lambda r: r.shutdown(), self.runners)), timeout=30.0
         ):
             try:
                 await fut
@@ -642,7 +642,7 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
         # Shutdown the assembly and the servos it contains
         self.logger.debug("Dispatching shutdown event...")
         try:
-            await self.assembly.shutdown()
+            await self.assembly.shutdown(reason=reason)
         except Exception as error:
             self.logger.critical(f"Failed assembly shutdown with error: {error}")
 

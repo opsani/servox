@@ -45,7 +45,7 @@ from servo.events import (
 )
 from servo.servo import Events, Servo
 from servo.types import Control, Description, Measurement
-from tests.helpers import MeasureConnector, environment_overrides
+from tests.helpers import api_mock, MeasureConnector, environment_overrides
 
 
 def test_version():
@@ -404,12 +404,6 @@ async def test_dispatching_multiple_specific_prepositions(mocker, servo: Servo) 
     before_spy.assert_called_once()
     on_spy.assert_called_once()
     after_spy.assert_not_called()
-
-
-api_mock = respx.mock(base_url="https://api.opsani.com/", assert_all_called=True)
-api_mock.post("/accounts/dev.opsani.com/applications/servox/servo", name="servo").mock(
-    return_value=httpx.Response(200, json={"status": "ok"}),
-)
 
 
 @api_mock
