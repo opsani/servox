@@ -1213,22 +1213,28 @@ class TestKubernetesConnectorIntegration:
             setting_name="mem",
             value="128Gi",
         )
-        with pytest.raises(
-            ExceptionGroup,
-            match=(
+        with pytest.raises(ExceptionGroup) as exc_group:
+            await connector.adjust([adjustment])
+
+        rejection_info = unwrap_exception_group(
+            excg=exc_group, expected_type=AdjustmentRejectedError, expected_count=1
+        )
+        assert (
+            re.search(
                 re.escape(
                     "Requested adjustment(s) (fiber-http/fiber-http.mem=128Gi) cannot be scheduled due to "
                 )
-                + r"\"\d+/\d+ nodes are available:.* \d+ Insufficient memory.*\""
-            ),
-        ) as rejection_info:
-            await connector.adjust([adjustment])
+                + r"\"\d+/\d+ nodes are available:.* \d+ Insufficient memory.*\"",
+                str(rejection_info),
+            )
+            is not None
+        )
 
         # Validate the correct error was raised, re-raise if not for additional debugging context
         try:
-            assert rejection_info.value.reason == "unschedulable"
+            assert rejection_info.reason == "unschedulable"
         except AssertionError as e:
-            raise e from rejection_info.value
+            raise e from rejection_info
 
     async def test_adjust_deployment_image_pull_backoff(
         self,
@@ -1251,10 +1257,14 @@ class TestKubernetesConnectorIntegration:
             return_value="opsani/bababooey:latest",
         )
 
-        with pytest.raises(
-            ExceptionGroup, match="Container image pull failure detected"
-        ):
+        with pytest.raises(ExceptionGroup) as excg:
             await connector.adjust([adjustment])
+
+        adjustment_failed = unwrap_exception_group(excg, AdjustmentFailedError, 1)
+        assert (
+            re.search("Container image pull failure detected", str(adjustment_failed))
+            is not None
+        )
 
     async def test_adjust_replicas(self, config):
         connector = KubernetesConnector(config=config)
@@ -1430,25 +1440,28 @@ class TestKubernetesConnectorIntegration:
             value="128Gi",  # impossible right?
         )
         try:
-            with pytest.raises(
-                ExceptionGroup,
-                match=(
+            with pytest.raises(ExceptionGroup) as excg:
+                await connector.adjust([adjustment])
+            rejection_info = unwrap_exception_group(excg, AdjustmentRejectedError, 1)
+            assert (
+                re.search(
                     re.escape(
                         "Requested adjustment(s) (fiber-http/fiber-http-tuning.mem=128Gi) cannot be scheduled due to "
                     )
-                    + r"\"\d+/\d+ nodes are available:.* \d+ Insufficient memory.*\""
-                ),
-            ) as rejection_info:
-                await connector.adjust([adjustment])
+                    + r"\"\d+/\d+ nodes are available:.* \d+ Insufficient memory.*\"",
+                    str(rejection_info),
+                )
+                is not None
+            )
         except AssertionError as ae:
             if "does not match '(reason ContainersNotReady)" in str(ae):
                 pytest.xfail("Unschedulable condition took too long to show up")
 
         # Validate the correct error was raised, re-raise if not for additional debugging context
         try:
-            assert rejection_info.value.reason == "unschedulable"
+            assert rejection_info.reason == "unschedulable"
         except AssertionError as e:
-            raise e from rejection_info.value
+            raise e from rejection_info
 
     async def test_adjust_tuning_insufficient_cpu_and_mem(
         self, tuning_config: KubernetesConfiguration
@@ -1475,22 +1488,26 @@ class TestKubernetesConnectorIntegration:
                 value="100",  # impossible right?
             ),
         ]
-        with pytest.raises(
-            ExceptionGroup,
-            match=(
+        with pytest.raises(ExceptionGroup) as excg:
+            await connector.adjust(adjustments)
+
+        rejection_info = unwrap_exception_group(excg, AdjustmentRejectedError, 1)
+        assert (
+            re.search(
                 re.escape(
                     "Requested adjustment(s) (fiber-http/fiber-http-tuning.mem=128Gi, fiber-http/fiber-http-tuning.cpu=100) cannot be scheduled due to "
                 )
-                + r"\"\d+/\d+ nodes are available:.* \d+ Insufficient cpu.* \d+ Insufficient memory.*\""
-            ),
-        ) as rejection_info:
-            await connector.adjust(adjustments)
+                + r"\"\d+/\d+ nodes are available:.* \d+ Insufficient cpu.* \d+ Insufficient memory.*\"",
+                str(rejection_info),
+            )
+            is not None
+        )
 
         # Validate the correct error was raised, re-raise if not for additional debugging context
         try:
-            assert rejection_info.value.reason == "unschedulable"
+            assert rejection_info.reason == "unschedulable"
         except AssertionError as e:
-            raise e from rejection_info.value
+            raise e from rejection_info
 
     async def test_create_tuning_image_pull_backoff(
         self,
@@ -1604,11 +1621,12 @@ class TestKubernetesConnectorIntegration:
             setting_name="mem",
             value="128Gi",
         )
-        with pytest.raises(
-            ExceptionGroup, match="Insufficient memory."
-        ) as rejection_info:
+        with pytest.raises(ExceptionGroup) as excg:
             description = await connector.adjust([adjustment])
             debug(description)
+
+        rejection_info = unwrap_exception_group(excg, AdjustmentRejectedError, 1)
+        assert re.search("Insufficient memory.", str(rejection_info)) is not None
 
         deployment = await DeploymentHelper.read("fiber-http", kube.namespace)
         # check deployment was not scaled to 0 replicas (i.e., the outer-level 'shutdown' was overridden)

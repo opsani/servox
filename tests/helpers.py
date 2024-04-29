@@ -18,6 +18,7 @@ from typing import (
     Type,
     Union,
 )
+import typing
 
 import fastapi
 import httpx
@@ -179,6 +180,28 @@ def json_key_path(json_str: str, key_path: str) -> Any:
     """
     obj = json.loads(json_str)
     return dict_key_path(obj, key_path)
+
+
+E = typing.TypeVar("E")
+
+
+def unwrap_exception_group(
+    excg: ExceptionGroup, expected_type: type[E], expected_count: int | None = None
+) -> E | list[E]:
+    excg_len = len(excg.exceptions)
+    if expected_count is not None:
+        assert (
+            excg_len == expected_count
+        ), f"Excpetion group count {excg_len} did not match expected count {expected_count}"
+
+    assert excg_len > 0
+    assert all(
+        isinstance(e, expected_type) for e in excg.exceptions
+    ), f"Group did not contain only expected type {expected_type}: {excg.exceptions}"
+    if excg_len > 1:
+        return list(excg.exceptions)
+    else:
+        return excg.exceptions[0]
 
 
 class Subprocess:
