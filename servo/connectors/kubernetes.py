@@ -2364,10 +2364,9 @@ class KubernetesConnector(servo.BaseConnector):
 
             description = state.to_description()
         except ExceptionGroup as eg:
-            if any(issubclass(servo.EventError, sub_e) for sub_e in eg.exceptions):
-                raise
-            else:
-                raise servo.AdjustmentFailedError(str(eg.message)) from eg
+            raise servo.ServoError.servo_error_from_group(
+                eg, default_error=servo.AdjustmentFailedError
+            ) from eg
         except servo.EventError:  # this is recognized by the runner
             raise
         except Exception as e:

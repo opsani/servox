@@ -47,6 +47,7 @@ class BaseError(RuntimeError):
         servo_: Optional[servo.Servo] = None,
         connector: Optional[servo.Connector] = None,
         event: Optional[servo.Event] = None,
+        additional_errors: Optional[list[Exception]] = None,
     ) -> None:
         super().__init__(message, *args)
 
@@ -59,6 +60,7 @@ class BaseError(RuntimeError):
         self._connector = connector or getattr(self._servo, "connector", None)
         self._event = event or getattr(self._servo, "event", None)
         self._created_at = datetime.datetime.now()
+        self._additional_errors = additional_errors
 
     @property
     def reason(self) -> Optional[str]:
@@ -101,6 +103,45 @@ class ServoError(BaseError):
     @property
     def servo(self) -> servo.Servo:
         return self._servo
+
+    def __lt__(self, other: ServoError) -> bool:
+        cur_pri = _ERROR_PRIORITIES.get(self.__class__, 0)
+        o_pri = _ERROR_PRIORITIES.get(other.__class__, 0)
+        return cur_pri < o_pri
+
+    @classmethod
+    def servo_error_from_group(
+        cls, exception_group: ExceptionGroup, default_error: type[BaseError] = None
+    ) -> ServoError:
+        """
+        Walk the ExceptionGroup and return the highest priority error to be communicated to the API. Implementation
+        is temporary as we will eventually need to support error groups on the backend
+        """
+        if default_error is None:
+            default_error = cls
+        top_error = None
+        exc_list = []
+
+        # traverse tree of exceptions depth first. Evaluate priority and raise as the "main" exception with others included as property additional exceptions
+        visit_list = list(exception_group.exceptions)
+        while visit_list:
+            exc = visit_list.pop(0)
+            if isinstance(exc, ExceptionGroup):
+                visit_list = list(exc.exceptions) + visit_list
+            elif isinstance(exc, servo.BaseError):
+                exc_list.append(exc)
+                if top_error is None or top_error < exc:
+                    top_error = exc
+            else:
+                exc_list.append(exc)
+
+        if top_error is None:
+            raise default_error(
+                message=str(exc_list[0]), additional_errors=exc_list
+            ) from exc_list[0]
+        else:
+            top_error._additional_errors = exc_list
+            return top_error
 
 
 class ConnectorNotFoundError(ServoError):
@@ -173,3 +214,11 @@ class EventAbortedError(EventError):
     During long-running measurements (and, optionally, adjustments) it is often
     necessary to complete the operation early e.g. if there are sustained SLO violations.
     """
+
+
+# Most errors have a default priority of 0
+_ERROR_PRIORITIES = {
+    MeasurementFailedError: 1,
+    AdjustmentFailedError: 2,
+    AdjustmentRejectedError: 3,
+}
