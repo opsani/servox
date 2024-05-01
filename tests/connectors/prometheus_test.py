@@ -858,7 +858,7 @@ class TestPrometheusIntegration:
                         )
                         # Send traffic in the background
                         async with asyncio.TaskGroup() as tg:
-                            _ = tg.create_task(send_traffic())
+                            traffic_task = tg.create_task(send_traffic())
 
                             date_matcher = r"[\s0-9-:.]*"
                             float_matcher = r"[0-9.]*"
@@ -876,21 +876,18 @@ class TestPrometheusIntegration:
                                 + re.escape(" was not below threshold value 0.2]")
                             )
 
-                            with pytest.raises(
-                                ExceptionGroup, match=error_text
-                            ) as excg:
-                                measure_task = tg.create_task(
-                                    connector.measure(control=control)
-                                )
-                                async with asyncio.timeout(90):
-                                    measurement = await measure_task
-                                    debug(measurement)
-
-                            sending_traffic = False
-                            aborted_error = tests.helpers.unwrap_exception_group(
-                                excg, servo.errors.EventAbortedError, 1
-                            )
-                            assert re.search(error_text, str(aborted_error)) is not None
+                            try:
+                                with pytest.raises(
+                                    servo.errors.EventAbortedError, match=error_text
+                                ):
+                                    async with asyncio.timeout(90):
+                                        measurement = await connector.measure(
+                                            control=control
+                                        )
+                                        debug(measurement)
+                            finally:
+                                sending_traffic = False
+                                await traffic_task
 
 
 def empty_targets_response() -> Dict[str, Any]:
