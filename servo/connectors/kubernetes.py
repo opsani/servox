@@ -2343,7 +2343,9 @@ class KubernetesConnector(servo.BaseConnector):
                             try:
                                 await state.raise_for_status()
                             except* servo.AdjustmentRejectedError as eg:
-                                e = eg.exceptions[0]
+                                e = servo.errors.ServoError.servo_error_from_group(eg)
+                                if isinstance(e, list):
+                                    e = e[0]
                                 # Update rejections with start-failed to indicate the initial rollout was successful
                                 if e.reason == "start-failed":
                                     e.reason = "unstable"

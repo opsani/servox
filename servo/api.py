@@ -105,6 +105,9 @@ class Request(pydantic.BaseModel):
 class Status(pydantic.BaseModel):
     status: Statuses
     message: Optional[str] = None
+    other_messages: Optional[
+        list[str]
+    ] = None  # other lower priority error in exception group
     reason: Optional[str] = None
     state: Optional[Dict[str, Any]] = None
     descriptor: Optional[Dict[str, Any]] = None
@@ -124,8 +127,24 @@ class Status(pydantic.BaseModel):
         cls, error: servo.errors.BaseError | ExceptionGroup, **kwargs
     ) -> "Status":
         """Return a status object representation from the given error (first if multiple in group)."""
+        reason = getattr(error, "reason", ...)
         if isinstance(error, ExceptionGroup):
-            error = error.exceptions[0]
+            servo.logger.warning(
+                f"from_error executed on exceptiongroup {error}. May produce undefined behavior"
+            )
+            status = ServoStatuses.failed
+            try:
+                main_err = servo.errors.ServoError.servo_error_from_group(
+                    exception_group=error
+                )
+                if isinstance(main_err, list):
+                    main_err = main_err[0]
+                reason = main_err.reason
+            except:
+                servo.logger.exception(
+                    "Failed to derive exceptiongroup reason for api response"
+                )
+                pass
         if isinstance(error, servo.errors.AdjustmentRejectedError):
             status = ServoStatuses.rejected
         elif isinstance(error, servo.errors.EventAbortedError):
@@ -135,7 +154,13 @@ class Status(pydantic.BaseModel):
         else:
             status = ServoStatuses.failed
 
-        return cls(status=status, message=str(error), reason=error.reason, **kwargs)
+        if error._additional_errors:
+            additional_messages = [str(e) for e in error._additional_errors]
+            kwargs["additional_messages"] = (
+                kwargs.get("additional_messages", []) + additional_messages
+            )
+
+        return cls(status=status, message=str(error), reason=reason, **kwargs)
 
     def dict(
         self,

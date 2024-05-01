@@ -157,10 +157,11 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin):
                     descriptor=description.__opsani_repr__(),
                     command_uid=cmd_response.command_uid,
                 )
-            except* servo.errors.EventError as error:
-                self.logger.error(f"Describe failed: {error}")
+            except* servo.errors.EventError as error_group:
+                self.logger.error(f"Describe failed: {error_group.exceptions}")
+                top_error = servo.errors.ServoError.servo_error_from_group(error_group)
                 status = servo.api.Status.from_error(
-                    error=error,
+                    error=top_error,
                     command_uid=cmd_response.command_uid,
                 )
                 self.logger.error(f"Responding with {status.dict()}")
@@ -180,10 +181,11 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin):
                     command_uid=cmd_response.command_uid,
                     **measurement.__opsani_repr__(),
                 )
-            except* servo.errors.EventError as error:
-                self.logger.error(f"Measurement failed: {error}")
+            except* servo.errors.EventError as error_group:
+                self.logger.error(f"Measurement failed: {error_group.exceptions}")
+                top_error = servo.errors.ServoError.servo_error_from_group(error_group)
                 status = servo.api.Status.from_error(
-                    error=error,
+                    error=top_error,
                     command_uid=cmd_response.command_uid,
                 )
                 self.logger.error(f"Responding with {status.dict()}")
@@ -212,10 +214,12 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin):
                 self.logger.success(
                     f"Adjusted: {components_count} components, {settings_count} settings"
                 )
-            except* servo.EventError as error:
-                self.logger.error(f"Adjustment failed: {error}")
+            except* servo.errors.EventError as error_group:
+                self.logger.error(f"Adjustment failed: {error_group.exceptions}")
+                self.logger.error(f"Describe failed: {error_group.exceptions}")
+                top_error = servo.errors.ServoError.servo_error_from_group(error_group)
                 status = servo.api.Status.from_error(
-                    error,
+                    error=top_error,
                     command_uid=cmd_response.command_uid,
                 )
                 self.logger.error(f"Responding with {status.dict()}")

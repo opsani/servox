@@ -29,6 +29,8 @@ from servo.connectors.prometheus import (
 )
 from servo.types import *
 
+import tests.helpers
+
 
 class TestPrometheusMetric:
     def test_accepts_step_as_duration(self):
@@ -875,8 +877,8 @@ class TestPrometheusIntegration:
                             )
 
                             with pytest.raises(
-                                servo.errors.EventAbortedError, match=error_text
-                            ):
+                                ExceptionGroup, match=error_text
+                            ) as excg:
                                 measure_task = tg.create_task(
                                     connector.measure(control=control)
                                 )
@@ -885,6 +887,10 @@ class TestPrometheusIntegration:
                                     debug(measurement)
 
                             sending_traffic = False
+                            aborted_error = tests.helpers.unwrap_exception_group(
+                                excg, servo.errors.EventAbortedError, 1
+                            )
+                            assert re.search(error_text, str(aborted_error)) is not None
 
 
 def empty_targets_response() -> Dict[str, Any]:
