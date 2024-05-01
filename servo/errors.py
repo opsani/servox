@@ -221,4 +221,5 @@ _ERROR_PRIORITIES = {
     MeasurementFailedError: 1,
     AdjustmentFailedError: 2,
     AdjustmentRejectedError: 3,
+    EventAbortedError: 4,
 }

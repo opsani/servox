@@ -2278,8 +2278,13 @@ class KubernetesConnector(servo.BaseConnector):
     async def describe(
         self, control: servo.Control = servo.Control()
     ) -> servo.Description:
-        state = await self._create_optimizations()
-        return state.to_description()
+        try:
+            state = await self._create_optimizations()
+            return state.to_description()
+        except ExceptionGroup as eg:
+            raise servo.ServoError.servo_error_from_group(
+                eg, default_error=servo.errors.EventError
+            ) from eg
 
     @servo.on_event()
     async def components(self) -> List[servo.Component]:

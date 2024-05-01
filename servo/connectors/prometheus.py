@@ -994,14 +994,19 @@ class PrometheusConnector(servo.BaseConnector):
                 ),
             )
             fast_fail_progress = servo.EventProgress(timeout=measurement_duration)
-            async with asyncio.TaskGroup() as tg:
-                _ = tg.create_task(progress.watch(self.observe))
-                _ = tg.create_task(
-                    fast_fail_progress.watch(
-                        fast_fail_observer.observe,
-                        every=self.config.fast_fail.period,
+            try:
+                async with asyncio.TaskGroup() as tg:
+                    _ = tg.create_task(progress.watch(self.observe))
+                    _ = tg.create_task(
+                        fast_fail_progress.watch(
+                            fast_fail_observer.observe,
+                            every=self.config.fast_fail.period,
+                        )
                     )
-                )
+            except ExceptionGroup as eg:
+                raise servo.ServoError.servo_error_from_group(
+                    eg, default_error=servo.errors.MeasurementFailedError
+                ) from eg
 
         else:
             await progress.watch(self.observe)

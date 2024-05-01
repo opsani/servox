@@ -363,11 +363,13 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin):
 
             if not self._main_loop_task.done():
                 self.logger.info(
-                    f"Cancelling ServoRunner _main_loop_task and running task_group: {self._task_group}"
+                    f"Cancelling ServoRunner _main_loop_task and running task_group: {self._task_group} _exiting {getattr(self._task_group, '_exiting')}"
                 )
                 self.logger.debug(
                     f"Current ServoRunner task group: {devtools.pformat(self._task_group)}"
                 )
+                self._main_loop_task.cancel()
+                await asyncio.gather(self._main_loop_task, return_exceptions=True)
 
         except Exception:
             self.logger.exception(f"Exception occurred during servo runner shutdown")

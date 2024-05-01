@@ -268,14 +268,17 @@ async def test_control_sent_on_adjust(
         while fastapi_app.optimizer.state.name != "done":
             await asyncio.sleep(0.01)
 
-    await servo_runner.run()
-    await asyncio.wait_for(wait_for_optimizer_done(), timeout=2)
-    await servo_runner.shutdown()
+    async with asyncio.TaskGroup() as tg:
+        _ = tg.create_task(servo_runner.run())
+        async with asyncio.timeout(2):
+            await tg.create_task(wait_for_optimizer_done())
+        await tg.create_task(servo_runner.shutdown())
 
     spy.assert_called_once_with(adjust_connector, [], control)
 
 
 # TODO: This doesn't need to be integration test
+@tests.helpers.api_mock
 async def test_adjustment_rejected(
     mocker, servo_runner: servo.runner.ServoRunner
 ) -> None:
@@ -287,5 +290,9 @@ async def test_adjustment_rejected(
         mock = mocker.patch.object(on_handler, "handler")
         mock.side_effect = servo.errors.AdjustmentRejectedError()
         await servo_runner.servo.startup()
-        with pytest.raises(servo.errors.AdjustmentRejectedError):
+        with pytest.raises(ExceptionGroup) as excg:
             await servo_runner.adjust([], servo.Control())
+
+        _ = tests.helpers.unwrap_exception_group(
+            excg.value, servo.errors.AdjustmentRejectedError, 1
+        )
