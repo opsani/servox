@@ -44,6 +44,7 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin):
     _assembly_runner: AssemblyRunner = pydantic.PrivateAttr(None)
     _servo: servo.Servo = pydantic.PrivateAttr(None)
     _running: bool = pydantic.PrivateAttr(False)
+    _file_watcher_task: Optional[asyncio.Task] = pydantic.PrivateAttr(None)
     _main_loop_task: Optional[asyncio.Task] = pydantic.PrivateAttr(None)
     _task_group: Optional[asyncio.TaskGroup] = pydantic.PrivateAttr(None)
 
@@ -457,12 +458,14 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
 
         try:
             self._root_task = loop.create_task(self._run())
+            # get result of maint task so excpetions will be raised
+            _ = loop.run_until_complete(self._root_task)
             loop.run_forever()
 
         finally:
             loop.close()
 
-    async def _run(self):
+    async def _run(self) -> None:
         async with asyncio.TaskGroup() as tg:
             self._task_group = tg
             self.progress_handler = servo.logging.ProgressHandler(

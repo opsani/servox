@@ -347,6 +347,7 @@ DEFAULT_HANDLERS = [
 def set_level(level: str) -> None:
     """Set the logging threshold to the given level for all log handlers."""
     DEFAULT_FILTER.level = level
+    logging.getLogger("asyncio").setLevel(level)
 
 
 def set_colors(colors: bool) -> None:
@@ -368,8 +369,9 @@ def reset_to_defaults() -> None:
     loguru.logger.remove()
     loguru.logger.configure(handlers=DEFAULT_HANDLERS)
 
-    # Intercept messages from backoff library
+    # Intercept messages from other libraries
     logging.getLogger("backoff").addHandler(InterceptHandler())
+    logging.getLogger("asyncio").addHandler(InterceptHandler())
 
 
 def friendly_decorator(f):
