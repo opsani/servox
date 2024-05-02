@@ -277,6 +277,7 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin):
                             await asyncio.sleep(60)
                             continue
 
+                    self.logger.info("getting next command")
                     status = await self.exec_command()
                     if status.status == servo.api.OptimizerStatuses.unexpected_event:
                         self.logger.warning(
@@ -317,6 +318,7 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin):
                     )
                     raise error
 
+            self.logger.info("Main loop exited, cancelling task group")
             raise asyncio.CancelledError("Main loop exited, cancelling task group")
 
     async def run(self, *, poll: bool = True, startup: bool = True) -> None:
@@ -359,6 +361,9 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin):
         """Shutdown the running servo."""
         try:
             self.logger.info("Shutting down servo runner")
+            self.logger.debug(
+                f"self._main_loop_task {self._main_loop_task}\nself._task_group {self._task_group}"
+            )
             self._running = False
 
             if delay > 0:
@@ -366,6 +371,8 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin):
                 await asyncio.sleep(delay=delay)
 
             if not self._main_loop_task.done():
+                self.logger.info("ServoRunner _main_loop_task exited gracefully")
+            else:
                 self.logger.info(
                     f"Cancelling ServoRunner _main_loop_task and running task_group: {self._task_group} _exiting {getattr(self._task_group, '_exiting')}"
                 )
@@ -635,6 +642,10 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
             self.logger.info(f"Shutting down servo...")
         else:
             self.logger.info(f"Shutting down {len(self.runners)} running servos...")
+
+        self.logger.debug(
+            f"self._root_task {self._root_task}\nself._task_group {self._task_group}"
+        )
         for fut in asyncio.as_completed(
             list(map(lambda r: r.shutdown(), self.runners)), timeout=30.0
         ):
