@@ -677,9 +677,14 @@ async def assembly(servo_yaml: pathlib.Path) -> servo.assembly.Assembly:
 
 
 @pytest.fixture
-def assembly_runner(assembly: servo.Assembly) -> servo.runner.AssemblyRunner:
+async def assembly_runner(
+    assembly: servo.Assembly,
+) -> AsyncGenerator[servo.runner.AssemblyRunner, None]:
     """Return an unstarted assembly runner."""
-    return servo.runner.AssemblyRunner(assembly)
+    runner = servo.runner.AssemblyRunner(assembly)
+    yield runner
+    if runner.progress_handler is not None:
+        await runner.progress_handler.shutdown()
 
 
 @pytest.fixture

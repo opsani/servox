@@ -1,5 +1,6 @@
 import asyncio
 import pathlib
+from typing import AsyncGenerator
 
 import pytest
 import pytest_mock
@@ -41,9 +42,14 @@ async def assembly(servo_yaml: pathlib.Path) -> servo.assembly.Assembly:
 
 
 @pytest.fixture
-def assembly_runner(assembly: servo.Assembly) -> servo.runner.AssemblyRunner:
+async def assembly_runner(
+    assembly: servo.Assembly,
+) -> AsyncGenerator[servo.runner.AssemblyRunner, None]:
     """Return an unstarted assembly runner."""
-    return servo.runner.AssemblyRunner(assembly)
+    runner = servo.runner.AssemblyRunner(assembly)
+    yield runner
+    if runner.progress_handler is not None:
+        await runner.progress_handler.shutdown()
 
 
 @tests.helpers.api_mock
@@ -57,37 +63,40 @@ async def test_assembly_shutdown_with_non_running_servo(
     #   By using unittest.mock, we can ensure the event_loop is restored before exiting this method
 
     # Event loop is already running from pytest setup, runner trying to run the loop again produces an error
-    with unittest.mock.patch.object(event_loop, "run_forever", return_value=None):
-        # run_forever no longer blocks causing loop.close() to be called immediately, stop runner from closing it to prevent errors
-        with unittest.mock.patch.object(event_loop, "close", return_value=None):
+    with unittest.mock.patch.object(
+        event_loop, "run_until_complete", return_value=None
+    ):
+        with unittest.mock.patch.object(event_loop, "run_forever", return_value=None):
+            # run_forever no longer blocks causing loop.close() to be called immediately, stop runner from closing it to prevent errors
+            with unittest.mock.patch.object(event_loop, "close", return_value=None):
 
-            async def wait_for_servo_running():
-                while not assembly_runner.assembly.servos[0].is_running:
-                    await asyncio.sleep(0.01)
+                async def wait_for_servo_running():
+                    while not assembly_runner.assembly.servos[0].is_running:
+                        await asyncio.sleep(0.01)
 
-            try:
-                assembly_runner.run()
-            except ValueError as e:
-                if (
-                    "add_signal_handler() can only be called from the main thread"
-                    in str(e)
-                ):
-                    # https://github.com/pytest-dev/pytest-xdist/issues/620
-                    pytest.xfail("not running in the main thread")
-                else:
+                try:
+                    assembly_runner.run()
+                except ValueError as e:
+                    if (
+                        "add_signal_handler() can only be called from the main thread"
+                        in str(e)
+                    ):
+                        # https://github.com/pytest-dev/pytest-xdist/issues/620
+                        pytest.xfail("not running in the main thread")
+                    else:
+                        raise
+
+                await asyncio.wait_for(wait_for_servo_running(), timeout=2)
+
+                # Shutdown the servo to produce edge case error
+                await assembly_runner.assembly.servos[0].shutdown()
+                try:
+                    await assembly_runner.assembly.shutdown()
+                except:
                     raise
-
-            await asyncio.wait_for(wait_for_servo_running(), timeout=2)
-
-            # Shutdown the servo to produce edge case error
-            await assembly_runner.assembly.servos[0].shutdown()
-            try:
-                await assembly_runner.assembly.shutdown()
-            except:
-                raise
-            finally:
-                # Teardown runner asyncio tasks so they don't raise errors when the loop is closed by pytest
-                await assembly_runner.shutdown(event_loop)
+                finally:
+                    # Teardown runner asyncio tasks so they don't raise errors when the loop is closed by pytest
+                    await assembly_runner.shutdown(event_loop)
 
 
 @pytest.fixture
