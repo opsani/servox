@@ -188,20 +188,36 @@ E = typing.TypeVar("E")
 def unwrap_exception_group(
     excg: ExceptionGroup, expected_type: type[E], expected_count: int | None = None
 ) -> E | list[E]:
-    excg_len = len(excg.exceptions)
+    flattened_group = flatten_exception_group(exception_group=excg)
+    excg_len = len(flattened_group)
     if expected_count is not None:
         assert (
             excg_len == expected_count
         ), f"Excpetion group count {excg_len} did not match expected count {expected_count}"
 
     assert excg_len > 0
-    assert all(
-        isinstance(e, expected_type) for e in excg.exceptions
-    ), f"Group did not contain only expected type {expected_type}: {excg.exceptions}"
+    if not all(isinstance(e, expected_type) for e in flattened_group):
+        raise excg
+
+    servo.errors.ServoError.servo_error_from_group
     if excg_len > 1:
-        return list(excg.exceptions)
+        return flattened_group
     else:
-        return excg.exceptions[0]
+        return flattened_group[0]
+
+
+def flatten_exception_group(exception_group: ExceptionGroup) -> list[Exception]:
+    exc_list = []
+    # traverse tree of exceptions depth first. Evaluate priority and raise as the "main" exception with others included as property additional exceptions
+    visit_list = list(exception_group.exceptions)
+    while visit_list:
+        exc = visit_list.pop(0)
+        if isinstance(exc, ExceptionGroup):
+            visit_list = list(exc.exceptions) + visit_list
+        else:
+            exc_list.append(exc)
+
+    return exc_list
 
 
 class Subprocess:

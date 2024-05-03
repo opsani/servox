@@ -193,8 +193,8 @@ class ProgressHandler:
 
     async def _process_queue(self) -> None:
         while True:
+            progress = await self._queue.get()
             try:
-                progress = await self._queue.get()
                 if progress is None:
                     logger.info(
                         f"retrieved None from progress queue. halting progress reporting"

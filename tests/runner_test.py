@@ -1,7 +1,10 @@
 import asyncio
+from contextlib import contextmanager
 import pathlib
 from typing import AsyncGenerator
+import typing
 
+import devtools
 import pytest
 import pytest_mock
 import unittest.mock
@@ -13,8 +16,6 @@ import servo.connectors.prometheus
 import servo.types
 import tests.fake
 import tests.helpers
-
-pytestmark = [pytest.mark.asyncio, pytest.mark.integration]
 
 
 @pytest.fixture()
@@ -52,12 +53,9 @@ async def assembly_runner(
         await runner.progress_handler.shutdown()
 
 
-@tests.helpers.api_mock
-async def test_assembly_shutdown_with_non_running_servo(
-    assembly_runner: servo.runner.AssemblyRunner,
-):
+@contextmanager
+def patch_event_loop() -> typing.Iterator[asyncio.AbstractEventLoop]:
     event_loop = asyncio.get_event_loop()
-
     # NOTE: using the pytest_mocker fixture for mocking the event loop can cause side effects with pytest-asyncio
     #   (eg. when fixture mocking the `stop` method, the test will run forever).
     #   By using unittest.mock, we can ensure the event_loop is restored before exiting this method
@@ -69,34 +67,58 @@ async def test_assembly_shutdown_with_non_running_servo(
         with unittest.mock.patch.object(event_loop, "run_forever", return_value=None):
             # run_forever no longer blocks causing loop.close() to be called immediately, stop runner from closing it to prevent errors
             with unittest.mock.patch.object(event_loop, "close", return_value=None):
+                yield event_loop
 
-                async def wait_for_servo_running():
-                    while not assembly_runner.assembly.servos[0].is_running:
-                        await asyncio.sleep(0.01)
 
-                try:
-                    assembly_runner.run()
-                except ValueError as e:
-                    if (
-                        "add_signal_handler() can only be called from the main thread"
-                        in str(e)
-                    ):
-                        # https://github.com/pytest-dev/pytest-xdist/issues/620
-                        pytest.xfail("not running in the main thread")
-                    else:
-                        raise
+@pytest.mark.asyncio
+@tests.helpers.api_mock
+async def test_assembly_shutdown_with_non_running_servo(
+    assembly_runner: servo.runner.AssemblyRunner,
+):
+    with patch_event_loop() as event_loop:
 
-                await asyncio.wait_for(wait_for_servo_running(), timeout=2)
+        async def wait_for_servo_running():
+            while not assembly_runner.assembly.servos[0].is_running:
+                await asyncio.sleep(0.01)
 
-                # Shutdown the servo to produce edge case error
-                await assembly_runner.assembly.servos[0].shutdown()
-                try:
-                    await assembly_runner.assembly.shutdown()
-                except:
-                    raise
-                finally:
-                    # Teardown runner asyncio tasks so they don't raise errors when the loop is closed by pytest
-                    await assembly_runner.shutdown(event_loop)
+        try:
+            assembly_runner.run()
+        except ValueError as e:
+            if "add_signal_handler() can only be called from the main thread" in str(e):
+                # https://github.com/pytest-dev/pytest-xdist/issues/620
+                pytest.xfail("not running in the main thread")
+            else:
+                raise
+
+        await asyncio.wait_for(wait_for_servo_running(), timeout=2)
+
+        # Shutdown the servo to produce edge case error
+        await assembly_runner.assembly.servos[0].shutdown()
+        try:
+            await assembly_runner.assembly.shutdown()
+        except:
+            raise
+        finally:
+            # Teardown runner asyncio tasks so they don't raise errors when the loop is closed by pytest
+            await assembly_runner.shutdown(event_loop)
+
+
+@pytest.mark.timeout(5)
+@tests.helpers.api_mock
+def test_assembly_run_raises_task_errors(
+    mocker: pytest_mock.MockerFixture, assembly_runner: servo.runner.AssemblyRunner
+):
+    # with patch_event_loop() as event_loop:
+    mock = mocker.patch.object(servo.runner.ServoRunner, "run_main_loop")
+    mock.side_effect = RuntimeError("KABOOM")
+    with pytest.raises(ExceptionGroup) as eg:
+        assembly_runner.run()
+        # event_loop.run_until_complete(assembly_runner._root_task)
+        print(mock.called)
+
+    assert tests.helpers.unwrap_exception_group(
+        eg.value, RuntimeError, 1
+    ), devtools.pformat(eg.value)
 
 
 @pytest.fixture
@@ -105,6 +127,7 @@ async def servo_runner(assembly: servo.Assembly) -> servo.runner.ServoRunner:
     return servo.runner.ServoRunner(assembly.servos[0])
 
 
+@pytest.mark.asyncio
 @pytest.fixture
 async def running_servo(
     event_loop: asyncio.AbstractEventLoop,
@@ -131,6 +154,7 @@ async def running_servo(
 
 
 # TODO: Switch this over to using a FakeAPI
+@pytest.mark.asyncio
 @pytest.mark.xfail(reason="too brittle.")
 async def test_out_of_order_operations(servo_runner: servo.runner.ServoRunner) -> None:
     await servo_runner.servo.startup()
@@ -169,6 +193,7 @@ async def test_out_of_order_operations(servo_runner: servo.runner.ServoRunner) -
     servo_runner.logger.info("test logging", operation="ADJUST", progress=55)
 
 
+@pytest.mark.asyncio
 async def test_hello(
     servo_runner: servo.runner.ServoRunner,
     fakeapi_url: str,
@@ -226,6 +251,7 @@ async def test_hello(
 #     # fire up runner.run and check .run, etc.
 
 
+@pytest.mark.asyncio
 async def test_authorization_redacted(
     servo_runner: servo.runner.ServoRunner,
     fakeapi_url: str,
@@ -251,6 +277,7 @@ async def test_authorization_redacted(
     assert servo_runner.optimizer.token.get_secret_value() not in curlify_log
 
 
+@pytest.mark.asyncio
 async def test_control_sent_on_adjust(
     servo_runner: servo.runner.ServoRunner,
     fakeapi_url: str,
@@ -287,6 +314,7 @@ async def test_control_sent_on_adjust(
 
 
 # TODO: This doesn't need to be integration test
+@pytest.mark.asyncio
 @tests.helpers.api_mock
 async def test_adjustment_rejected(
     mocker, servo_runner: servo.runner.ServoRunner
