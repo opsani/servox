@@ -54,6 +54,16 @@ class ServoStatuses(enum.StrEnum):
     aborted = "aborted"
     cancelled = "cancelled"
 
+    def from_error(error: Exception) -> ServoStatuses:
+        if isinstance(error, servo.errors.AdjustmentRejectedError):
+            return ServoStatuses.rejected
+        elif isinstance(error, servo.errors.EventAbortedError):
+            return ServoStatuses.aborted
+        elif isinstance(error, servo.errors.EventCancelledError):
+            return ServoStatuses.cancelled
+        else:
+            return ServoStatuses.failed
+
 
 Statuses = Union[OptimizerStatuses, ServoStatuses]
 
@@ -127,38 +137,28 @@ class Status(pydantic.BaseModel):
         cls, error: servo.errors.BaseError | ExceptionGroup, **kwargs
     ) -> "Status":
         """Return a status object representation from the given error (first if multiple in group)."""
-        reason = getattr(error, "reason", ...)
         if isinstance(error, ExceptionGroup):
             servo.logger.warning(
                 f"from_error executed on exceptiongroup {error}. May produce undefined behavior"
             )
             status = ServoStatuses.failed
             try:
-                main_err = servo.errors.ServoError.servo_error_from_group(
+                error = servo.errors.ServoError.servo_error_from_group(
                     exception_group=error
                 )
-                if isinstance(main_err, list):
-                    main_err = main_err[0]
-                reason = main_err.reason
-            except:
+                if error._additional_errors:
+                    additional_messages = [str(e) for e in error._additional_errors]
+                    kwargs["additional_messages"] = (
+                        kwargs.get("additional_messages", []) + additional_messages
+                    )
+            except Exception:
                 servo.logger.exception(
                     "Failed to derive exceptiongroup reason for api response"
                 )
                 pass
-        if isinstance(error, servo.errors.AdjustmentRejectedError):
-            status = ServoStatuses.rejected
-        elif isinstance(error, servo.errors.EventAbortedError):
-            status = ServoStatuses.aborted
-        elif isinstance(error, servo.errors.EventCancelledError):
-            status = ServoStatuses.cancelled
-        else:
-            status = ServoStatuses.failed
 
-        if error._additional_errors:
-            additional_messages = [str(e) for e in error._additional_errors]
-            kwargs["additional_messages"] = (
-                kwargs.get("additional_messages", []) + additional_messages
-            )
+        reason = getattr(error, "reason", ...)
+        status = ServoStatuses.from_error(error)
 
         return cls(status=status, message=str(error), reason=reason, **kwargs)
 

@@ -136,9 +136,13 @@ class ServoError(BaseError):
                 exc_list.append(exc)
 
         if top_error is None:
-            raise default_error(
-                message=str(exc_list[0]), additional_errors=exc_list
-            ) from exc_list[0]
+            try:
+                # raise from to capture full trace
+                raise default_error(
+                    message=str(exc_list[0]), additional_errors=exc_list
+                ) from exc_list[0]
+            except Exception as e:
+                return e
         else:
             top_error._additional_errors = exc_list
             return top_error
@@ -216,7 +220,7 @@ class EventAbortedError(EventError):
     """
 
 
-# Most errors have a default priority of 0
+# Higher numbers indicate a higher prioerity for the error. 0 is reserved for unrecognized exceptions
 _ERROR_PRIORITIES = {
     MeasurementFailedError: 1,
     AdjustmentFailedError: 2,

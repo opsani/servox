@@ -1673,22 +1673,8 @@ class KubernetesOptimizations(pydantic.BaseModel, servo.logging.Mixin):
 
 
 def DNSSubdomainName(description: str | None = None) -> Any:
-    return pydantic.Field(
-        strip_whitespace=True,
-        min_length=1,
-        max_length=253,
-        regex="^[0-9a-zA-Z]([0-9a-zA-Z\\.-])*[0-9A-Za-z]$",
-        description=description,
-    )
-
-
-# DNSSubdomainName = pydantic.constr(
-#     strip_whitespace=True,
-#     min_length=1,
-#     max_length=253,
-#     regex="^[0-9a-zA-Z]([0-9a-zA-Z\\.-])*[0-9A-Za-z]$",
-# )
-DNSSubdomainName.__doc__ = """DNSSubdomainName models a Kubernetes DNS Subdomain Name used as the name for most resource types.
+    """DNSSubdomainName returns a pydantic.Field that models a Kubernetes DNS Subdomain Name used as the name for most
+    resource types. Its only parameter allows specifying a custom description for the field when the model schema is dumped.
 
     Valid DNS Subdomain Names conform to [RFC 1123](https://tools.ietf.org/html/rfc1123) and must:
         * contain no more than 253 characters
@@ -1698,6 +1684,14 @@ DNSSubdomainName.__doc__ = """DNSSubdomainName models a Kubernetes DNS Subdomain
 
     See https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#dns-subdomain-names
     """
+    return pydantic.Field(
+        strip_whitespace=True,
+        min_length=1,
+        max_length=253,
+        regex="^[0-9a-zA-Z]([0-9a-zA-Z\\.-])*[0-9A-Za-z]$",
+        description=description,
+    )
+
 
 DNSLabelNameField = pydantic.Field(
     strip_whitespace=True,
@@ -1706,12 +1700,6 @@ DNSLabelNameField = pydantic.Field(
     regex="^[0-9a-zA-Z]([0-9a-zA-Z-])*[0-9A-Za-z]$",
 )
 DNSLabelName = Annotated[str, DNSLabelNameField]
-# DNSLabelName = pydantic.constr(
-#     strip_whitespace=True,
-#     min_length=1,
-#     max_length=63,
-#     regex="^[0-9a-zA-Z]([0-9a-zA-Z-])*[0-9A-Za-z]$",
-# )
 DNSLabelName.__doc__ = """DNSLabelName models a Kubernetes DNS Label Name identified used to name some resource types.
 
     Valid DNS Label Names conform to [RFC 1123](https://tools.ietf.org/html/rfc1123) and must:

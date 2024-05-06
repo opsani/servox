@@ -492,7 +492,7 @@ class Servo(servo.connector.BaseConnector):
         )(self.try_connect)()
 
     async def try_connect(self) -> None:
-        self.logger.info("Saying HELLO.", end=" ")
+        self.logger.info("Saying HELLO.")
         try:
             await self.post_event(
                 servo.api.Events.hello,

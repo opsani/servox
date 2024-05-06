@@ -783,20 +783,24 @@ class CheckHelpers(pydantic.BaseModel, servo.logging.Mixin):
 
                     if failure.remedy and checks_config.remedy:
                         try:
+                            coro = None
                             async with asyncio.timeout(10.0):
-                                if asyncio.iscoroutinefunction(failure.remedy):
-                                    awaitable = failure.remedy()
-                                elif asyncio.iscoroutine(failure.remedy):
+                                if asyncio.iscoroutine(failure.remedy):
                                     awaitable = failure.remedy
                                 else:
+                                    if asyncio.iscoroutinefunction(failure.remedy):
+                                        coro = failure.remedy
+                                    else:
 
-                                    async def awaitable() -> None:
-                                        result = failure.remedy()
-                                        if asyncio.iscoroutine(result):
-                                            await result
+                                        async def coro() -> None:
+                                            result = failure.remedy()
+                                            if asyncio.iscoroutine(result):
+                                                await result
 
-                                    _ = tg.create_task(awaitable)
-                                    servo.logger.info("💡 Attempting to apply remedy...")
+                                    awaitable = coro()
+
+                                await tg.create_task(awaitable)
+                                servo.logger.info("💡 Attempting to apply remedy...")
 
                         except asyncio.TimeoutError:
                             servo.logger.warning("💡 Remedy attempt timed out after 10s")
