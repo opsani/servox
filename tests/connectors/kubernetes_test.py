@@ -1555,7 +1555,7 @@ class TestKubernetesConnectorIntegration:
         # Check error
         assert "quantities must match the regular expression" in str(error.value)
         top_cause = unwrap_exception_group(
-            error.value.__cause__, aiohttp.ClientResponseError
+            error.value.__cause__, kubernetes_asyncio.client.ApiException
         )
         if isinstance(top_cause, list):
             top_cause = top_cause[0]
