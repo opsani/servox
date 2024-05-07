@@ -166,7 +166,7 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin):
                     command_uid=cmd_response.command_uid,
                 )
                 self.logger.error(f"Responding with {status.dict()}")
-                self.logger.opt(exception=error).debug("Describe failure details")
+                self.logger.opt(exception=error_group).debug("Describe failure details")
 
             self.clear_progress_queue()
             return await self.servo.post_event(servo.api.Events.describe, status.dict())
@@ -190,7 +190,7 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin):
                     command_uid=cmd_response.command_uid,
                 )
                 self.logger.error(f"Responding with {status.dict()}")
-                self.logger.opt(exception=error).debug("Measure failure details")
+                self.logger.opt(exception=error_group).debug("Measure failure details")
 
             self.clear_progress_queue()
             return await self.servo.post_event(servo.api.Events.measure, status.dict())
@@ -224,7 +224,7 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin):
                     command_uid=cmd_response.command_uid,
                 )
                 self.logger.error(f"Responding with {status.dict()}")
-                self.logger.opt(exception=error).debug("Adjust failure details")
+                self.logger.opt(exception=error_group).debug("Adjust failure details")
 
             self.clear_progress_queue()
             return await self.servo.post_event(servo.api.Events.adjust, status.dict())

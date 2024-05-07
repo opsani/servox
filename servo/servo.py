@@ -220,7 +220,7 @@ class Servo(servo.connector.BaseConnector):
     """
 
     routes: dict[str, type[servo.connector.BaseConnector]] = {}
-    """The dict of connectors this servo was initially configured with. Used for adding connectors that have been removed
+    """The dict of connectors this servo was initially configured with. Used for storing the connectors to be added to this servo on initialization and re-start
     """
 
     _api_client: Union[httpx.AsyncClient, AsyncOAuth2Client] = pydantic.PrivateAttr(
