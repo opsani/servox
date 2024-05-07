@@ -119,29 +119,14 @@ class Assembly(pydantic.BaseModel):
 
             telemetry = servo.telemetry.Telemetry()
 
-            # Initialize all active connectors
-            connectors: List[servo.connector.BaseConnector] = []
-            for name, connector_type in routes.items():
-                connector_config = getattr(servo_config, name)
-                if connector_config is not None:
-                    connector = connector_type(
-                        name=name,
-                        config=connector_config,
-                        pubsub_exchange=pubsub_exchange,
-                        telemetry=telemetry,
-                        __connectors__=connectors,
-                    )
-                    connectors.append(connector)
-
             # Build the servo object
             servo_ = servo.servo.Servo(
                 config=servo_config,
-                connectors=connectors.copy(),  # Avoid self-referential reference to servo
                 telemetry=telemetry,
-                __connectors__=connectors,
                 pubsub_exchange=pubsub_exchange,
+                routes=routes,
             )
-            connectors.append(servo_)
+            servo_.load_connectors()
             servos.append(servo_)
 
         assembly = cls(
@@ -224,12 +209,14 @@ class Assembly(pydantic.BaseModel):
         """
         self.servos.append(servo_)
 
-        await servo.attach()
+        await servo_.attach()
 
         if self.is_running:
-            await servo.startup()
+            await servo_.startup()
 
-    async def remove_servo(self, servo_: servo.servo.Servo) -> None:
+    async def remove_servo(
+        self, servo_: servo.servo.Servo, reason: str | None = None
+    ) -> None:
         """Remove a servo from the assembly.
 
         Before removal, the servo is sent the detach event to prepare for
@@ -239,10 +226,10 @@ class Assembly(pydantic.BaseModel):
             servo_: The servo to remove from the assembly.
         """
 
-        await servo.detach()
+        await servo_.detach()
 
         if self.is_running:
-            await servo.shutdown()
+            await servo_.shutdown(reason)
 
         self.servos.remove(servo_)
 
@@ -257,12 +244,12 @@ class Assembly(pydantic.BaseModel):
             )
         )
 
-    async def shutdown(self):
+    async def shutdown(self, reason: str | None = None):
         """Notify all servos that the assembly is shutting down."""
         await asyncio.gather(
             *list(
                 map(
-                    lambda s: s.shutdown(),
+                    lambda s: s.shutdown(reason=reason),
                     filter(
                         lambda s: s.is_running,
                         self.servos,

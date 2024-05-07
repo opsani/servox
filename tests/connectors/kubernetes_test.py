@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from typing import Type
+from typing import Annotated, Type
 
+import aiohttp
 import httpx
 import kubetest.client
 from kubetest.objects import Deployment as KubetestDeployment
@@ -36,9 +37,11 @@ from servo.connectors.kubernetes import (
     CanaryOptimizationStrategyConfiguration,
     ContainerConfiguration,
     ContainerTagName,
+    ContainerTagNameField,
     DefaultOptimizationStrategyConfiguration,
     DeploymentConfiguration,
     DNSLabelName,
+    DNSLabelNameField,
     DNSSubdomainName,
     FailureMode,
     KubernetesChecks,
@@ -68,7 +71,7 @@ class TestDNSSubdomainName:
     @pytest.fixture
     def model(self) -> Type[BaseModel]:
         class Model(BaseModel):
-            name: DNSSubdomainName
+            name: Annotated[str, DNSSubdomainName()]
 
         return Model
 
@@ -120,10 +123,10 @@ class TestDNSSubdomainName:
         assert e
         assert {
             "loc": ("name",),
-            "msg": f'string does not match regex "{DNSSubdomainName.regex.pattern}"',
+            "msg": f'string does not match regex "{DNSSubdomainName().regex}"',
             "type": "value_error.str.regex",
             "ctx": {
-                "pattern": DNSSubdomainName.regex.pattern,
+                "pattern": DNSSubdomainName().regex,
             },
         } in e.value.errors()
 
@@ -137,10 +140,10 @@ class TestDNSSubdomainName:
         assert e
         assert {
             "loc": ("name",),
-            "msg": f'string does not match regex "{DNSSubdomainName.regex.pattern}"',
+            "msg": f'string does not match regex "{DNSSubdomainName().regex}"',
             "type": "value_error.str.regex",
             "ctx": {
-                "pattern": DNSSubdomainName.regex.pattern,
+                "pattern": DNSSubdomainName().regex,
             },
         } in e.value.errors()
 
@@ -154,10 +157,10 @@ class TestDNSSubdomainName:
         assert e
         assert {
             "loc": ("name",),
-            "msg": f'string does not match regex "{DNSSubdomainName.regex.pattern}"',
+            "msg": f'string does not match regex "{DNSSubdomainName().regex}"',
             "type": "value_error.str.regex",
             "ctx": {
-                "pattern": DNSSubdomainName.regex.pattern,
+                "pattern": DNSSubdomainName().regex,
             },
         } in e.value.errors()
 
@@ -218,10 +221,10 @@ class TestDNSLabelName:
         assert e
         assert {
             "loc": ("name",),
-            "msg": f'string does not match regex "{DNSLabelName.regex.pattern}"',
+            "msg": f'string does not match regex "{DNSLabelNameField.regex}"',
             "type": "value_error.str.regex",
             "ctx": {
-                "pattern": DNSLabelName.regex.pattern,
+                "pattern": DNSLabelNameField.regex,
             },
         } in e.value.errors()
 
@@ -235,10 +238,10 @@ class TestDNSLabelName:
         assert e
         assert {
             "loc": ("name",),
-            "msg": f'string does not match regex "{DNSLabelName.regex.pattern}"',
+            "msg": f'string does not match regex "{DNSLabelNameField.regex}"',
             "type": "value_error.str.regex",
             "ctx": {
-                "pattern": DNSLabelName.regex.pattern,
+                "pattern": DNSLabelNameField.regex,
             },
         } in e.value.errors()
 
@@ -252,10 +255,10 @@ class TestDNSLabelName:
         assert e
         assert {
             "loc": ("name",),
-            "msg": f'string does not match regex "{DNSLabelName.regex.pattern}"',
+            "msg": f'string does not match regex "{DNSLabelNameField.regex}"',
             "type": "value_error.str.regex",
             "ctx": {
-                "pattern": DNSLabelName.regex.pattern,
+                "pattern": DNSLabelNameField.regex,
             },
         } in e.value.errors()
 
@@ -312,10 +315,10 @@ class TestContainerTagName:
             assert e
             assert {
                 "loc": ("name",),
-                "msg": f'string does not match regex "{ContainerTagName.regex.pattern}"',
+                "msg": f'string does not match regex "{ContainerTagNameField.regex}"',
                 "type": "value_error.str.regex",
                 "ctx": {
-                    "pattern": ContainerTagName.regex.pattern,
+                    "pattern": ContainerTagNameField.regex,
                 },
             } in e.value.errors()
 
@@ -1551,7 +1554,12 @@ class TestKubernetesConnectorIntegration:
         assert "no tuning pod exists, ignoring destroy" in messages[-30:]
         # Check error
         assert "quantities must match the regular expression" in str(error.value)
-        assert error.value.__cause__.status == 400
+        top_cause = unwrap_exception_group(
+            error.value.__cause__, kubernetes_asyncio.client.ApiException
+        )
+        if isinstance(top_cause, list):
+            top_cause = top_cause[0]
+        assert top_cause.status == 400
 
     async def test_adjust_tuning_cpu_with_settlement(
         self, tuning_config, namespace, kube

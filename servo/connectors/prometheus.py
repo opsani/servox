@@ -869,38 +869,38 @@ class PrometheusConnector(servo.BaseConnector):
 
     config: PrometheusConfiguration
 
-    @servo.on_event()
-    async def startup(self) -> None:
-        # Continuously publish a stream of metrics broadcasting every N seconds
-        streaming_interval = self.config.streaming_interval
-        if streaming_interval is not None:
-            logger = servo.logger.bind(component=f"{self.name} -> {CHANNEL}")
-            logger.info(f"Streaming Prometheus metrics every {streaming_interval}")
+    # @servo.on_event()
+    # async def startup(self) -> None:
+    #     # Continuously publish a stream of metrics broadcasting every N seconds
+    #     streaming_interval = self.config.streaming_interval
+    #     if streaming_interval is not None:
+    #         logger = servo.logger.bind(component=f"{self.name} -> {CHANNEL}")
+    #         logger.info(f"Streaming Prometheus metrics every {streaming_interval}")
 
-            @self.publish(CHANNEL, every=streaming_interval)
-            async def _publish_metrics(publisher: servo.pubsub.Publisher) -> None:
-                report = []
-                client = Client(base_url=self.config.base_url)
-                responses = await asyncio.gather(
-                    *list(map(client.query, self.config.metrics)),
-                    return_exceptions=True,
-                )
-                for response in responses:
-                    if isinstance(response, Exception):
-                        logger.error(
-                            f"failed querying Prometheus for metrics: {response}"
-                        )
-                        continue
+    #         @self.publish(CHANNEL, every=streaming_interval)
+    #         async def _publish_metrics(publisher: servo.pubsub.Publisher) -> None:
+    #             report = []
+    #             client = Client(base_url=self.config.base_url)
+    #             responses = await asyncio.gather(
+    #                 *list(map(client.query, self.config.metrics)),
+    #                 return_exceptions=True,
+    #             )
+    #             for response in responses:
+    #                 if isinstance(response, Exception):
+    #                     logger.error(
+    #                         f"failed querying Prometheus for metrics: {response}"
+    #                     )
+    #                     continue
 
-                    if response.data:
-                        # NOTE: Instant queries return a single vector
-                        timestamp, value = response.data[0].value
-                        report.append(
-                            (response.metric.name, timestamp.isoformat(), value)
-                        )
+    #                 if response.data:
+    #                     # NOTE: Instant queries return a single vector
+    #                     timestamp, value = response.data[0].value
+    #                     report.append(
+    #                         (response.metric.name, timestamp.isoformat(), value)
+    #                     )
 
-                await publisher(servo.pubsub.Message(json=report))
-                logger.debug(f"Published {len(report)} metrics.")
+    #             await publisher(servo.pubsub.Message(json=report))
+    #             logger.debug(f"Published {len(report)} metrics.")
 
     @servo.on_event()
     async def check(
@@ -994,14 +994,19 @@ class PrometheusConnector(servo.BaseConnector):
                 ),
             )
             fast_fail_progress = servo.EventProgress(timeout=measurement_duration)
-            async with asyncio.TaskGroup() as tg:
-                _ = tg.create_task(progress.watch(self.observe))
-                _ = tg.create_task(
-                    fast_fail_progress.watch(
-                        fast_fail_observer.observe,
-                        every=self.config.fast_fail.period,
+            try:
+                async with asyncio.TaskGroup() as tg:
+                    _ = tg.create_task(progress.watch(self.observe))
+                    _ = tg.create_task(
+                        fast_fail_progress.watch(
+                            fast_fail_observer.observe,
+                            every=self.config.fast_fail.period,
+                        )
                     )
-                )
+            except ExceptionGroup as eg:
+                raise servo.ServoError.servo_error_from_group(
+                    eg, default_error=servo.errors.MeasurementFailedError
+                ) from eg
 
         else:
             await progress.watch(self.observe)

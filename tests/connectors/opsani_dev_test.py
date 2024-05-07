@@ -662,10 +662,10 @@ class TestNoTuningIntegration:
             await assert_check(no_tuning_checks.run_one(id=f"check_tuning_is_running"))
 
             # Cancel outstanding tasks
-            tasks = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
-            [task.cancel() for task in tasks]
+            # tasks = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
+            # [task.cancel() for task in tasks]
 
-            await asyncio.gather(*tasks, return_exceptions=True)
+            # await asyncio.gather(*tasks, return_exceptions=True)
 
 
 @pytest.mark.integration
@@ -1178,12 +1178,12 @@ class TestServiceMultiport:
                     )
 
                 # Cancel outstanding tasks
-                tasks = [
-                    t for t in asyncio.all_tasks() if t is not asyncio.current_task()
-                ]
-                [task.cancel() for task in tasks]
+                # tasks = [
+                #     t for t in asyncio.all_tasks() if t is not asyncio.current_task()
+                # ]
+                # [task.cancel() for task in tasks]
 
-                await asyncio.gather(*tasks, return_exceptions=True)
+                # await asyncio.gather(*tasks, return_exceptions=True)
 
         @pytest.mark.namespace(create=False, name="test-install-wait")
         async def test_install_wait(

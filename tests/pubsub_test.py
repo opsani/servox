@@ -1491,10 +1491,6 @@ class TestMixin:
         else:
             host_object.pubsub_exchange.clear()
 
-        tasks = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
-        [task.cancel() for task in tasks]
-        await asyncio.gather(*tasks, return_exceptions=True)
-
     async def test_init_with_pubsub_exchange(self) -> None:
         exchange = servo.pubsub.Exchange()
         obj = HostObject(pubsub_exchange=exchange)

@@ -41,7 +41,9 @@ import servo.connectors.kubernetes
 import tests.helpers
 
 # Add the devtools debug() function globally in tests
-builtins.debug = devtools.debug
+from devtools import debug
+
+builtins.debug = debug
 
 # Render all manifests as Mustache templates by default
 kubetest.manifest.__render__ = chevron.render
@@ -467,7 +469,7 @@ def random_string() -> str:
 
 
 @pytest.fixture
-def captured_logs() -> list["loguru.Message"]:
+def captured_logs() -> Generator[None, list["loguru.Message"], None]:
     messages = []
     temp_sink_id = servo.logger.add(lambda m: messages.append(m), level=0)
     yield messages
@@ -531,7 +533,11 @@ async def kubernetes_asyncio_config(
 
 
 @pytest.fixture
-async def minikube(request, subprocess, kubeconfig: pathlib.Path) -> str:
+async def minikube(
+    request: pytest.FixtureRequest,
+    subprocess: tests.helpers.Subprocess,
+    kubeconfig: pathlib.Path,
+) -> AsyncGenerator[str, None]:
     """Run tests within a local minikube profile.
 
     The profile name is determined using the parametrized `minikube_profile` marker
@@ -632,10 +638,13 @@ async def fakeapi_url(
     fastapi_app: fastapi.FastAPI, unused_tcp_port: int
 ) -> AsyncGenerator[str, None]:
     """Run a FakeAPI server as a pytest fixture and yield the base URL for accessing it."""
-    server = tests.helpers.FakeAPI(app=fastapi_app, port=unused_tcp_port)
-    await server.start()
-    yield server.base_url
-    await server.stop()
+    async with asyncio.TaskGroup() as tg:
+        server = tests.helpers.FakeAPI(
+            app=fastapi_app, port=unused_tcp_port, task_group=tg
+        )
+        await server.start()
+        yield server.base_url
+        await server.stop()
 
 
 @pytest.fixture
@@ -668,9 +677,14 @@ async def assembly(servo_yaml: pathlib.Path) -> servo.assembly.Assembly:
 
 
 @pytest.fixture
-def assembly_runner(assembly: servo.Assembly) -> servo.runner.AssemblyRunner:
+async def assembly_runner(
+    assembly: servo.Assembly,
+) -> AsyncGenerator[servo.runner.AssemblyRunner, None]:
     """Return an unstarted assembly runner."""
-    return servo.runner.AssemblyRunner(assembly)
+    runner = servo.runner.AssemblyRunner(assembly)
+    yield runner
+    if runner.progress_handler is not None:
+        await runner.progress_handler.shutdown()
 
 
 @pytest.fixture
@@ -741,28 +755,28 @@ async def kubectl_ports_forwarded(
     ports_arg = " ".join(list(map(lambda pair: f"{pair[0]}:{pair[1]}", ports)))
     context_arg = f"--context {context}" if context else ""
     event = asyncio.Event()
-    task = asyncio.create_task(
-        tests.helpers.Subprocess.shell(
-            f"kubectl --kubeconfig={kubeconfig} {context_arg} port-forward --namespace {namespace} {identifier} {ports_arg}",
-            event=event,
-            print_output=True,
-        )
-    )
-
-    await event.wait()
-
-    # Check the sockets can be connected to
-    # TODO/FIXME add fault tolerance for error upgrading connection: unable to upgrade connection: pod does not exist
-    for local_port, _ in ports:
-        a_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        if (h_errno := a_socket.connect_ex(("localhost", local_port))) != 0:
-            if task.done():
-                debug(task.result())
-            raise RuntimeError(
-                f"port forwarding failed: port {local_port} connect failed (errno {h_errno})"
+    async with asyncio.TaskGroup() as tg:
+        task = tg.create_task(
+            tests.helpers.Subprocess.shell(
+                f"kubectl --kubeconfig={kubeconfig} {context_arg} port-forward --namespace {namespace} {identifier} {ports_arg}",
+                event=event,
+                print_output=True,
             )
+        )
 
-    try:
+        await event.wait()
+
+        # Check the sockets can be connected to
+        # TODO/FIXME add fault tolerance for error upgrading connection: unable to upgrade connection: pod does not exist
+        for local_port, _ in ports:
+            a_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            if (h_errno := a_socket.connect_ex(("localhost", local_port))) != 0:
+                if task.done():
+                    debug(task.result())
+                raise RuntimeError(
+                    f"port forwarding failed: port {local_port} connect failed (errno {h_errno})"
+                )
+
         if len(ports) == 1:
             url = f"http://localhost:{ports[0][0]}"
             yield url
@@ -772,10 +786,8 @@ async def kubectl_ports_forwarded(
                 map(lambda p: (p[1], f"http://localhost:{p[0]}"), ports)
             )
             yield ports_to_urls
-    finally:
+
         task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await task
 
 
 @pytest.fixture()

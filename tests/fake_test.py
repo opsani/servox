@@ -1,7 +1,7 @@
 import datetime
 import pathlib
 import random
-from typing import Optional, Union
+from typing import AsyncGenerator, Optional, Union
 
 import fastapi
 import pytest
@@ -283,9 +283,14 @@ async def assembly(
 
 
 @pytest.fixture
-def assembly_runner(assembly: servo.Assembly) -> servo.runner.AssemblyRunner:
+async def assembly_runner(
+    assembly: servo.Assembly,
+) -> AsyncGenerator[servo.runner.AssemblyRunner, None]:
     """Return an unstarted assembly runner."""
-    return servo.runner.AssemblyRunner(assembly)
+    runner = servo.runner.AssemblyRunner(assembly)
+    yield runner
+    if runner.progress_handler is not None:
+        await runner.progress_handler.shutdown()
 
 
 @pytest.fixture

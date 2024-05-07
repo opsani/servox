@@ -28,6 +28,8 @@ import pathlib
 import pydantic
 import re
 from typing import (
+    Annotated,
+    Any,
     AsyncIterator,
     Collection,
     Dict,
@@ -1670,13 +1672,9 @@ class KubernetesOptimizations(pydantic.BaseModel, servo.logging.Mixin):
         arbitrary_types_allowed = True
 
 
-DNSSubdomainName = pydantic.constr(
-    strip_whitespace=True,
-    min_length=1,
-    max_length=253,
-    regex="^[0-9a-zA-Z]([0-9a-zA-Z\\.-])*[0-9A-Za-z]$",
-)
-DNSSubdomainName.__doc__ = """DNSSubdomainName models a Kubernetes DNS Subdomain Name used as the name for most resource types.
+def DNSSubdomainName(description: str | None = None) -> Any:
+    """DNSSubdomainName returns a pydantic.Field that models a Kubernetes DNS Subdomain Name used as the name for most
+    resource types. Its only parameter allows specifying a custom description for the field when the model schema is dumped.
 
     Valid DNS Subdomain Names conform to [RFC 1123](https://tools.ietf.org/html/rfc1123) and must:
         * contain no more than 253 characters
@@ -1686,14 +1684,22 @@ DNSSubdomainName.__doc__ = """DNSSubdomainName models a Kubernetes DNS Subdomain
 
     See https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#dns-subdomain-names
     """
+    return pydantic.Field(
+        strip_whitespace=True,
+        min_length=1,
+        max_length=253,
+        regex="^[0-9a-zA-Z]([0-9a-zA-Z\\.-])*[0-9A-Za-z]$",
+        description=description,
+    )
 
 
-DNSLabelName = pydantic.constr(
+DNSLabelNameField = pydantic.Field(
     strip_whitespace=True,
     min_length=1,
     max_length=63,
     regex="^[0-9a-zA-Z]([0-9a-zA-Z-])*[0-9A-Za-z]$",
 )
+DNSLabelName = Annotated[str, DNSLabelNameField]
 DNSLabelName.__doc__ = """DNSLabelName models a Kubernetes DNS Label Name identified used to name some resource types.
 
     Valid DNS Label Names conform to [RFC 1123](https://tools.ietf.org/html/rfc1123) and must:
@@ -1706,12 +1712,18 @@ DNSLabelName.__doc__ = """DNSLabelName models a Kubernetes DNS Label Name identi
     """
 
 
-ContainerTagName = pydantic.constr(
-    strip_whitespace=True,
+ContainerTagNameField = pydantic.Field(
     min_length=1,
     max_length=128,
     regex="^[0-9a-zA-Z]([0-9a-zA-Z_\\.\\-/:@])*$",
-)  # NOTE: This regex is not a full validation
+    strip_whitespace=True,
+)
+ContainerTagName = Annotated[str, ContainerTagNameField]
+# ContainerTagName = pydantic.constr(
+#     min_length=1,
+#     max_length=128,
+#     regex="^[0-9a-zA-Z]([0-9a-zA-Z_\\.\\-/:@])*$",
+# )  # NOTE: This regex is not a full validation
 ContainerTagName.__doc__ = """ContainerTagName models the name of a container referenced in a Kubernetes manifest.
 
     Valid container tags must:
@@ -1844,9 +1856,14 @@ class BaseKubernetesConfiguration(servo.BaseConfiguration):
     context: Optional[str] = pydantic.Field(
         description="Name of the kubeconfig context to use."
     )
-    namespace: Optional[DNSSubdomainName] = pydantic.Field(
-        description="Kubernetes namespace where the target deployments are running.",
-    )
+    namespace: Optional[
+        Annotated[
+            str,
+            DNSSubdomainName(
+                "Kubernetes namespace where the target deployments are running."
+            ),
+        ]
+    ]
     settlement: Optional[servo.Duration] = pydantic.Field(
         description="Duration to observe the application after an adjust to ensure the deployment is stable. May be overridden by optimizer supplied `control.adjust.settlement` value."
     )
@@ -1887,7 +1904,7 @@ class DeploymentConfiguration(BaseKubernetesConfiguration):
     The DeploymentConfiguration class models the configuration of an optimizable Kubernetes Deployment.
     """
 
-    name: DNSSubdomainName
+    name: Annotated[str, DNSSubdomainName()]
     containers: List[ContainerConfiguration]
     strategy: StrategyTypes = OptimizationStrategy.default
     replicas: servo.Replicas
@@ -1904,7 +1921,7 @@ class StatefulSetConfiguration(DeploymentConfiguration):
 
 
 class KubernetesConfiguration(BaseKubernetesConfiguration):
-    namespace: DNSSubdomainName = DNSSubdomainName("default")
+    namespace: Annotated[str, DNSSubdomainName()] = "default"
     timeout: servo.Duration = "5m"
     permissions: List[PermissionSet] = pydantic.Field(
         STANDARD_PERMISSIONS,
@@ -2249,8 +2266,13 @@ class KubernetesConnector(servo.BaseConnector):
     async def describe(
         self, control: servo.Control = servo.Control()
     ) -> servo.Description:
-        state = await self._create_optimizations()
-        return state.to_description()
+        try:
+            state = await self._create_optimizations()
+            return state.to_description()
+        except ExceptionGroup as eg:
+            raise servo.ServoError.servo_error_from_group(
+                eg, default_error=servo.errors.EventError
+            ) from eg
 
     @servo.on_event()
     async def components(self) -> List[servo.Component]:
@@ -2308,7 +2330,10 @@ class KubernetesConnector(servo.BaseConnector):
                             # Raise a specific exception if the optimization defines one
                             try:
                                 await state.raise_for_status()
-                            except* servo.AdjustmentRejectedError as e:
+                            except* servo.AdjustmentRejectedError as eg:
+                                e = servo.errors.ServoError.servo_error_from_group(eg)
+                                if isinstance(e, list):
+                                    e = e[0]
                                 # Update rejections with start-failed to indicate the initial rollout was successful
                                 if e.reason == "start-failed":
                                     e.reason = "unstable"
@@ -2334,10 +2359,9 @@ class KubernetesConnector(servo.BaseConnector):
 
             description = state.to_description()
         except ExceptionGroup as eg:
-            if any(isinstance(sub_e, servo.EventError) for sub_e in eg.exceptions):
-                raise
-            else:
-                raise servo.AdjustmentFailedError(str(eg.message)) from eg
+            raise servo.ServoError.servo_error_from_group(
+                eg, default_error=servo.AdjustmentFailedError
+            ) from eg
         except servo.EventError:  # this is recognized by the runner
             raise
         except Exception as e:

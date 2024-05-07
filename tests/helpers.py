@@ -18,9 +18,12 @@ from typing import (
     Type,
     Union,
 )
+import typing
 
 import fastapi
+import httpx
 import kubernetes_asyncio.client
+import respx
 import uvicorn
 import yaml
 from pydantic.json import pydantic_encoder
@@ -179,6 +182,44 @@ def json_key_path(json_str: str, key_path: str) -> Any:
     return dict_key_path(obj, key_path)
 
 
+E = typing.TypeVar("E")
+
+
+def unwrap_exception_group(
+    excg: ExceptionGroup, expected_type: type[E], expected_count: int | None = None
+) -> E | list[E]:
+    flattened_group = flatten_exception_group(exception_group=excg)
+    excg_len = len(flattened_group)
+    if expected_count is not None:
+        assert (
+            excg_len == expected_count
+        ), f"Excpetion group count {excg_len} did not match expected count {expected_count}"
+
+    assert excg_len > 0
+    if not all(isinstance(e, expected_type) for e in flattened_group):
+        raise excg
+
+    servo.errors.ServoError.servo_error_from_group
+    if excg_len > 1:
+        return flattened_group
+    else:
+        return flattened_group[0]
+
+
+def flatten_exception_group(exception_group: ExceptionGroup) -> list[Exception]:
+    exc_list = []
+    # traverse tree of exceptions depth first. Evaluate priority and raise as the "main" exception with others included as property additional exceptions
+    visit_list = list(exception_group.exceptions)
+    while visit_list:
+        exc = visit_list.pop(0)
+        if isinstance(exc, ExceptionGroup):
+            visit_list = list(exc.exceptions) + visit_list
+        else:
+            exc_list.append(exc)
+
+    return exc_list
+
+
 class Subprocess:
     @staticmethod
     async def shell(
@@ -238,6 +279,12 @@ class Subprocess:
         )
 
 
+api_mock = respx.mock(base_url="https://api.opsani.com/", assert_all_called=True)
+api_mock.post("/accounts/dev.opsani.com/applications/servox/servo", name="servo").mock(
+    return_value=httpx.Response(200, json={"status": "ok", "command": "SLEEP"}),
+)
+
+
 class FakeAPI(uvicorn.Server):
     """Testing server for implementing API fakes on top of Uvicorn and FastAPI.
 
@@ -262,7 +309,11 @@ class FakeAPI(uvicorn.Server):
     """
 
     def __init__(
-        self, app: fastapi.FastAPI, host: str = "127.0.0.1", port: int = 8000
+        self,
+        app: fastapi.FastAPI,
+        host: str = "127.0.0.1",
+        port: int = 8000,
+        task_group: asyncio.TaskGroup | None = None,
     ) -> None:
         """Initialize a FakeAPI instance by mounting a FastAPI app and starting Uvicorn.
 
@@ -272,6 +323,7 @@ class FakeAPI(uvicorn.Server):
             port (int, optional): the port. Defaults to 8000.
         """
         self._startup_done = asyncio.Event()
+        self._task_group = task_group
         super().__init__(config=uvicorn.Config(app, host=host, port=port))
 
     async def startup(self, sockets: Optional[List] = None) -> None:
@@ -281,7 +333,10 @@ class FakeAPI(uvicorn.Server):
 
     async def start(self) -> None:
         """Start up the server and wait for it to initialize."""
-        self._serve_task = asyncio.create_task(self.serve())
+        if self._task_group:
+            self._serve_task = self._task_group.create_task(self.serve())
+        else:
+            self._serve_task = asyncio.create_task(self.serve())
         await self._startup_done.wait()
 
     async def stop(self) -> None:

@@ -219,12 +219,17 @@ class Servo(servo.connector.BaseConnector):
     """The active connectors in the Servo.
     """
 
+    routes: dict[str, type[servo.connector.BaseConnector]] = {}
+    """The dict of connectors this servo was initially configured with. Used for storing the connectors to be added to this servo on initialization and re-start
+    """
+
     _api_client: Union[httpx.AsyncClient, AsyncOAuth2Client] = pydantic.PrivateAttr(
         None
     )
     """An asynchronous client for interacting with the Opsani API."""
 
     _running: bool = pydantic.PrivateAttr(False)
+    _connected: bool = pydantic.PrivateAttr(False)
 
     async def dispatch_event(
         self, *args, **kwargs
@@ -233,19 +238,26 @@ class Servo(servo.connector.BaseConnector):
             return await super().dispatch_event(*args, **kwargs)
 
     def __init__(
-        self, *args, connectors: list[servo.connector.BaseConnector], **kwargs
+        self,
+        *args,
+        connectors: list[servo.connector.BaseConnector] | None = None,
+        __connectors__: list[servo.connector.BaseConnector] | None = None,
+        **kwargs,
     ) -> None:  # noqa: D107
-        super().__init__(*args, connectors=[], **kwargs)
+        if __connectors__ is None:
+            __connectors__ = []
+        super().__init__(*args, connectors=[], __connectors__=__connectors__, **kwargs)
 
         self._api_client = servo.api.get_api_client_for_optimizer(
             self.config.optimizer, self.config.settings
         )
 
-        # Ensure the connectors refer to the same objects by identity (required for eventing)
-        self.connectors.extend(connectors)
+        if connectors:
+            # Ensure the connectors refer to the same objects by identity (required for eventing)
+            self.connectors.extend(connectors)
 
         # associate shared config with our children
-        for connector in connectors + [self]:
+        for connector in self.connectors + [self]:
             connector._global_config = self.config.settings
             connector._optimizer = self.config.optimizer
 
@@ -257,6 +269,30 @@ class Servo(servo.connector.BaseConnector):
             )
 
         return values
+
+    def load_connectors(self):
+        if not self.routes:
+            raise RuntimeError("No routes configured to load connectors for")
+
+        # Initialize all active connectors
+        for name, connector_type in self.routes.items():
+            connector_config = getattr(self.config, name)
+            if connector_config is not None:
+                connector = connector_type(
+                    name=name,
+                    config=connector_config,
+                    pubsub_exchange=self.pubsub_exchange,
+                    telemetry=self.telemetry,
+                    __connectors__=self.__connectors__,
+                )
+                # associate shared config with our children
+                connector._global_config = self.config.settings
+                connector._optimizer = self.config.optimizer
+
+                self.__connectors__.append(connector)
+                self.connectors.append(connector)
+
+        self.__connectors__.append(self)
 
     async def attach(self, servo_: servo.assembly.Assembly) -> None:
         """Notify the servo that it has been attached to an Assembly."""
@@ -276,17 +312,20 @@ class Servo(servo.connector.BaseConnector):
         if self.is_running:
             raise RuntimeError("Cannot start up a servo that is already running")
 
+        await self.connect()
+
         self._running = True
 
         await self.dispatch_event(
             Events.startup, _prepositions=servo.events.Preposition.on
         )
 
+        # TODO remove pubsub logic
         # Start up the pub/sub exchange
         if not self.pubsub_exchange.running:
             self.pubsub_exchange.start()
 
-    async def shutdown(self) -> None:
+    async def shutdown(self, reason: str | None = None) -> None:
         """Notify all active connectors that the servo is shutting down."""
         if not self.is_running:
             raise RuntimeError("Cannot shut down a servo that is not running")
@@ -297,6 +336,11 @@ class Servo(servo.connector.BaseConnector):
         # Shut down the pub/sub exchange
         if self.pubsub_exchange.running:
             await self.pubsub_exchange.shutdown()
+
+        # Notifiy the backend we are shutting down
+        if reason is None:
+            reason = "unknown"
+        await self.disconnect(reason=reason)
 
         self._running = False
 
@@ -435,6 +479,50 @@ class Servo(servo.connector.BaseConnector):
             default=pydantic.json.pydantic_encoder,
         )
 
+    async def connect(self) -> None:
+        # must define dynamic function to allow configurable backoff
+        await backoff.on_exception(
+            backoff.expo,
+            httpx.HTTPError,
+            max_time=lambda: self.config.settings.backoff.max_time(),
+            max_tries=lambda: self.config.settings.backoff.max_tries(),
+            on_giveup=lambda details: self.logger.critical(
+                f"retries exhausted after {details['elapsed']} seconds, giving up"
+            ),
+        )(self.try_connect)()
+
+    async def try_connect(self) -> None:
+        self.logger.info("Saying HELLO.")
+        try:
+            await self.post_event(
+                servo.api.Events.hello,
+                dict(
+                    agent=servo.api.user_agent(),
+                    telemetry=self.telemetry.values,
+                ),
+            )
+        except httpx.HTTPStatusError as error:
+            if (
+                error.response.status_code == 410
+                and error.response.json().get("detail") == "unexpected servo_uid"
+            ):
+                self.logger.warning(
+                    f"servo UID {self.config.servo_uid} is no longer valid. Waiting for deprovisioning (will sleep for 1 hour)"
+                )
+                await asyncio.sleep(3600)
+            raise
+
+        self._connected = True
+
+    async def disconnect(self, reason: str) -> None:
+        if self._connected:
+            try:
+                await self.post_event(servo.api.Events.goodbye, dict(reason=reason))
+            except:
+                self.logger.exception("Failed to send GOODBYE event")
+
+            self._connected = False
+
     async def report_progress(self, **kwargs) -> None:
         """Post a progress report to the Opsani API."""
         request = self.progress_request(**kwargs)
@@ -465,12 +553,14 @@ class Servo(servo.connector.BaseConnector):
         message: Optional[str],
         *,
         command_uid: Union[str, None] = None,
-        connector: Optional[str] = None,
-        event_context: Optional["servo.events.EventContext"] = None,
         time_remaining: Optional[
             Union[servo.types.Numeric, servo.types.Duration]
         ] = None,
-        logs: Optional[list[str]] = None,
+        **kwargs
+        # logs: Optional[list[str]] = None,
+        # _servo: Optional[Servo] = None,
+        # connector: Optional[servo.connector.BaseConnector] = None,
+        # event_context: Optional["servo.events.EventContext"] = None,
     ) -> Tuple[str, dict[str, Any]]:
         def set_if(d: dict, k: str, v: Any):
             if v is not None:

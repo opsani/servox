@@ -1,5 +1,5 @@
 import datetime
-import devtools
+from devtools import debug, pprint
 import json
 import pathlib
 import re
@@ -28,6 +28,8 @@ from servo.connectors.prometheus import (
     RangeQuery,
 )
 from servo.types import *
+
+import tests.helpers
 
 
 class TestPrometheusMetric:
@@ -588,7 +590,7 @@ class TestPrometheusIntegration:
                     timeout=360,  # NOTE: if we haven't returned in 5 minutes all is lost
                 )
                 assert measurement
-                assert len(measurement) == 1, devtools.pprint(measurement)
+                assert len(measurement) == 1, pprint(measurement)
                 time_series = measurement[0]
 
                 # Check that the readings are zero on both sides of the measurement but not in between
@@ -737,16 +739,16 @@ class TestPrometheusIntegration:
                             ),
                         )
                         # Send traffic in the background
-                        traffic_task = asyncio.create_task(send_traffic())
-
-                        try:
-                            measurement = await asyncio.wait_for(
-                                connector.measure(control=control), timeout=90
-                            )
-                            assert measurement
-                        finally:
+                        async with asyncio.TaskGroup() as tg:
+                            _ = tg.create_task(send_traffic())
+                            async with asyncio.timeout(90):
+                                measure_task = tg.create_task(
+                                    connector.measure(control=control)
+                                )
+                                measurement = await measure_task
                             sending_traffic = False
-                            await traffic_task
+
+                        assert measurement
 
     @pytest.mark.applymanifests(
         "../manifests",
@@ -855,35 +857,37 @@ class TestPrometheusIntegration:
                             ),
                         )
                         # Send traffic in the background
-                        traffic_task = asyncio.create_task(send_traffic())
+                        async with asyncio.TaskGroup() as tg:
+                            traffic_task = tg.create_task(send_traffic())
 
-                        date_matcher = r"[\s0-9-:.]*"
-                        float_matcher = r"[0-9.]*"
-                        error_text = (
-                            re.escape(
-                                "SLO violation(s) observed: (tuning_p50_latency below 0.2)["
-                            )
-                            + date_matcher
-                            + "SLO failed metric value "
-                            + float_matcher
-                            + re.escape(" was not below threshold value 0.2, ")
-                            + date_matcher
-                            + "SLO failed metric value "
-                            + float_matcher
-                            + re.escape(" was not below threshold value 0.2]")
-                        )
-
-                        try:
-                            with pytest.raises(
-                                servo.errors.EventAbortedError, match=error_text
-                            ):
-                                measurement = await asyncio.wait_for(
-                                    connector.measure(control=control), timeout=90
+                            date_matcher = r"[\s0-9-:.]*"
+                            float_matcher = r"[0-9.]*"
+                            error_text = (
+                                re.escape(
+                                    "SLO violation(s) observed: (tuning_p50_latency below 0.2)["
                                 )
-                                debug(measurement)
-                        finally:
-                            sending_traffic = False
-                            await traffic_task
+                                + date_matcher
+                                + "SLO failed metric value "
+                                + float_matcher
+                                + re.escape(" was not below threshold value 0.2, ")
+                                + date_matcher
+                                + "SLO failed metric value "
+                                + float_matcher
+                                + re.escape(" was not below threshold value 0.2]")
+                            )
+
+                            try:
+                                with pytest.raises(
+                                    servo.errors.EventAbortedError, match=error_text
+                                ):
+                                    async with asyncio.timeout(90):
+                                        measurement = await connector.measure(
+                                            control=control
+                                        )
+                                        debug(measurement)
+                            finally:
+                                sending_traffic = False
+                                await traffic_task
 
 
 def empty_targets_response() -> Dict[str, Any]:

@@ -1150,9 +1150,9 @@ class ServoCLI(CLI):
 
             if not dry_run:
                 poll = not no_poll
-                servo.runner.AssemblyRunner(context.assembly).run(
-                    poll=poll,
-                    interactive=bool(interactive),
+                servo.runner.AssemblyRunner(
+                    context.assembly, poll=poll, interactive=bool(interactive)
+                ).run(
                     debug=debug,
                 )
 
