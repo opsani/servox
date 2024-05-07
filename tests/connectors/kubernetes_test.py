@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Annotated, Type
 
+import aiohttp
 import httpx
 import kubetest.client
 from kubetest.objects import Deployment as KubetestDeployment
@@ -1553,7 +1554,12 @@ class TestKubernetesConnectorIntegration:
         assert "no tuning pod exists, ignoring destroy" in messages[-30:]
         # Check error
         assert "quantities must match the regular expression" in str(error.value)
-        assert error.value.__cause__.status == 400
+        top_cause = unwrap_exception_group(
+            error.value.__cause__, aiohttp.ClientResponseError
+        )
+        if isinstance(top_cause, list):
+            top_cause = top_cause[0]
+        assert top_cause.status == 400
 
     async def test_adjust_tuning_cpu_with_settlement(
         self, tuning_config, namespace, kube
