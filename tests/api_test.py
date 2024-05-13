@@ -148,7 +148,7 @@ def _check_adjust_parse(obj: CommandResponse):
 def test_parse_command_response_including_units_control(payload, validator) -> None:
     from typing import Union
 
-    from pydantic import parse_obj_as
+    from pydantic import TypeAdapter
 
-    obj = parse_obj_as(Union[CommandResponse, Status], payload)
+    obj = TypeAdapter.validate_python(Union[CommandResponse, Status], payload)
     validator(obj)

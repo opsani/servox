@@ -157,7 +157,7 @@ class BaseConnector(
     ##
     # Validators
 
-    @pydantic.root_validator(pre=True)
+    @pydantic.model_validator(mode="before")
     @classmethod
     def _validate_metadata(cls, v):
         assert cls.name is not None, "name must be provided"
@@ -178,7 +178,7 @@ class BaseConnector(
                 )
         return v
 
-    @pydantic.validator("name")
+    @pydantic.field_validator("name")
     @classmethod
     def _validate_name(cls, v):
         assert bool(

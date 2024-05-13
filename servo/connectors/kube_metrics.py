@@ -99,14 +99,14 @@ MAIN_METRICS_REQUIRE_CUST_OBJ: FrozenSet[SupportedKubeMetrics] = {
 
 
 class KubeMetricsConfiguration(servo.BaseConfiguration):
-    namespace: Annotated[
-        str, DNSSubdomainName(description="Namespace of the target resource")
-    ]
+    namespace: DNSSubdomainName = pydantic.Field(
+        ..., description="Namespace of the target resource"
+    )
     name: str = pydantic.Field(description="Name of the target resource")
     kind: str = pydantic.Field(
         default="Deployment",
         description="Kind of the target resource",
-        regex=r"^([Dd]eployment|[Ss]tateful[Ss]et)$",
+        pattern=r"^([Dd]eployment|[Ss]tateful[Ss]et)$",
     )
     container: Optional[str] = pydantic.Field(
         default=None, description="Name of the target resource container"
@@ -127,7 +127,7 @@ class KubeMetricsConfiguration(servo.BaseConfiguration):
         description="Name of the kubeconfig context to use."
     )
 
-    @pydantic.validator("metrics_to_collect")
+    @pydantic.field_validator("metrics_to_collect")
     def config_metrics_must_be_supported(cls, value: List[str]) -> List[str]:
         supported_metrics_set = {m.value for m in SupportedKubeMetrics}
         unsupported_metrics = [m for m in value if m not in supported_metrics_set]

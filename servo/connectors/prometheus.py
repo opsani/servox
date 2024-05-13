@@ -36,6 +36,7 @@ from typing import (
 
 import httpx
 import pydantic
+import pydantic_core
 import pytz
 
 import servo
@@ -125,7 +126,7 @@ class ActiveTarget(pydantic.BaseModel):
     url: str = pydantic.Field(..., alias="scrapeUrl")
     global_url: str = pydantic.Field(..., alias="globalUrl")
     health: Literal["up", "down", "unknown"]
-    labels: Optional[Dict[str, str]]
+    labels: Optional[Dict[str, str]] = None
     discovered_labels: Optional[Dict[str, str]] = pydantic.Field(
         ..., alias="discoveredLabels"
     )
@@ -208,9 +209,11 @@ class TargetsRequest(BaseRequest):
             `active`, `dropped`, or `any`.
     """
 
-    endpoint: str = pydantic.Field("/targets", const=True)
+    endpoint: Literal["/targets"] = "/targets"
     state: Optional[TargetsStateFilter] = None
-    param_attrs: Tuple[str] = pydantic.Field(("state",), const=True)
+    param_attrs: Tuple[str] = pydantic.Field(
+        ("state",),
+    )
 
 
 class QueryRequest(BaseRequest, abc.ABC):
@@ -222,7 +225,7 @@ class QueryRequest(BaseRequest, abc.ABC):
     """
 
     query: str
-    timeout: Optional[servo.Duration]
+    timeout: Optional[servo.Duration] = None
 
 
 class InstantQuery(QueryRequest):
@@ -234,8 +237,8 @@ class InstantQuery(QueryRequest):
             server current time when the query is evaluated.
     """
 
-    endpoint: str = pydantic.Field("/query", const=True)
-    param_attrs: Tuple[str] = pydantic.Field(("query", "time", "timeout"), const=True)
+    endpoint: Literal["/query"]
+    param_attrs: Tuple[str] = pydantic.Field(("query", "time", "timeout"))
     time: Optional[datetime.datetime] = None
 
 
@@ -251,15 +254,15 @@ class RangeQuery(QueryRequest):
             minutes across the queried time range, determining the number of data points returned.
     """
 
-    endpoint: str = pydantic.Field("/query_range", const=True)
+    endpoint: Literal["/query_range"]
     param_attrs: Tuple[str] = pydantic.Field(
-        ("query", "start", "end", "step", "timeout"), const=True
+        ("query", "start", "end", "step", "timeout")
     )
     start: datetime.datetime
     end: datetime.datetime
-    step: servo.Duration
+    step: servo.Duration = pydantic.Field(..., validate_default=True)
 
-    @pydantic.validator("step", pre=True, always=True)
+    @pydantic.field_validator("step", mode="before")
     @classmethod
     def _default_step_from_metric(cls, step, values) -> str:
         if step is None:
@@ -268,7 +271,7 @@ class RangeQuery(QueryRequest):
 
         return step
 
-    @pydantic.validator("end")
+    @pydantic.field_validator("end")
     @classmethod
     def _validate_range(cls, end, values) -> dict:
         assert end > values["start"], "start time must be earlier than end time"
@@ -314,12 +317,10 @@ class BaseVector(abc.ABC, pydantic.BaseModel):
     metric: Dict[str, str]
 
     @abc.abstractmethod
-    def __len__(self) -> int:
-        ...
+    def __len__(self) -> int: ...
 
     @abc.abstractmethod
-    def __iter__(self) -> Scalar:
-        ...
+    def __iter__(self) -> Scalar: ...
 
 
 class InstantVector(BaseVector):
@@ -474,10 +475,10 @@ class BaseResponse(pydantic.BaseModel, abc.ABC):
     request: BaseRequest
     status: Status
     data: Data
-    error: Optional[Error]
-    warnings: Optional[List[str]]
+    error: Optional[Error] = None
+    warnings: Optional[List[str]] = None
 
-    @pydantic.root_validator(pre=True)
+    @pydantic.model_validator(mode="before")
     def _parse_error(cls, values: Dict[str, Any]) -> Dict[str, Any]:
         if error := dict(
             filter(lambda item: item[0].startswith("error"), values.items())
@@ -570,8 +571,8 @@ class MetricResponse(BaseResponse):
         )
 
 
-def _rstrip_slash(cls, base_url):
-    return base_url.rstrip("/")
+def _rstrip_slash(cls, base_url: pydantic_core.Url):
+    return str(base_url).rstrip("/")
 
 
 class Client(pydantic.BaseModel):
@@ -588,9 +589,7 @@ class Client(pydantic.BaseModel):
     """
 
     base_url: pydantic.AnyHttpUrl
-    _normalize_base_url = pydantic.validator("base_url", allow_reuse=True)(
-        _rstrip_slash
-    )
+    _normalize_base_url = pydantic.field_validator("base_url")(_rstrip_slash)
 
     @property
     def url(self) -> str:
@@ -750,9 +749,7 @@ class PrometheusConfiguration(servo.BaseConfiguration):
     """
 
     base_url: pydantic.AnyHttpUrl = DEFAULT_BASE_URL
-    _normalize_base_url = pydantic.validator("base_url", allow_reuse=True)(
-        _rstrip_slash
-    )
+    _normalize_base_url = pydantic.field_validator("base_url")(_rstrip_slash)
     """The base URL for accessing the Prometheus metrics API.
 
     The URL must point to the root of the Prometheus deployment. Resource paths
@@ -1111,13 +1108,17 @@ def targets(
             [
                 target.pool,
                 target.health,
-                f"{target.url} ({target.global_url})"
-                if target.url != target.global_url
-                else target.url,
+                (
+                    f"{target.url} ({target.global_url})"
+                    if target.url != target.global_url
+                    else target.url
+                ),
                 "\n".join(labels),
-                f"{target.last_scraped_at:%Y-%m-%d %H:%M:%S} ({servo.cli.timeago(target.last_scraped_at, pytz.utc.localize(datetime.datetime.now()))} in {target.last_scrape_duration})"
-                if target.last_scraped_at
-                else "-",
+                (
+                    f"{target.last_scraped_at:%Y-%m-%d %H:%M:%S} ({servo.cli.timeago(target.last_scraped_at, pytz.utc.localize(datetime.datetime.now()))} in {target.last_scrape_duration})"
+                    if target.last_scraped_at
+                    else "-"
+                ),
                 target.last_error or "-",
             ]
         )

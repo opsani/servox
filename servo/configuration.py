@@ -23,15 +23,19 @@ import os
 import pathlib
 import re
 from typing import Any, Callable, Dict, List, Optional, Type, Union
-from typing_extensions import TypeAlias
+import pydantic.json
+import pydantic_core
+from typing_extensions import Annotated, TypeAlias
 
 import backoff
 import pydantic
+import pydantic_settings
 import yaml
 
 import servo.logging
 import servo.types
 from servo import types
+from pydantic import Field, StringConstraints, ConfigDict
 
 __all__ = [
     "AbstractBaseConfiguration",
@@ -44,7 +48,7 @@ __all__ = [
 ]
 
 
-ORGANIZATION_REGEX = r"(?!-)([A-Za-z0-9-.]{5,50})"
+ORGANIZATION_REGEX = r"([A-Za-z0-9-.]{5,50})"
 # Organization regex constraint to enforce that:
 # * Cannot contain a forward slash (/)
 # * Cannot solely consist of a single period (.) or double periods (..)
@@ -63,7 +67,7 @@ class SidecarConnectionFile(pydantic.BaseModel):
     TenantId: str
 
 
-class AppdynamicsOptimizer(pydantic.BaseSettings):
+class AppdynamicsOptimizer(pydantic_settings.BaseSettings):
     optimizer_id: str
     tenant_id: Optional[str] = None
     base_url: Optional[pydantic.AnyHttpUrl] = None
@@ -117,10 +121,10 @@ class AppdynamicsOptimizer(pydantic.BaseSettings):
         self.base_url = validated_content.Endpoint.rstrip("/")
         self.tenant_id = validated_content.TenantId
 
-    @pydantic.validator("base_url")
-    def _rstrip_slash(cls, url: str) -> str:
+    @pydantic.field_validator("base_url")
+    def _rstrip_slash(cls, url: pydantic_core.Url) -> str:
         if url:
-            return url.rstrip("/")
+            return str(url).rstrip("/")
         return url
 
     @property
@@ -131,24 +135,17 @@ class AppdynamicsOptimizer(pydantic.BaseSettings):
     def name(self) -> str:
         return f"{self.optimizer_id}"
 
-    class Config:
-        case_sensitive = True
-        extra = pydantic.Extra.forbid
-        validate_assignment = True
-        fields = {
-            "optimizer_id": {"env": "APPD_OPTIMIZER_ID"},
-            "tenant_id": {"env": "APPD_TENANT_ID"},
-            "client_id": {"env": "APPD_CLIENT_ID"},
-            "client_secret": {"env": "APPD_CLIENT_SECRET"},
-            "base_url": {"env": "APPD_BASE_URL"},
-            "url": {"env": "APPD_URL"},
-            "token_url": {"env": "APPD_TOKEN_URL"},
-            "connection_file": {"env": "APPD_CONNECTION_FILE"},
-            "token": {"env": "APPD_TOKEN"},
-        }
+    # TODO[pydantic]: The following keys were removed: `fields`.
+    # Check https://docs.pydantic.dev/dev-v2/migration/#changes-to-config for more information.
+    model_config = pydantic_settings.SettingsConfigDict(
+        case_sensitive=True,
+        extra="forbid",
+        validate_assignment=True,
+        env_prefix="appd_",
+    )
 
 
-class OpsaniOptimizer(pydantic.BaseSettings):
+class OpsaniOptimizer(pydantic_settings.BaseSettings):
     """
     An Optimizer models an Opsani optimization engines that the Servo can connect to
     in order to access the Opsani machine learning technology for optimizing system infrastructure
@@ -164,19 +161,20 @@ class OpsaniOptimizer(pydantic.BaseSettings):
             and automated testing to bind the servo to a fixed URL.
     """
 
-    id: pydantic.constr(regex=OPTIMIZER_ID_REGEX)
+    id: Annotated[str, StringConstraints(pattern=OPTIMIZER_ID_REGEX)]
     token: pydantic.SecretStr
     base_url: pydantic.AnyHttpUrl = "https://api.opsani.com"
     url: Optional[pydantic.AnyHttpUrl] = None
     _organization: str
     _name: str
 
-    def __init__(self, **kwargs) -> None:
+    def __init__(self, *args, **kwargs) -> None:
+        # kwargs
         if not kwargs.get("token") and (
             token_file := os.environ.get("OPSANI_TOKEN_FILE")
         ):
             kwargs["token"] = pathlib.Path(token_file).read_text().strip()
-        super().__init__(**kwargs)
+        super().__init__(*args, **kwargs)
 
         organization, name = self.id.split("/")
         self._organization = organization
@@ -184,9 +182,13 @@ class OpsaniOptimizer(pydantic.BaseSettings):
         if not self.url:
             self.url = self.default_url
 
-    @pydantic.validator("base_url")
-    def _rstrip_slash(cls, url: str) -> str:
-        return url.rstrip("/")
+    @pydantic.field_validator("base_url")
+    def _rstrip_slash(cls, url: pydantic_core.Url) -> str:
+        return str(url).rstrip("/")
+
+    @pydantic.field_serializer("token")
+    def token_value(self, tok: pydantic.SecretStr, _) -> str:
+        return tok.get_secret_value()
 
     @property
     def organization(self) -> str:
@@ -213,20 +215,9 @@ class OpsaniOptimizer(pydantic.BaseSettings):
     def default_url(self) -> str:
         return f"{self.base_url}/accounts/{self.organization}/applications/{self.name}/"
 
-    class Config:
-        case_sensitive = True
-        extra = pydantic.Extra.forbid
-        underscore_attrs_are_private = True
-        validate_assignment = True
-        fields = {
-            "id": {"env": "OPSANI_OPTIMIZER"},
-            "token": {"env": "OPSANI_TOKEN"},
-            "base_url": {"env": "OPSANI_BASE_URL"},
-            "url": {"env": "OPSANI_URL"},
-        }
-        json_encoders = {
-            pydantic.SecretStr: lambda v: v.get_secret_value() if v else None,
-        }
+    model_config = pydantic_settings.SettingsConfigDict(
+        env_prefix="OPSANI_", extra="forbid", validate_assignment=True
+    )
 
 
 OptimizerTypes: TypeAlias = Union[AppdynamicsOptimizer, OpsaniOptimizer]
@@ -235,7 +226,7 @@ OptimizerTypes: TypeAlias = Union[AppdynamicsOptimizer, OpsaniOptimizer]
 DEFAULT_TITLE = "Base Connector Configuration Schema"
 
 
-class AbstractBaseConfiguration(pydantic.BaseSettings, servo.logging.Mixin):
+class AbstractBaseConfiguration(pydantic_settings.BaseSettings, servo.logging.Mixin):
     """
     AbstractBaseConfiguration is the root of the servo configuration class hierarchy.
     It does not define any concrete configuration model fields but provides a number
@@ -291,21 +282,22 @@ class AbstractBaseConfiguration(pydantic.BaseSettings, servo.logging.Mixin):
 
         # Schema title
         base_name = cls.__name__.replace("Configuration", "")
-        if cls.__config__.title == DEFAULT_TITLE:
-            cls.__config__.title = f"{base_name} Connector Configuration Schema"
+        if cls.model_config.get("title", None) == DEFAULT_TITLE:
+            cls.model_config["title"] = f"{base_name} Connector Configuration Schema"
 
         # Default prefix
-        prefix = cls.__config__.env_prefix
+        prefix = cls.model_config.get("env_prefix", "")
         if prefix == "":
             prefix = re.sub(r"(?<!^)(?=[A-Z])", "_", base_name).upper() + "_"
 
-        for name, field in cls.__fields__.items():
-            if (env_override := field.field_info.extra.get("env")) and not isinstance(
-                env_override, list
-            ):
-                field.field_info.extra["env_names"] = {env_override}
-            else:
-                field.field_info.extra["env_names"] = {f"{prefix}{name}".upper()}
+        # pydantic auto configures env vars so no need for this TODO remove when verified
+        # for name, field in cls.__fields__.items():
+        #     if (env_override := field.field_info.extra.get("env")) and not isinstance(
+        #         env_override, list
+        #     ):
+        #         field.field_info.extra["env_names"] = {env_override}
+        #     else:
+        #         field.field_info.extra["env_names"] = {f"{prefix}{name}".upper()}
 
     def yaml(
         self,
@@ -339,23 +331,12 @@ class AbstractBaseConfiguration(pydantic.BaseSettings, servo.logging.Mixin):
         )
         return yaml.dump(json.loads(config_json), sort_keys=False)
 
-    @staticmethod
-    def json_encoders(
-        encoders: Dict[Type[Any], Callable[..., Any]] = {}
-    ) -> Dict[Type[Any], Callable[..., Any]]:
-        """
-        Returns a dict mapping servo types to callable JSON encoders for use in Pydantic Config classes
-        when `json_encoders` need to be customized. Encoders provided in the encoders argument
-        are merged into the returned dict and take precedence over the defaults.
-        """
-        from servo.types import DEFAULT_JSON_ENCODERS
-
-        return {**DEFAULT_JSON_ENCODERS, **encoders}
-
-    class Config(servo.types.BaseModelConfig):
-        case_sensitive = True
-        extra = pydantic.Extra.forbid
-        title = DEFAULT_TITLE
+    model_config = pydantic_settings.SettingsConfigDict(
+        **servo.types.BASE_MODEL_CONFIG,
+        case_sensitive=True,
+        extra="forbid",
+        title=DEFAULT_TITLE,
+    )
 
 
 class BaseConfiguration(AbstractBaseConfiguration):
@@ -378,13 +359,14 @@ class BaseConfiguration(AbstractBaseConfiguration):
     )
 
 
+# Handled by pydantic by default TODO remove when verified
 # Uppercase handling for non-subclassed settings models. Should be pushed into Pydantic as a PR
-env_names = BaseConfiguration.__fields__["description"].field_info.extra.get(
-    "env_names", set()
-)
-BaseConfiguration.__fields__["description"].field_info.extra["env_names"] = set(
-    map(str.upper, env_names)
-)
+# env_names = BaseConfiguration.__fields__["description"].field_info.extra.get(
+#     "env_names", set()
+# )
+# BaseConfiguration.__fields__["description"].field_info.extra["env_names"] = set(
+#     map(str.upper, env_names)
+# )
 
 
 class BackoffSettings(AbstractBaseConfiguration):
@@ -444,7 +426,7 @@ class Timeouts(AbstractBaseConfiguration):
         super().__init__(**kwargs)
 
 
-ProxyKey = pydantic.constr(regex=r"^(https?|all)://")
+ProxyKey = Annotated[str, StringConstraints(pattern=r"^(https?|all)://")]
 
 
 class BackoffContexts(enum.StrEnum):
@@ -454,30 +436,19 @@ class BackoffContexts(enum.StrEnum):
     connect = "connect"
 
 
-class BackoffConfigurations(pydantic.BaseModel):
+class BackoffConfigurations(pydantic.RootModel):
     """A mapping of named backoff configurations."""
 
-    __root__: Dict[str, BackoffSettings]
-
-    @pydantic.root_validator(pre=True)
-    def _nest_unrooted_values(cls, values: Any) -> Any:
-        # NOTE: To parse via parse_obj, we need our values rooted under __root__
-        if isinstance(values, dict):
-            if len(values) != 1 or (
-                len(values) == 1 and values.get("__root__", None) is None
-            ):
-                return {"__root__": values}
-
-        return values
+    root: Dict[str, BackoffSettings]
 
     def __iter__(self):
-        return iter(self.__root__)
+        return iter(self.root)
 
     def __getitem__(self, context: str) -> BackoffSettings:
-        return self.__root__[context]
+        return self.root[context]
 
     def get(self, context: str, default: Any = None) -> BackoffSettings:
-        return self.__root__.get(context, default)
+        return self.root.get(context, default)
 
     def max_time(
         self, context: str = BackoffContexts.default
@@ -499,12 +470,10 @@ class CommonConfiguration(AbstractBaseConfiguration):
     """
 
     backoff: BackoffConfigurations = pydantic.Field(
-        default_factory=lambda: BackoffConfigurations(
-            __root__={
-                BackoffContexts.default: {"max_time": "10m", "max_tries": None},
-                BackoffContexts.connect: {"max_time": "1h", "max_tries": None},
-            }
-        )
+        {
+            BackoffContexts.default: {"max_time": "10m", "max_tries": None},
+            BackoffContexts.connect: {"max_time": "1h", "max_tries": None},
+        }
     )
     """A mapping of named operations to settings for the backoff library, which provides backoff
     and retry capabilities to the servo.
@@ -537,7 +506,7 @@ class CommonConfiguration(AbstractBaseConfiguration):
     See https://www.python-httpx.org/advanced/#ssl-certificates
     """
 
-    @pydantic.validator("timeouts", pre=True)
+    @pydantic.field_validator("timeouts", mode="before")
     def parse_timeouts(cls, v):
         if isinstance(v, (str, int, float)):
             return Timeouts(v)
@@ -547,8 +516,9 @@ class CommonConfiguration(AbstractBaseConfiguration):
     def generate(cls, **kwargs) -> Optional["CommonConfiguration"]:
         return None
 
-    class Config(servo.types.BaseModelConfig):
-        validate_assignment = True
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.model_config["validate_assignment"] = True
 
 
 class ChecksConfiguration(AbstractBaseConfiguration):
@@ -557,17 +527,21 @@ class ChecksConfiguration(AbstractBaseConfiguration):
     """
 
     connectors: Optional[list[str]] = pydantic.Field(
+        None,
         description="Connectors to check",
     )
     name: Optional[list[str]] = pydantic.Field(
+        None,
         description="Filter by name",
     )
 
     id: Optional[list[str]] = pydantic.Field(
+        None,
         description="Filter by ID",
     )
 
     tag: Optional[list[str]] = pydantic.Field(
+        None,
         description="Filter by tag",
     )
 
@@ -605,8 +579,9 @@ class ChecksConfiguration(AbstractBaseConfiguration):
     def generate(cls, **kwargs) -> Optional["ChecksConfiguration"]:
         return None
 
-    class Config(servo.types.BaseModelConfig):
-        validate_assignment = True
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.model_config["validate_assignment"] = True
 
 
 class BaseServoConfiguration(AbstractBaseConfiguration, abc.ABC):
@@ -623,9 +598,9 @@ class BaseServoConfiguration(AbstractBaseConfiguration, abc.ABC):
 
     name: Optional[str] = None
     description: Optional[str] = None
-    servo_uid: Union[str, None] = pydantic.Field(default=None, env="SERVO_UID")
+    servo_uid: Union[str, None] = pydantic.Field(default=None, alias="SERVO_UID")
     optimizer: OptimizerTypes = {}
-    connectors: Optional[Union[List[str], Dict[str, str]]] = pydantic.Field(
+    connectors: list[str] | dict[str, str] | None = pydantic.Field(
         None,
         description=(
             "An optional, explicit configuration of the active connectors.\n"
@@ -696,7 +671,7 @@ class BaseServoConfiguration(AbstractBaseConfiguration, abc.ABC):
 
         return cls(**kwargs)
 
-    @pydantic.validator("connectors", pre=True)
+    @pydantic.field_validator("connectors", mode="before")
     @classmethod
     def validate_connectors(
         cls, connectors
@@ -704,7 +679,7 @@ class BaseServoConfiguration(AbstractBaseConfiguration, abc.ABC):
         if isinstance(connectors, str):
             # NOTE: Special case. When we are invoked with a string it is typically an env var
             try:
-                decoded_value = BaseServoConfiguration.__config__.json_loads(connectors)  # type: ignore
+                decoded_value = json.loads(connectors)
             except ValueError as e:
                 raise ValueError(f'error parsing JSON for "{connectors}"') from e
 
@@ -728,23 +703,24 @@ class BaseServoConfiguration(AbstractBaseConfiguration, abc.ABC):
 
         return connectors
 
-    class Config(types.BaseModelConfig):
-        extra = pydantic.Extra.forbid
-        title = "Abstract Servo Configuration Schema"
-        env_prefix = "SERVO_"
+    def __init__(self, *args, **kwargs):
+        self.model_config["extra"] = "forbid"
+        self.model_config["title"] = "Abstract Servo Configuration Schema"
+        self.model_config["env_prefix"] = "SERVO_"
+        super().__init__(*args, **kwargs)
 
 
-class FastFailConfiguration(pydantic.BaseSettings):
+class FastFailConfiguration(pydantic_settings.BaseSettings):
     """Configuration providing support for fast fail behavior which returns early
     from long running connector operations when SLO violations are observed"""
 
-    disabled: pydantic.conint(ge=0, le=1, multiple_of=1) = 0
+    disabled: Annotated[int, Field(ge=0, le=1, multiple_of=1)] = 0
     """Toggle fast-fail behavior on or off"""
 
     period: servo.types.Duration = "60s"
     """How often to check the SLO metrics"""
 
-    span: servo.types.Duration = None
+    span: servo.types.Duration = pydantic.Field(None, validate_default=True)
     """The span or window of time that SLO metrics are gathered for"""
 
     skip: servo.types.Duration = 0
@@ -752,11 +728,14 @@ class FastFailConfiguration(pydantic.BaseSettings):
 
     treat_zero_as_missing: bool = False
     """Whether or not to treat zero values as missing per certain metric systems"""
+    model_config = ConfigDict(
+        case_sensitive=True,
+        extra="forbid",
+        validate_assignment=True,
+        env_prefix="SERVO_",
+    )
 
-    class Config:
-        extra = pydantic.Extra.forbid
-
-    @pydantic.validator("span", pre=True, always=True)
+    @pydantic.field_validator("span", mode="before")
     def span_defaults_to_period(cls, v, *, values, **kwargs):
         if v is None:
             return values["period"]

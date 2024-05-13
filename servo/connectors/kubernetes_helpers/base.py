@@ -24,13 +24,11 @@ from servo.logging import logger
 class BaseKubernetesHelper(abc.ABC):
     @classmethod
     @abc.abstractmethod
-    async def watch_args(cls, api_object: object) -> AsyncIterator[dict[str, Any]]:
-        ...
+    async def watch_args(cls, api_object: object) -> AsyncIterator[dict[str, Any]]: ...
 
     @classmethod
     @abc.abstractmethod
-    def is_ready(cls, api_object: object, event_type: Optional[str] = None) -> bool:
-        ...
+    def is_ready(cls, api_object: object, event_type: Optional[str] = None) -> bool: ...
 
     @classmethod
     async def wait_until_deleted(cls, api_object: object) -> None:

@@ -1044,8 +1044,7 @@ class TestAggregator:
             aggregator: servo.pubsub.Aggregator,
             message: servo.pubsub.Message,
             channel: servo.pubsub.Channel,
-        ) -> None:
-            ...
+        ) -> None: ...
 
         aggregator = servo.pubsub.Aggregator(
             from_channels=[prometheus_metrics, cloudwatch_metrics],
@@ -1237,8 +1236,7 @@ class TestExchange:
     async def test_create_subscriber_with_dependency(
         self, exchange: servo.pubsub.Exchange
     ) -> None:
-        async def _dependency() -> None:
-            ...
+        async def _dependency() -> None: ...
 
         exchange.start()
         subscriber = exchange.create_subscriber("whatever", until_done=_dependency())

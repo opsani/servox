@@ -35,6 +35,7 @@ from typing import (
     Dict,
     Iterable,
     List,
+    Literal,
     Optional,
     Tuple,
     Type,
@@ -56,6 +57,7 @@ from kubernetes_asyncio.client import (
     V1PodTemplateSpec,
     V1StatefulSet,
 )
+import pydantic_core
 
 import servo
 from servo.telemetry import ONE_MiB
@@ -70,6 +72,7 @@ from .kubernetes_helpers import (
     StatefulSetHelper,
     find_container,
 )
+from pydantic import ConfigDict
 
 
 class Core(decimal.Decimal):
@@ -85,8 +88,17 @@ class Core(decimal.Decimal):
     """
 
     @classmethod
-    def __get_validators__(cls) -> pydantic.types.CallableGenerator:
-        yield cls.parse
+    def __get_pydantic_core_schema__(
+        cls, source_type: Any, handler: pydantic.GetCoreSchemaHandler
+    ) -> pydantic_core.CoreSchema:
+        return pydantic_core.core_schema.no_info_after_validator_function(
+            cls.parse, handler(decimal.Decimal)
+        )
+
+    # # TODO[pydantic]: We couldn't refactor `__get_validators__`, please create the `__get_pydantic_core_schema__` manually.
+    # # Check https://docs.pydantic.dev/latest/migration/#defining-custom-types for more information.
+    # def __get_validators__(cls) -> pydantic.types.CallableGenerator:
+    #     yield cls.parse
 
     @classmethod
     def parse(cls, v: pydantic.types.StrIntFloat) -> "Core":
@@ -189,14 +201,14 @@ class CPU(servo.CPU):
             ResourceRequirement.request,
             ResourceRequirement.limit,
         ],
-        min_items=1,
+        min_length=1,
     )
     set: list[ResourceRequirement] = pydantic.Field(
         default=[
             ResourceRequirement.request,
             ResourceRequirement.limit,
         ],
-        min_items=1,
+        min_length=1,
     )
 
     def __opsani_repr__(self) -> dict:
@@ -279,14 +291,14 @@ class Memory(servo.Memory):
             ResourceRequirement.request,
             ResourceRequirement.limit,
         ],
-        min_items=1,
+        min_length=1,
     )
     set: list[ResourceRequirement] = pydantic.Field(
         default=[
             ResourceRequirement.request,
             ResourceRequirement.limit,
         ],
-        min_items=1,
+        min_length=1,
     )
 
     def __opsani_repr__(self) -> dict:
@@ -461,8 +473,7 @@ class BaseOptimization(abc.ABC, pydantic.BaseModel, servo.logging.Mixin):
             )
         )
 
-    class Config:
-        arbitrary_types_allowed = True
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
 class SaturationOptimization(BaseOptimization):
@@ -471,11 +482,13 @@ class SaturationOptimization(BaseOptimization):
     workload and its associated containers.
     """
 
-    workload_helper: Optional[Union[Type[DeploymentHelper], Type[StatefulSetHelper]]]
+    workload_helper: Optional[
+        Union[Type[DeploymentHelper], Type[StatefulSetHelper]]
+    ] = None
     workload_config: Optional[
         Union["DeploymentConfiguration", "StatefulSetConfiguration"]
-    ]
-    workload: Optional[Union[V1Deployment, V1StatefulSet]]
+    ] = None
+    workload: Optional[Union[V1Deployment, V1StatefulSet]] = None
 
     container_config: "ContainerConfiguration"
     container: V1Container
@@ -675,9 +688,9 @@ class SaturationOptimization(BaseOptimization):
         self.adjustments.append(adjustment)
         setting_name, value = _normalize_adjustment(adjustment)
         self.logger.info(f"adjusting {setting_name} to {value}")
-        env_setting: Optional[
-            servo.EnvironmentSetting
-        ] = None  # Declare type since type not compatible with :=
+        env_setting: Optional[servo.EnvironmentSetting] = (
+            None  # Declare type since type not compatible with :=
+        )
 
         if setting_name in ("cpu", "memory"):
             # NOTE: use copy + update to apply values that may be outside of the range
@@ -804,8 +817,8 @@ class CanaryOptimization(BaseOptimization):
     main_container: V1Container
 
     # State for tuning resources
-    tuning_pod: Optional[V1Pod]
-    tuning_container: Optional[V1Container]
+    tuning_pod: Optional[V1Pod] = None
+    tuning_container: Optional[V1Container] = None
 
     _tuning_pod_template_spec: Optional[V1PodTemplateSpec] = pydantic.PrivateAttr()
 
@@ -892,9 +905,9 @@ class CanaryOptimization(BaseOptimization):
         self.adjustments.append(adjustment)
         setting_name, value = _normalize_adjustment(adjustment)
         self.logger.info(f"adjusting {setting_name} to {value}")
-        env_setting: Optional[
-            servo.EnvironmentSetting
-        ] = None  # Declare type since type not compatible with :=
+        env_setting: Optional[servo.EnvironmentSetting] = (
+            None  # Declare type since type not compatible with :=
+        )
 
         if setting_name in ("cpu", "memory"):
             # NOTE: use copy + update to apply values that may be outside of the range
@@ -1005,9 +1018,9 @@ class CanaryOptimization(BaseOptimization):
 
         if pod_template_spec.metadata.annotations is None:
             pod_template_spec.metadata.annotations = {}
-        pod_template_spec.metadata.annotations[
-            "opsani.com/opsani_tuning_for"
-        ] = self.name
+        pod_template_spec.metadata.annotations["opsani.com/opsani_tuning_for"] = (
+            self.name
+        )
         if pod_template_spec.metadata.labels is None:
             pod_template_spec.metadata.labels = {}
         pod_template_spec.metadata.labels["opsani_role"] = "tuning"
@@ -1445,9 +1458,7 @@ class CanaryOptimization(BaseOptimization):
             include_container_logs=self.workload_config.container_logs_in_error_status,
         )
 
-    class Config:
-        arbitrary_types_allowed = True
-        extra = pydantic.Extra.forbid
+    model_config = ConfigDict(arbitrary_types_allowed=True, extra="forbid")
 
 
 class KubernetesOptimizations(pydantic.BaseModel, servo.logging.Mixin):
@@ -1668,36 +1679,37 @@ class KubernetesOptimizations(pydantic.BaseModel, servo.logging.Mixin):
         else:
             return True
 
-    class Config:
-        arbitrary_types_allowed = True
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
-def DNSSubdomainName(description: str | None = None) -> Any:
-    """DNSSubdomainName returns a pydantic.Field that models a Kubernetes DNS Subdomain Name used as the name for most
-    resource types. Its only parameter allows specifying a custom description for the field when the model schema is dumped.
-
-    Valid DNS Subdomain Names conform to [RFC 1123](https://tools.ietf.org/html/rfc1123) and must:
-        * contain no more than 253 characters
-        * contain only lowercase alphanumeric characters, '-' or '.'
-        * start with an alphanumeric character
-        * end with an alphanumeric character
-
-    See https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#dns-subdomain-names
-    """
-    return pydantic.Field(
+DNS_SUBDOMAIN_NAME_REGEX = r"^[0-9a-zA-Z]([0-9a-zA-Z\\.-])*[0-9A-Za-z]$"
+DNSSubdomainName = Annotated[
+    str,
+    pydantic.StringConstraints(
         strip_whitespace=True,
         min_length=1,
         max_length=253,
-        regex="^[0-9a-zA-Z]([0-9a-zA-Z\\.-])*[0-9A-Za-z]$",
-        description=description,
-    )
+        pattern=DNS_SUBDOMAIN_NAME_REGEX,
+    ),
+]
+DNSSubdomainName.__doc__ = """DNSSubdomainName returns a pydantic.Field that models a Kubernetes DNS Subdomain Name used as the name for most
+resource types. Its only parameter allows specifying a custom description for the field when the model schema is dumped.
+
+Valid DNS Subdomain Names conform to [RFC 1123](https://tools.ietf.org/html/rfc1123) and must:
+    * contain no more than 253 characters
+    * contain only lowercase alphanumeric characters, '-' or '.'
+    * start with an alphanumeric character
+    * end with an alphanumeric character
+
+See https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#dns-subdomain-names
+"""
 
 
-DNSLabelNameField = pydantic.Field(
+DNSLabelNameField = pydantic.StringConstraints(
     strip_whitespace=True,
     min_length=1,
     max_length=63,
-    regex="^[0-9a-zA-Z]([0-9a-zA-Z-])*[0-9A-Za-z]$",
+    pattern=r"^[0-9a-zA-Z]([0-9a-zA-Z-])*[0-9A-Za-z]$",
 )
 DNSLabelName = Annotated[str, DNSLabelNameField]
 DNSLabelName.__doc__ = """DNSLabelName models a Kubernetes DNS Label Name identified used to name some resource types.
@@ -1712,10 +1724,10 @@ DNSLabelName.__doc__ = """DNSLabelName models a Kubernetes DNS Label Name identi
     """
 
 
-ContainerTagNameField = pydantic.Field(
+ContainerTagNameField = pydantic.StringConstraints(
     min_length=1,
     max_length=128,
-    regex="^[0-9a-zA-Z]([0-9a-zA-Z_\\.\\-/:@])*$",
+    pattern="^[0-9a-zA-Z]([0-9a-zA-Z_\\.\\-/:@])*$",
     strip_whitespace=True,
 )
 ContainerTagName = Annotated[str, ContainerTagNameField]
@@ -1752,35 +1764,34 @@ class OptimizationStrategy(enum.StrEnum):
     OptimizationStrategy is an enumeration of the possible ways to perform optimization on a Kubernetes Deployment.
     """
 
-    default = "default"
+    default: Literal["default"] = "default"
     """The default strategy directly applies adjustments to the target Deployment and its containers.
     """
 
-    canary = "canary"
+    canary: Literal["canary"] = "canary"
     """The canary strategy creates a servo managed standalone tuning Pod based on the target Deployment and makes
     adjustments to it instead of the Deployment itself.
     """
 
 
 class BaseOptimizationStrategyConfiguration(pydantic.BaseModel):
-    type: OptimizationStrategy = pydantic.Field(..., const=True)
+    type: OptimizationStrategy
 
     def __eq__(self, other) -> bool:
         if isinstance(other, OptimizationStrategy):
             return self.type == other
         return super().__eq__(other)
 
-    class Config:
-        extra = pydantic.Extra.forbid
+    model_config = ConfigDict(extra="forbid")
 
 
 class DefaultOptimizationStrategyConfiguration(BaseOptimizationStrategyConfiguration):
-    type = pydantic.Field(OptimizationStrategy.default, const=True)
+    type: OptimizationStrategy = pydantic.Field(OptimizationStrategy.default)
 
 
 class CanaryOptimizationStrategyConfiguration(BaseOptimizationStrategyConfiguration):
-    type = pydantic.Field(OptimizationStrategy.canary, const=True)
-    alias: Optional[ContainerTagName]
+    type: OptimizationStrategy = pydantic.Field(OptimizationStrategy.canary)
+    alias: Optional[ContainerTagName] = None
 
 
 class FailureMode(enum.StrEnum):
@@ -1856,14 +1867,10 @@ class BaseKubernetesConfiguration(servo.BaseConfiguration):
     context: Optional[str] = pydantic.Field(
         description="Name of the kubeconfig context to use."
     )
-    namespace: Optional[
-        Annotated[
-            str,
-            DNSSubdomainName(
-                "Kubernetes namespace where the target deployments are running."
-            ),
-        ]
-    ]
+    namespace: Optional[DNSSubdomainName] = pydantic.Field(
+        ...,
+        description="Kubernetes namespace where the target deployments are running.",
+    )
     settlement: Optional[servo.Duration] = pydantic.Field(
         description="Duration to observe the application after an adjust to ensure the deployment is stable. May be overridden by optimizer supplied `control.adjust.settlement` value."
     )
@@ -1882,7 +1889,7 @@ class BaseKubernetesConfiguration(servo.BaseConfiguration):
         description="Disable to prevent a canary strategy with tuning pod adjustments",
     )
 
-    @pydantic.validator("on_failure")
+    @pydantic.field_validator("on_failure")
     def validate_failure_mode(cls, v):
         if v == FailureMode.destroy:
             servo.logger.warning(
@@ -1904,14 +1911,14 @@ class DeploymentConfiguration(BaseKubernetesConfiguration):
     The DeploymentConfiguration class models the configuration of an optimizable Kubernetes Deployment.
     """
 
-    name: Annotated[str, DNSSubdomainName()]
+    name: DNSSubdomainName
     containers: List[ContainerConfiguration]
     strategy: StrategyTypes = OptimizationStrategy.default
     replicas: servo.Replicas
 
 
 class StatefulSetConfiguration(DeploymentConfiguration):
-    @pydantic.validator("strategy")
+    @pydantic.field_validator("strategy")
     def validate_strategy(cls, v):
         if v == OptimizationStrategy.canary:
             raise NotImplementedError(
@@ -1921,7 +1928,7 @@ class StatefulSetConfiguration(DeploymentConfiguration):
 
 
 class KubernetesConfiguration(BaseKubernetesConfiguration):
-    namespace: Annotated[str, DNSSubdomainName()] = "default"
+    namespace: DNSSubdomainName = "default"
     timeout: servo.Duration = "5m"
     permissions: List[PermissionSet] = pydantic.Field(
         STANDARD_PERMISSIONS,
@@ -1944,7 +1951,7 @@ class KubernetesConfiguration(BaseKubernetesConfiguration):
     ) -> list[Union[StatefulSetConfiguration, DeploymentConfiguration]]:
         return (self.deployments or []) + (self.stateful_sets or [])
 
-    @pydantic.root_validator
+    @pydantic.model_validator(mode="before")
     def check_workload(cls, values):
         if (not values.get("deployments")) and (
             not values.get("rollouts") and (not values.get("stateful_sets"))
@@ -2043,9 +2050,9 @@ class KubernetesConfiguration(BaseKubernetesConfiguration):
             )
         elif os.getenv("KUBERNETES_SERVICE_HOST"):
             if os.getenv("NO_PROXY"):
-                os.environ[
-                    "NO_PROXY"
-                ] = f'{os.environ["NO_PROXY"]},{os.environ["KUBERNETES_SERVICE_HOST"]}'
+                os.environ["NO_PROXY"] = (
+                    f'{os.environ["NO_PROXY"]},{os.environ["KUBERNETES_SERVICE_HOST"]}'
+                )
             else:
                 os.environ["NO_PROXY"] = os.environ["KUBERNETES_SERVICE_HOST"]
             kubernetes_asyncio.config.load_incluster_config()
@@ -2055,9 +2062,9 @@ class KubernetesConfiguration(BaseKubernetesConfiguration):
             )
 
 
-KubernetesOptimizations.update_forward_refs()
-SaturationOptimization.update_forward_refs()
-CanaryOptimization.update_forward_refs()
+KubernetesOptimizations.model_rebuild()
+SaturationOptimization.model_rebuild()
+CanaryOptimization.model_rebuild()
 
 
 class KubernetesChecks(servo.BaseChecks):
@@ -2251,9 +2258,9 @@ class KubernetesConnector(servo.BaseConnector):
             async with kubernetes_asyncio.client.api_client.ApiClient() as api:
                 v1 = kubernetes_asyncio.client.VersionApi(api)
                 version_obj = await v1.get_code()
-                self.telemetry[
-                    f"{self.name}.version"
-                ] = f"{version_obj.major}.{version_obj.minor}"
+                self.telemetry[f"{self.name}.version"] = (
+                    f"{version_obj.major}.{version_obj.minor}"
+                )
                 self.telemetry[f"{self.name}.platform"] = version_obj.platform
 
     @servo.on_event()

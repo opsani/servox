@@ -69,7 +69,7 @@ class Assembly(pydantic.BaseModel):
     of the schema family of methods. See the method docstrings for specific details.
     """
 
-    config_file: Optional[pathlib.Path]
+    config_file: Optional[pathlib.Path] = None
     servos: List[servo.servo.Servo]
     _context_token: Optional[contextvars.Token] = pydantic.PrivateAttr(None)
 
@@ -278,9 +278,9 @@ def _create_config_model_from_routes(
     require_fields: bool = True,
 ) -> Type[servo.configuration.BaseServoConfiguration]:
     # Create Pydantic fields for each active route
-    connector_versions: Dict[
-        Type[servo.connector.BaseConnector], str
-    ] = {}  # use dict for uniquing and ordering
+    connector_versions: Dict[Type[servo.connector.BaseConnector], str] = (
+        {}
+    )  # use dict for uniquing and ordering
     setting_fields: Dict[
         str, Tuple[Type[servo.configuration.BaseConfiguration], Any]
     ] = {}
@@ -294,9 +294,9 @@ def _create_config_model_from_routes(
             f"{connector_class.full_name} Settings (named {name})"
         )
         setting_fields[name] = (config_model, default_value)
-        connector_versions[
-            connector_class
-        ] = f"{connector_class.full_name} v{connector_class.version}"
+        connector_versions[connector_class] = (
+            f"{connector_class.full_name} v{connector_class.version}"
+        )
 
     # Create our model
     servo_config_model = pydantic.create_model(

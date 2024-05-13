@@ -40,6 +40,7 @@ from servo.connectors.kubernetes import (
     ContainerTagNameField,
     DefaultOptimizationStrategyConfiguration,
     DeploymentConfiguration,
+    DNS_SUBDOMAIN_NAME_REGEX,
     DNSLabelName,
     DNSLabelNameField,
     DNSSubdomainName,
@@ -71,7 +72,7 @@ class TestDNSSubdomainName:
     @pytest.fixture
     def model(self) -> Type[BaseModel]:
         class Model(BaseModel):
-            name: Annotated[str, DNSSubdomainName()]
+            name: DNSSubdomainName
 
         return Model
 
@@ -123,10 +124,10 @@ class TestDNSSubdomainName:
         assert e
         assert {
             "loc": ("name",),
-            "msg": f'string does not match regex "{DNSSubdomainName().regex}"',
+            "msg": f'string does not match regex "{DNS_SUBDOMAIN_NAME_REGEX}"',
             "type": "value_error.str.regex",
             "ctx": {
-                "pattern": DNSSubdomainName().regex,
+                "pattern": DNS_SUBDOMAIN_NAME_REGEX,
             },
         } in e.value.errors()
 
@@ -140,10 +141,10 @@ class TestDNSSubdomainName:
         assert e
         assert {
             "loc": ("name",),
-            "msg": f'string does not match regex "{DNSSubdomainName().regex}"',
+            "msg": f'string does not match regex "{DNS_SUBDOMAIN_NAME_REGEX}"',
             "type": "value_error.str.regex",
             "ctx": {
-                "pattern": DNSSubdomainName().regex,
+                "pattern": DNS_SUBDOMAIN_NAME_REGEX,
             },
         } in e.value.errors()
 
@@ -157,10 +158,10 @@ class TestDNSSubdomainName:
         assert e
         assert {
             "loc": ("name",),
-            "msg": f'string does not match regex "{DNSSubdomainName().regex}"',
+            "msg": f'string does not match regex "{DNS_SUBDOMAIN_NAME_REGEX}"',
             "type": "value_error.str.regex",
             "ctx": {
-                "pattern": DNSSubdomainName().regex,
+                "pattern": DNS_SUBDOMAIN_NAME_REGEX,
             },
         } in e.value.errors()
 
@@ -452,8 +453,7 @@ class TestContainerConfiguration:
 
 
 class TestDeploymentConfiguration:
-    def test_inheritance_of_default_namespace(self) -> None:
-        ...
+    def test_inheritance_of_default_namespace(self) -> None: ...
 
     def test_strategy_enum(self) -> None:
         config = DeploymentConfiguration(

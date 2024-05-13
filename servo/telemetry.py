@@ -51,8 +51,8 @@ class DiagnosticStates(enum.StrEnum):
 
 
 class Diagnostics(pydantic.BaseModel):
-    configmap: Optional[dict[str, Any]]
-    logs: Optional[dict[str, Any]]
+    configmap: Optional[dict[str, Any]] = None
+    logs: Optional[dict[str, Any]] = None
 
 
 class Telemetry(pydantic.BaseModel):

@@ -18,14 +18,12 @@ import collections
 import decimal
 import enum
 import pydantic
-from typing import cast, Optional
+from typing import Annotated, cast, Optional
 
 from .core import BaseModel, Numeric
 
 
-class TriggerConstraints(pydantic.ConstrainedInt):
-    ge = 1
-    multiple_of = 1
+TriggerConstraints = Annotated[int, pydantic.Field(ge=1, multiple_of=1)]
 
 
 class SloKeep(enum.StrEnum):
@@ -40,12 +38,18 @@ class SloCondition(BaseModel):
     threshold_multiplier: decimal.Decimal = decimal.Decimal(1)
     keep: SloKeep = SloKeep.below
     trigger_count: TriggerConstraints = cast(TriggerConstraints, 1)
-    trigger_window: TriggerConstraints = cast(TriggerConstraints, None)
-    threshold: Optional[decimal.Decimal]
-    threshold_metric: Optional[str]
+    trigger_window: TriggerConstraints | None = pydantic.Field(
+        None, validate_default=True
+    )
+    threshold: Optional[decimal.Decimal] = pydantic.Field(None, validate_default=True)
+    threshold_metric: Optional[str] = None
     slo_threshold_minimum: float = 0.25
 
-    @pydantic.root_validator
+    def __init__(self, *args, **kwargs):
+        self.model_config["extra"] = "forbid"
+        super().__init__(*args, **kwargs)
+
+    @pydantic.model_validator(mode="before")
     @classmethod
     def _check_threshold_values(cls, values):
         if (
@@ -63,7 +67,7 @@ class SloCondition(BaseModel):
 
         return values
 
-    @pydantic.root_validator(pre=True)
+    @pydantic.model_validator(mode="before")
     @classmethod
     def _check_duplicated_minimum(cls, values):
         if (
@@ -80,14 +84,14 @@ class SloCondition(BaseModel):
 
         return values
 
-    @pydantic.validator("trigger_window", pre=True, always=True)
+    @pydantic.field_validator("trigger_window", mode="before")
     @classmethod
     def _trigger_window_defaults_to_trigger_count(cls, v, *, values, **kwargs):
         if v is None:
             return values["trigger_count"]
         return v
 
-    @pydantic.root_validator(skip_on_failure=True)
+    @pydantic.model_validator(mode="before")
     @classmethod
     def _trigger_count_cannot_be_greater_than_window(cls, values) -> Numeric:
         trigger_window, trigger_count = (
@@ -117,14 +121,15 @@ class SloCondition(BaseModel):
     def __hash__(self) -> int:
         return hash(str(self))
 
-    class Config(BaseModel.Config):
-        extra = pydantic.Extra.forbid
-
 
 class SloInput(BaseModel):
     conditions: list[SloCondition]
 
-    @pydantic.validator("conditions")
+    def __init__(self, *args, **kwargs):
+        self.model_config["extra"] = "forbid"
+        super().__init__(*args, **kwargs)
+
+    @pydantic.field_validator("conditions")
     def _conditions_are_unique(cls, value: list[SloCondition]):
         condition_counts = collections.defaultdict(int)
         for cond in value:
@@ -136,6 +141,3 @@ class SloInput(BaseModel):
                 f"Slo conditions must be unique. Redundant conditions found: {', '.join(map(lambda nu: nu[0] , non_unique))}"
             )
         return value
-
-    class Config(BaseModel.Config):
-        extra = pydantic.Extra.forbid

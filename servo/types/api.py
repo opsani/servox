@@ -65,9 +65,8 @@ component.
 class UserData(BaseModel):
     slo: Optional[SloInput] = None
 
-    class Config(BaseModel.Config):
-        # Support connector level experimentation without needing to update core servox code
-        extra = pydantic.Extra.allow
+    def __init__(self):
+        self.model_config["extra"] = "allow"
 
 
 class Control(BaseModel):
@@ -75,16 +74,16 @@ class Control(BaseModel):
     aspects of the operation to be performed.
     """
 
-    duration: Duration = cast(Duration, 1)
+    duration: Duration = pydantic.Field(1, validate_default=True)
     """How long the operation should execute.
     """
 
-    delay: Duration = cast(Duration, 0)
+    delay: Duration = pydantic.Field(0, validate_default=True)
     """How long to wait beyond the duration in order to ensure that the metrics
     for the target interval have been aggregated and are available for reading.
     """
 
-    warmup: Duration = cast(Duration, 0)
+    warmup: Duration = pydantic.Field(0, validate_default=True)
     """How long to wait before starting the operation in order to allow the
     application to reach a steady state (e.g., filling read through caches, loading
     class files into memory, just-in-time compilation being appliied to critical
@@ -112,7 +111,7 @@ class Control(BaseModel):
     """Optional mode control.
     """
 
-    @pydantic.root_validator(pre=True)
+    @pydantic.model_validator(mode="before")
     def validate_past_and_delay(cls, values):
         if "past" in values:
             # NOTE: past is an alias for delay in the API
@@ -125,7 +124,7 @@ class Control(BaseModel):
 
         return values
 
-    @pydantic.validator("duration", "warmup", "delay", always=True, pre=True)
+    @pydantic.field_validator("duration", "warmup", "delay", mode="before")
     @classmethod
     def validate_durations(cls, value) -> Duration:
         return value or Duration(0)
@@ -207,7 +206,7 @@ class Measurement(BaseModel):
     Measurements are sized and sequenced collections of readings.
     """
 
-    readings: Readings = []
+    readings: Readings = pydantic.Field([], validate_default=True)
     """A list of readings taken of target metrics during the measurement
     operation.
 
@@ -216,7 +215,7 @@ class Measurement(BaseModel):
     """
     annotations: dict[str, str] = {}
 
-    @pydantic.validator("readings", always=True, pre=True)
+    @pydantic.field_validator("readings", mode="before")
     def validate_readings_type(cls, value) -> Readings:
         if value:
             reading_type = None
@@ -230,7 +229,7 @@ class Measurement(BaseModel):
 
         return value
 
-    @pydantic.validator("readings", always=True, pre=True)
+    @pydantic.field_validator("readings", mode="before")
     def validate_time_series_dimensionality(cls, value) -> Readings:
         from servo.logging import logger
 
@@ -314,4 +313,4 @@ class Adjustment(BaseModel):
         return f"{self.component_name}.{self.setting_name}={self.value}"
 
 
-Control.update_forward_refs()
+Control.model_rebuild()

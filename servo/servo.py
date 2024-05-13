@@ -118,29 +118,23 @@ class _EventDefinitions(Protocol):
 
     # Lifecycle events
     @servo.events.event(Events.attach)
-    async def attach(self, servo_: Servo) -> None:
-        ...
+    async def attach(self, servo_: Servo) -> None: ...
 
     @servo.events.event(Events.detach)
-    async def detach(self, servo_: Servo) -> None:
-        ...
+    async def detach(self, servo_: Servo) -> None: ...
 
     @servo.events.event(Events.startup)
-    async def startup(self) -> None:
-        ...
+    async def startup(self) -> None: ...
 
     @servo.events.event(Events.shutdown)
-    async def shutdown(self) -> None:
-        ...
+    async def shutdown(self) -> None: ...
 
     # Informational events
     @servo.events.event(Events.metrics)
-    async def metrics(self) -> list[servo.types.Metric]:
-        ...
+    async def metrics(self) -> list[servo.types.Metric]: ...
 
     @servo.events.event(Events.components)
-    async def components(self) -> list[servo.types.Component]:
-        ...
+    async def components(self) -> list[servo.types.Component]: ...
 
     # Operational events
     @servo.events.event(Events.measure)
@@ -149,8 +143,7 @@ class _EventDefinitions(Protocol):
         *,
         metrics: list[str] = None,
         control: servo.types.Control = servo.types.Control(),
-    ) -> servo.types.Measurement:
-        ...
+    ) -> servo.types.Measurement: ...
 
     @servo.events.event(Events.check)
     async def check(
@@ -159,26 +152,22 @@ class _EventDefinitions(Protocol):
         halt_on: Optional[
             servo.types.ErrorSeverity
         ] = servo.types.ErrorSeverity.critical,
-    ) -> list[servo.checks.Check]:
-        ...
+    ) -> list[servo.checks.Check]: ...
 
     @servo.events.event(Events.describe)
     async def describe(
         self, control: servo.types.Control = servo.types.Control()
-    ) -> servo.types.Description:
-        ...
+    ) -> servo.types.Description: ...
 
     @servo.events.event(Events.adjust)
     async def adjust(
         self,
         adjustments: list[servo.types.Adjustment],
         control: servo.types.Control = servo.types.Control(),
-    ) -> servo.types.Description:
-        ...
+    ) -> servo.types.Description: ...
 
     @servo.events.event(Events.promote)
-    async def promote(self) -> None:
-        ...
+    async def promote(self) -> None: ...
 
 
 @servo.connector.metadata(
@@ -261,7 +250,7 @@ class Servo(servo.connector.BaseConnector):
             connector._global_config = self.config.settings
             connector._optimizer = self.config.optimizer
 
-    @pydantic.root_validator()
+    @pydantic.model_validator(mode="before")
     def _initialize_name(cls, values: dict[str, Any]) -> dict[str, Any]:
         if values["name"] == "servo" and values.get("config"):
             values["name"] = values["config"].name or getattr(
@@ -556,7 +545,7 @@ class Servo(servo.connector.BaseConnector):
         time_remaining: Optional[
             Union[servo.types.Numeric, servo.types.Duration]
         ] = None,
-        **kwargs
+        **kwargs,
         # logs: Optional[list[str]] = None,
         # _servo: Optional[Servo] = None,
         # connector: Optional[servo.connector.BaseConnector] = None,

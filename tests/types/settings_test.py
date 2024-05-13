@@ -174,7 +174,7 @@ class TestEnumSetting:
         assert error
         assert "1 validation error for EnumSetting" in str(error.value)
         assert error.value.errors()[0]["loc"] == ("values",)
-        assert error.value.errors()[0]["type"] == "value_error.list.min_items"
+        assert error.value.errors()[0]["type"] == "value_error.list.min_length"
         assert (
             error.value.errors()[0]["msg"] == "ensure this value has at least 1 items"
         )

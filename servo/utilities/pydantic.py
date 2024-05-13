@@ -46,16 +46,25 @@ def append_pydantic_validator(
 
 
 @contextlib.contextmanager
-def extra(
-    obj: pydantic.BaseModel, extra: pydantic.Extra = pydantic.Extra.allow
+def model_config_override(
+    obj: pydantic.BaseModel, values: dict
 ) -> Generator[pydantic.BaseModel, None, None]:
-    """Temporarily override the value of the `extra` setting on a Pydantic model."""
-    original = obj.__config__.extra
-    obj.__config__.extra = extra
+    """Temporarily override the values on a Pydantic model config."""
+    original = obj.model_config.copy()
+    obj.model_config.update(**values)
     try:
         yield obj
     finally:
-        obj.__config__.extra = original
+        obj.model_config = original
+
+
+@contextlib.contextmanager
+def extra(
+    obj: pydantic.BaseModel, extra: str = "allow"
+) -> Generator[pydantic.BaseModel, None, None]:
+    """Temporarily override the value of the `extra` setting on a Pydantic model."""
+    with model_config_override(obj, {"extra": extra}):
+        yield obj
 
 
 @contextlib.contextmanager
@@ -63,9 +72,5 @@ def allow_mutation(
     obj: pydantic.BaseModel, allow_mutation: bool = True
 ) -> Generator[pydantic.BaseModel, None, None]:
     """Temporarily override the value of the `allow_mutation` setting on a Pydantic model."""
-    original = obj.__config__.allow_mutation
-    obj.__config__.allow_mutation = allow_mutation
-    try:
+    with model_config_override(obj, {"allow_mutation": allow_mutation}):
         yield obj
-    finally:
-        obj.__config__.allow_mutation = original

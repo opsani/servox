@@ -532,9 +532,9 @@ class TestNoTuningIntegration:
             )
             servo.logger.info("waiting for Prometheus to scrape our Pods")
 
-            async def wait_for_targets_to_be_scraped() -> List[
-                servo.connectors.prometheus.ActiveTarget
-            ]:
+            async def wait_for_targets_to_be_scraped() -> (
+                List[servo.connectors.prometheus.ActiveTarget]
+            ):
                 servo.logger.info(f"Waiting for Prometheus scrape Pod targets...")
                 # NOTE: Prometheus is on a 5s scrape interval
                 scraped_since = pytz.utc.localize(datetime.datetime.now())
@@ -1012,9 +1012,9 @@ class TestServiceMultiport:
                 )
                 servo.logger.info("waiting for Prometheus to scrape our Pods")
 
-                async def wait_for_targets_to_be_scraped() -> List[
-                    servo.connectors.prometheus.ActiveTarget
-                ]:
+                async def wait_for_targets_to_be_scraped() -> (
+                    List[servo.connectors.prometheus.ActiveTarget]
+                ):
                     servo.logger.info(f"Waiting for Prometheus scrape Pod targets...")
                     # NOTE: Prometheus is on a 5s scrape interval
                     scraped_since = pytz.utc.localize(datetime.datetime.now())

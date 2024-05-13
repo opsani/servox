@@ -9,6 +9,7 @@ from httpcore import Origin
 
 from devtools import debug
 import httpx
+import pydantic
 import pytest
 import respx
 import yaml
@@ -98,9 +99,7 @@ class FirstTestServoConnector(BaseConnector):
     def handle_shutdown(self) -> None:
         pass
 
-    class Config:
-        # NOTE: Necessary to utilize mocking
-        extra = Extra.allow
+    model_config = pydantic.ConfigDict(extra="allow")
 
 
 class SecondTestServoConnector(BaseConnector):
@@ -450,8 +449,7 @@ async def test_dispatching_event_that_doesnt_exist(mocker, servo: Servo) -> None
 # Test event handlers
 
 
-async def test_event():
-    ...
+async def test_event(): ...
 
 
 def test_creating_event_programmatically(random_string: str) -> None:
@@ -1758,9 +1756,11 @@ class TestServoSettings:
         )
         assert s.connectors == {"vegeta": "VegetaConnector"}
 
-    def test_connectors_allows_dict_with_explicit_map_to_default_class(self):
+    def test_connectors_allows_dict_with_explicit_map_to_default_class(
+        self, optimizer: OpsaniOptimizer
+    ):
         s = BaseServoConfiguration(
-            connectors={"vegeta": VegetaConnector},
+            connectors={"vegeta": VegetaConnector}, optimizer=optimizer
         )
         assert s.connectors == {"vegeta": "VegetaConnector"}
 

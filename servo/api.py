@@ -17,7 +17,7 @@ from __future__ import annotations
 import copy
 import enum
 import time
-from typing import Any, Dict, List, Optional, Union, TYPE_CHECKING
+from typing import Annotated, Any, Dict, List, Optional, Union, TYPE_CHECKING
 
 from authlib.integrations.httpx_client import AsyncOAuth2Client
 import curlify2
@@ -103,26 +103,27 @@ class Commands(enum.StrEnum):
 
 class Request(pydantic.BaseModel):
     event: Union[Events, str]  # TODO: Needs to be rethought -- used adhoc in some cases
-    param: Optional[Dict[str, Any]]  # TODO: Switch to a union of supported types
+    param: Optional[Dict[str, Any]] = None  # TODO: Switch to a union of supported types
     servo_uid: Union[str, None] = None
 
-    class Config:
-        json_encoders = {
-            Events: lambda v: str(v),
-        }
+    @pydantic.field_serializer("event")
+    def event_str(self, event: Events | str) -> str:
+        if isinstance(event, Events):
+            return str(event)
+        return event
 
 
 class Status(pydantic.BaseModel):
     status: Statuses
     message: Optional[str] = None
-    other_messages: Optional[
-        list[str]
-    ] = None  # other lower priority error in exception group
+    other_messages: Optional[list[str]] = (
+        None  # other lower priority error in exception group
+    )
     reason: Optional[str] = None
     state: Optional[Dict[str, Any]] = None
     descriptor: Optional[Dict[str, Any]] = None
-    metrics: Union[dict[str, Any], None] = None
-    annotations: Union[dict[str, str], None] = None
+    metrics: Union[Dict[str, Any], None] = None
+    annotations: Union[Dict[str, str], None] = None
     command_uid: Union[str, None] = pydantic.Field(default=None, alias="cmd_uid")
 
     @classmethod
@@ -171,8 +172,7 @@ class Status(pydantic.BaseModel):
     ) -> DictStrAny:
         return super().dict(exclude_unset=exclude_unset, by_alias=by_alias, **kwargs)
 
-    class Config:
-        allow_population_by_field_name = True
+    model_config = pydantic.ConfigDict(populate_by_name=True)
 
 
 class SleepResponse(pydantic.BaseModel):
@@ -182,12 +182,25 @@ class SleepResponse(pydantic.BaseModel):
 # SleepResponse '{"cmd": "SLEEP", "param": {"duration": 60, "data": {"reason": "no active optimization pipeline"}}}'
 
 
+def metric_name(v: servo.Metric | str) -> str:
+    if isinstance(v, servo.Metric):
+        return v.name
+
+    return v
+
+
 # Instructions from servo on what to measure
 class MeasureParams(pydantic.BaseModel):
-    metrics: List[str]
+    metrics: List[
+        Annotated[
+            str,
+            pydantic.Field(validate_default=True),
+            pydantic.BeforeValidator(metric_name),
+        ]
+    ]
     control: servo.types.Control
 
-    @pydantic.validator("metrics", always=True, pre=True)
+    @pydantic.field_validator("metrics", mode="before")
     @classmethod
     def coerce_metrics(cls, value) -> List[str]:
         if isinstance(value, dict):
@@ -195,25 +208,17 @@ class MeasureParams(pydantic.BaseModel):
 
         return value
 
-    @pydantic.validator("metrics", each_item=True, pre=True)
-    def _map_metrics(cls, v) -> str:
-        if isinstance(v, servo.Metric):
-            return v.name
-
-        return v
-
 
 class CommandResponse(pydantic.BaseModel):
     command: Commands = pydantic.Field(alias="cmd")
     command_uid: Union[str, None] = pydantic.Field(alias="cmd_uid")
-    param: Optional[
-        Union[MeasureParams, Dict[str, Any]]
-    ]  # TODO: Switch to a union of supported types, remove isinstance check from ServoRunner.measure when done
+    param: Optional[Union[MeasureParams, Dict[str, Any]]] = (
+        None  # TODO: Switch to a union of supported types, remove isinstance check from ServoRunner.measure when done
+    )
 
-    class Config:
-        json_encoders = {
-            Commands: lambda v: v.value,
-        }
+    @pydantic.field_serializer("command")
+    def cmd_str(self, cmd: Commands) -> str:
+        return cmd.value
 
 
 def descriptor_to_adjustments(descriptor: dict) -> List[servo.types.Adjustment]:

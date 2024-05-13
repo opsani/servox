@@ -21,6 +21,7 @@ from typing import cast, Dict, List, Optional, Union, Type
 import kubernetes_asyncio
 import kubernetes_asyncio.client
 import pydantic
+import pydantic_settings
 
 import servo
 import servo.types
@@ -94,7 +95,7 @@ class OpsaniDevConfiguration(servo.BaseConfiguration):
     )  # alias to maintain backward compatibility
     workload_kind: str = pydantic.Field(
         default="Deployment",
-        regex=r"^([Dd]eployment)$",
+        pattern=r"^([Dd]eployment)$",
     )
     container: str
     service: str
@@ -117,8 +118,12 @@ class OpsaniDevConfiguration(servo.BaseConfiguration):
         description="Disable to prevent a canary strategy",
     )
 
-    class Config(servo.AbstractBaseConfiguration.Config):
-        allow_population_by_field_name = True
+    def __init__(self, *args, **kwargs):
+        self.model_config = pydantic_settings.SettingsConfigDict(
+            **servo.AbstractBaseConfiguration.model_config,
+            allow_population_by_field_name=True,
+        )
+        super().__init__()
 
     @classmethod
     def generate(cls, **kwargs) -> "OpsaniDevConfiguration":
@@ -781,9 +786,9 @@ class OpsaniDevChecks(servo.BaseChecks):
         ), f"{self.config.workload_kind} '{controller.metadata.name}' does not have any labels"
         # Add optimizer label to the static values
         required_labels = ENVOY_SIDECAR_LABELS.copy()
-        required_labels[
-            "servo.opsani.com/optimizer"
-        ] = servo.connectors.kubernetes.dns_labelize(self.optimizer.id)
+        required_labels["servo.opsani.com/optimizer"] = (
+            servo.connectors.kubernetes.dns_labelize(self.optimizer.id)
+        )
 
         # NOTE: Check for exact labels as this isn't configurable
         delta = dict(set(required_labels.items()) - set(labels.items()))

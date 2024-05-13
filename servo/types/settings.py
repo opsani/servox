@@ -18,8 +18,10 @@ import enum
 import functools
 from inspect import isclass
 import pydantic
+import pydantic_core
 import pydantic.fields
 from typing import (
+    List,
     Annotated,
     Any,
     Callable,
@@ -34,6 +36,8 @@ from typing import (
 )
 
 from .core import BaseModel, HumanReadable, Numeric, Unit
+from pydantic import Field, ConfigDict
+from typing_extensions import Annotated
 
 
 class Setting(BaseModel, abc.ABC):
@@ -136,9 +140,7 @@ class Setting(BaseModel, abc.ABC):
 
         return str(value)
 
-    class Config:
-        validate_all = True
-        validate_assignment = True
+    model_config = ConfigDict(validate_default=True, validate_assignment=True)
 
 
 # Helper methods for working with lists of settings
@@ -161,10 +163,9 @@ class EnumSetting(Setting):
 
     type: Literal["enum"] = pydantic.Field(
         "enum",
-        const=True,
         description="Identifies the setting as an enumeration setting.",
     )
-    values: pydantic.conlist(Union[str, Numeric], min_items=1) = pydantic.Field(
+    values: Annotated[List[Union[str, Numeric]], Field(min_length=1)] = pydantic.Field(
         ..., description="A list of the available options for the value of the setting."
     )
     value: Optional[Union[str, Numeric]] = pydantic.Field(
@@ -172,7 +173,7 @@ class EnumSetting(Setting):
         description="The value of the setting as set by the servo during a measurement or set by the optimizer during an adjustment. When set, must a value in the `values` attribute.",
     )
 
-    @pydantic.root_validator(skip_on_failure=True)
+    @pydantic.model_validator(mode="before")
     @classmethod
     def _validate_value_in_values(cls, values: dict[str, Any]) -> dict[str, Any]:
         value, options = values["value"], values["values"]
@@ -212,7 +213,7 @@ class RangeSetting(Setting):
     """
 
     type: Literal["range"] = pydantic.Field(
-        "range", const=True, description="Identifies the setting as a range setting."
+        "range", description="Identifies the setting as a range setting."
     )
     min: Numeric = pydantic.Field(
         ...,
@@ -233,7 +234,7 @@ class RangeSetting(Setting):
     def summary(self) -> str:
         return f"{self.__class__.__name__}(range=[{self.human_readable(self.min)}..{self.human_readable(self.max)}], step={self.human_readable(self.step)}, unit={self.unit})"
 
-    @pydantic.root_validator(skip_on_failure=True)
+    @pydantic.model_validator(mode="before")
     @classmethod
     def _attributes_must_be_of_same_type(cls, values: dict[str, Any]) -> dict[str, Any]:
         range_types: dict[TypeVar, list[str]] = {}
@@ -261,7 +262,7 @@ class RangeSetting(Setting):
 
         return values
 
-    @pydantic.root_validator(skip_on_failure=True)
+    @pydantic.model_validator(mode="before")
     @classmethod
     def _value_must_fall_in_range(cls, values) -> Numeric:
         value, min, max = values["value"], values["min"], values["max"]
@@ -274,7 +275,7 @@ class RangeSetting(Setting):
 
         return values
 
-    @pydantic.validator("max")
+    @pydantic.field_validator("max")
     @classmethod
     def _max_must_define_valid_range(cls, max_: Numeric, values) -> Numeric:
         if not "min" in values:
@@ -291,7 +292,7 @@ class RangeSetting(Setting):
 
         return max_
 
-    @pydantic.root_validator(skip_on_failure=True)
+    @pydantic.model_validator(mode="before")
     @classmethod
     def _min_and_max_must_be_step_aligned(
         cls, values: dict[str, Any]
@@ -395,8 +396,8 @@ class CPU(RangeSetting):
         else:
             super().__init__(unit=Unit.cores, *args, **kwargs)
 
-    name: str = pydantic.Field(
-        "cpu", const=True, description="Identifies the setting as a CPU setting."
+    name: Literal["cpu"] = pydantic.Field(
+        "cpu", description="Identifies the setting as a CPU setting."
     )
     min: float = pydantic.Field(
         ..., gt=0, description="The inclusive minimum number of vCPUs or cores to run."
@@ -430,11 +431,11 @@ class Memory(RangeSetting):
         else:
             super().__init__(unit=Unit.gibibytes, *args, **kwargs)
 
-    name: str = pydantic.Field(
-        "mem", const=True, description="Identifies the setting as a Memory setting."
+    name: Literal["mem"] = pydantic.Field(
+        "mem", description="Identifies the setting as a Memory setting."
     )
 
-    @pydantic.validator("min")
+    @pydantic.field_validator("min")
     @classmethod
     def ensure_min_greater_than_zero(cls, value: Numeric) -> Numeric:
         if value == 0:
@@ -455,9 +456,8 @@ class Replicas(RangeSetting):
     type derived thereof.
     """
 
-    name: str = pydantic.Field(
+    name: Literal["replicas"] = pydantic.Field(
         "replicas",
-        const=True,
         description="Identifies the setting as a replicas setting.",
     )
     min: pydantic.StrictInt = pydantic.Field(
@@ -494,9 +494,8 @@ class InstanceType(EnumSetting):
     type derived thereof.
     """
 
-    name: str = pydantic.Field(
+    name: Literal["inst_type"] = pydantic.Field(
         "inst_type",
-        const=True,
         description="Identifies the setting as an instance type enum setting.",
     )
     unit: InstanceTypeUnits = pydantic.Field(
@@ -516,7 +515,7 @@ def _suggest_step_aligned_values(
         in_repr = lambda x: x
 
     # declare numeric and textual representations
-    parser = functools.partial(pydantic.parse_obj_as, value.__class__)
+    parser = functools.partial(pydantic.TypeAdapter.validate_python, value.__class__)
     value_dec, step_dec = decimal.Decimal(str(float(value))), decimal.Decimal(
         str(float(step))
     )
@@ -583,12 +582,17 @@ class EnvironmentSetting(Setting):
 
 
 class NumericType(Setting):
-    @classmethod
-    def __get_validators__(cls) -> Generator[Callable[..., Any], None, None]:
-        yield cls.validate
 
     @classmethod
-    def validate(cls, value, field: pydantic.fields.ModelField = None):
+    def __get_pydantic_core_schema__(
+        cls, source_type: Any, handler: pydantic.GetCoreSchemaHandler
+    ) -> pydantic_core.CoreSchema:
+        return pydantic_core.core_schema.no_info_after_validator_function(
+            cls.validate, handler(Setting)
+        )
+
+    @classmethod
+    def validate(cls, value):
         if isclass(value) and issubclass(value, (int, float)):
             return value
 
@@ -600,8 +604,13 @@ class NumericType(Setting):
         raise ValueError(f"Unrecognized numeric type {repr(value)}")
 
     @classmethod
-    def __modify_schema__(cls, field_schema: dict[str, Any]):
-        field_schema.update(anyOf=["int", "float"])
+    def __get_pydantic_json_schema__(
+        cls,
+        _core_schema: pydantic_core.core_schema.CoreSchema,
+        handler: pydantic.GetJsonSchemaHandler,
+    ) -> pydantic.json_schema.JsonSchemaValue:
+        _core_schema.update(anyOf=["int", "float"])
+        return handler(Setting)
 
 
 class EnvironmentRangeSetting(RangeSetting, EnvironmentSetting):
@@ -615,7 +624,7 @@ class EnvironmentRangeSetting(RangeSetting, EnvironmentSetting):
         None, description="The optional value of the setting as reported by the servo"
     )
 
-    @pydantic.validator("value_type", pre=True)
+    @pydantic.field_validator("value_type", mode="before")
     def _set_value_type_to_type(cls, value: Any) -> Union[Type[int], Type[float]]:
         if value == "int":
             return int
@@ -623,7 +632,7 @@ class EnvironmentRangeSetting(RangeSetting, EnvironmentSetting):
             return float
         return value
 
-    @pydantic.root_validator
+    @pydantic.model_validator(mode="before")
     def _cast_value_to_value_type(cls, values: dict[Any, Any]) -> dict[Any, Any]:
         if (value := values.get("value")) is not None and (
             value_type := values.get("value_type")
@@ -637,8 +646,8 @@ class EnvironmentEnumSetting(EnumSetting, EnvironmentSetting):
 
 
 # https://github.com/samuelcolvin/pydantic/issues/3714
-class EnvironmentSettingList(pydantic.BaseModel):
-    __root__: list[
+class EnvironmentSettingList(pydantic.RootModel):
+    root: list[
         Annotated[
             Union[EnvironmentRangeSetting, EnvironmentEnumSetting],
             pydantic.Field(discriminator="type"),
@@ -647,10 +656,10 @@ class EnvironmentSettingList(pydantic.BaseModel):
 
     # above https://pydantic-docs.helpmanual.io/usage/models/#faux-immutability
     def __iter__(self):
-        return iter(self.__root__)
+        return iter(self.root)
 
     def __getitem__(self, item):
-        return self.__root__[item]
+        return self.root[item]
 
 
 # TODO: revert to this annotation when the above is resolved

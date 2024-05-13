@@ -119,12 +119,10 @@ def test_deploy_servo_fiberhttp_vegeta_adjust() -> None:
 # Integration test k8s describe, adjust
 
 
-def test_generate_outputs_human_readable_config() -> None:
-    ...
+def test_generate_outputs_human_readable_config() -> None: ...
 
 
-def test_supports_nil_container_name() -> None:
-    ...
+def test_supports_nil_container_name() -> None: ...
 
 
 @pytest.mark.applymanifests("manifests", files=["fiber-http.yaml"])

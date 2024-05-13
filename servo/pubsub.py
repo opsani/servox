@@ -52,6 +52,8 @@ import pydantic
 import yaml as yaml_
 
 import servo.types
+from pydantic import Field, StringConstraints, ConfigDict
+from typing_extensions import Annotated
 
 __all__ = [
     "BaseSubscription",
@@ -185,12 +187,15 @@ class Message(pydantic.BaseModel):
         return yaml_.load(self.content, Loader=yaml_.FullLoader)
 
 
-ChannelName = pydantic.constr(
-    strip_whitespace=True,
-    min_length=1,
-    max_length=253,
-    regex="^[0-9a-zA-Z]([0-9a-zA-Z\\.\\-_])*[0-9A-Za-z]$",
-)
+ChannelName = Annotated[
+    str,
+    StringConstraints(
+        strip_whitespace=True,
+        min_length=1,
+        max_length=253,
+        pattern="^[0-9a-zA-Z]([0-9a-zA-Z\\.\\-_])*[0-9A-Za-z]$",
+    ),
+]
 
 
 class _ExchangeChildModel(pydantic.BaseModel):
@@ -738,7 +743,7 @@ class Subscription(BaseSubscription):
 
     selector: Selector
 
-    @pydantic.validator("selector", pre=True)
+    @pydantic.field_validator("selector", mode="before")
     def _expand_selector_regex(cls, v: str) -> Union[str, Pattern]:
         if isinstance(v, str) and v.startswith("/") and v.endswith("/"):
             return re.compile(v[1:-1])
@@ -860,7 +865,7 @@ class Subscriber(_ExchangeChildModel):
     """
 
     subscription: Subscription
-    callback: Optional[Callback]
+    callback: Optional[Callback] = None
     _event: asyncio.Event = pydantic.PrivateAttr(default_factory=asyncio.Event)
     _iterators: List[_Iterator] = pydantic.PrivateAttr([])
 
@@ -952,8 +957,7 @@ class Subscriber(_ExchangeChildModel):
 
         return False
 
-    class Config:
-        arbitrary_types_allowed = True
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
 class Publisher(_ExchangeChildModel):
@@ -966,7 +970,7 @@ class Publisher(_ExchangeChildModel):
         channels: The Channels that the Publisher publishes Messages to.
     """
 
-    channels: pydantic.conlist(Channel, min_items=1)
+    channels: Annotated[List[Channel], Field(min_length=1)]
 
     async def __call__(
         self, message: Message, *channels: List[Union[Channel, str]]
@@ -1056,8 +1060,7 @@ class Filter(Transformer):
         else:
             return self.callback(message, channel)
 
-    class Config:
-        arbitrary_types_allowed = True
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
 SplitterCallback = Callable[["Splitter", Message, Channel], Awaitable[None]]
@@ -1095,7 +1098,7 @@ class Splitter(Transformer):
     """
 
     callback: SplitterCallback
-    channels: pydantic.conlist(Channel, min_items=1)
+    channels: Annotated[List[Channel], Field(min_length=1)]
 
     def __init__(
         self, callback: SplitterCallback, *channels: List[Channel], **kwargs
@@ -1155,7 +1158,7 @@ class Aggregator(Transformer):
             ```
     """
 
-    from_channels: pydantic.conlist(Channel, min_items=2)
+    from_channels: Annotated[List[Channel], Field(min_length=2)]
     to_channel: Channel
     callback: AggregatorCallback
     every: Optional[servo.types.Duration] = None
@@ -1276,8 +1279,9 @@ class Aggregator(Transformer):
             ),
         ]
 
-    class Config:
-        allow_mutation = False
+    # TODO[pydantic]: The following keys were removed: `allow_mutation`.
+    # Check https://docs.pydantic.dev/dev-v2/migration/#changes-to-config for more information.
+    model_config = ConfigDict(frozen=False)
 
 
 class _PublisherMethod:
@@ -1646,10 +1650,10 @@ def _current_iterator() -> Optional[AsyncIterator]:
     return servo.pubsub._current_iterator_var.get()
 
 
-Splitter.update_forward_refs()
-Aggregator.update_forward_refs()
-Channel.update_forward_refs()
-_Iterator.update_forward_refs()
+Splitter.model_rebuild()
+Aggregator.model_rebuild()
+Channel.model_rebuild()
+_Iterator.model_rebuild()
 
 
 def _error_watcher(task: asyncio.Task) -> None:

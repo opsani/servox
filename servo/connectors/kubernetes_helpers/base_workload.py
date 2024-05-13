@@ -34,15 +34,13 @@ from servo.types.api import Adjustment
 class BaseKubernetesWorkloadHelper(BaseKubernetesHelper):
     @classmethod
     @abc.abstractmethod
-    def check_conditions(cls, workload: Union[V1Deployment, V1StatefulSet]) -> None:
-        ...
+    def check_conditions(cls, workload: Union[V1Deployment, V1StatefulSet]) -> None: ...
 
     @classmethod
     @abc.abstractmethod
     async def get_latest_pods(
         cls, workload: Union[V1Deployment, V1StatefulSet]
-    ) -> list[V1Pod]:
-        ...
+    ) -> list[V1Pod]: ...
 
     @classmethod
     def is_ready(
