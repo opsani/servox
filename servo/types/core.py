@@ -26,6 +26,7 @@ import inspect
 import operator
 from typing import (
     Any,
+    Annotated,
     AsyncIterator,
     Awaitable,
     Callable,
@@ -83,13 +84,16 @@ def _orjson_dumps(
         raise err
 
 
-BASE_MODEL_CONFIG = {
-    "validate_assignment": True,
-}
-BASE_MODEL_CONFIG.__doc__ = """
+BaseModelConfigDict = Annotated[
+    pydantic.ConfigDict,
+    """
 The `BaseModelConfig` class provides a common set of Pydantic model
 configuration shared across the library.
-"""
+""",
+]
+BASE_MODEL_CONFIG: BaseModelConfigDict = {
+    "validate_assignment": True,
+}
 
 
 class BaseModel(pydantic.BaseModel):
