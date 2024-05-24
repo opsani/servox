@@ -461,6 +461,12 @@ def clean_environment() -> Callable[[None], None]:
     return _clean_environment
 
 
+@pytest.fixture()
+def override_environment(request: pytest.FixtureRequest) -> None:
+    with tests.helpers.environment_overrides(request.param):
+        yield
+
+
 @pytest.fixture
 def random_string() -> str:
     """Return a random string of characters."""

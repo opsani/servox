@@ -150,5 +150,5 @@ def test_parse_command_response_including_units_control(payload, validator) -> N
 
     from pydantic import TypeAdapter
 
-    obj = TypeAdapter.validate_python(Union[CommandResponse, Status], payload)
+    obj = TypeAdapter(Union[CommandResponse, Status]).validate_python(payload)
     validator(obj)

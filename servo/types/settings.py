@@ -609,8 +609,12 @@ class NumericType(Setting):
         _core_schema: pydantic_core.core_schema.CoreSchema,
         handler: pydantic.GetJsonSchemaHandler,
     ) -> pydantic.json_schema.JsonSchemaValue:
-        _core_schema.update(anyOf=["int", "float"])
-        return handler(Setting)
+        # _core_schema.update(anyOf=["int", "float"])
+        # return handler(Setting)
+        json_schema = handler(_core_schema)
+        json_schema = handler.resolve_ref_schema(json_schema)
+        json_schema["anyOf"] = ["int", "float"]
+        return json_schema
 
 
 class EnvironmentRangeSetting(RangeSetting, EnvironmentSetting):

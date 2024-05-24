@@ -23,6 +23,8 @@ import os
 import pathlib
 import re
 from typing import Any, Callable, Dict, List, Optional, Type, Union
+import typing
+import httpx
 import pydantic.json
 import pydantic_core
 from typing_extensions import Annotated, TypeAlias
@@ -138,7 +140,6 @@ class AppdynamicsOptimizer(pydantic_settings.BaseSettings):
     # TODO[pydantic]: The following keys were removed: `fields`.
     # Check https://docs.pydantic.dev/dev-v2/migration/#changes-to-config for more information.
     model_config = pydantic_settings.SettingsConfigDict(
-        case_sensitive=True,
         extra="forbid",
         validate_assignment=True,
         env_prefix="appd_",
@@ -161,7 +162,9 @@ class OpsaniOptimizer(pydantic_settings.BaseSettings):
             and automated testing to bind the servo to a fixed URL.
     """
 
-    id: Annotated[str, StringConstraints(pattern=OPTIMIZER_ID_REGEX)]
+    id: Annotated[str, StringConstraints(pattern=OPTIMIZER_ID_REGEX)] = pydantic.Field(
+        alias="opsani_optimizer"
+    )
     token: pydantic.SecretStr
     base_url: pydantic.AnyHttpUrl = "https://api.opsani.com"
     url: Optional[pydantic.AnyHttpUrl] = None
@@ -174,6 +177,10 @@ class OpsaniOptimizer(pydantic_settings.BaseSettings):
             token_file := os.environ.get("OPSANI_TOKEN_FILE")
         ):
             kwargs["token"] = pathlib.Path(token_file).read_text().strip()
+
+        # alias will supress attempts to init with acutal property names. support this manually
+        if (id_arg := kwargs.pop("id", None)) is not None:
+            kwargs["opsani_optimizer"] = id_arg
         super().__init__(*args, **kwargs)
 
         organization, name = self.id.split("/")
@@ -286,9 +293,9 @@ class AbstractBaseConfiguration(pydantic_settings.BaseSettings, servo.logging.Mi
             cls.model_config["title"] = f"{base_name} Connector Configuration Schema"
 
         # Default prefix
-        prefix = cls.model_config.get("env_prefix", "")
-        if prefix == "":
-            prefix = re.sub(r"(?<!^)(?=[A-Z])", "_", base_name).upper() + "_"
+        # prefix = cls.model_config.get("env_prefix", None)
+        # if prefix == "":
+        #     prefix = re.sub(r"(?<!^)(?=[A-Z])", "_", base_name).upper() + "_"
 
         # pydantic auto configures env vars so no need for this TODO remove when verified
         # for name, field in cls.__fields__.items():
@@ -332,10 +339,10 @@ class AbstractBaseConfiguration(pydantic_settings.BaseSettings, servo.logging.Mi
         return yaml.dump(json.loads(config_json), sort_keys=False)
 
     model_config = pydantic_settings.SettingsConfigDict(
-        **servo.types.BASE_MODEL_CONFIG,
-        case_sensitive=True,
+        validate_assignment=True,
         extra="forbid",
         title=DEFAULT_TITLE,
+        env_nested_delimiter="_",
     )
 
 
@@ -464,6 +471,20 @@ class BackoffConfigurations(pydantic.RootModel):
         return (self.get(context, None) or self.get(BackoffContexts.default)).max_tries
 
 
+def ensure_valid_url_and_str(v: Any):
+    if isinstance(v, str):
+        return str(pydantic.AnyHttpUrl(v))
+
+    return v
+
+
+# Ensure URL is valid but keep url as string for downstream libraries
+ValidProxy = typing.Annotated[
+    Union[str, httpx.Proxy],
+    pydantic.functional_validators.AfterValidator(ensure_valid_url_and_str),
+]
+
+
 class CommonConfiguration(AbstractBaseConfiguration):
     """CommonConfiguration models configuration for the Servo connector and establishes default
     settings for shared services such as networking and logging.
@@ -481,7 +502,7 @@ class CommonConfiguration(AbstractBaseConfiguration):
     See https://github.com/litl/backoff
     """
 
-    proxies: Union[None, ProxyKey, Dict[ProxyKey, Optional[pydantic.AnyHttpUrl]]] = None
+    proxies: Union[None, ProxyKey, Dict[ProxyKey, Optional[ValidProxy]]] = None
     """Proxy configuration for the HTTPX library, which provides HTTP networking capabilities to the
     servo.
 
@@ -515,10 +536,6 @@ class CommonConfiguration(AbstractBaseConfiguration):
     @classmethod
     def generate(cls, **kwargs) -> Optional["CommonConfiguration"]:
         return None
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.model_config["validate_assignment"] = True
 
 
 class ChecksConfiguration(AbstractBaseConfiguration):
@@ -579,12 +596,10 @@ class ChecksConfiguration(AbstractBaseConfiguration):
     def generate(cls, **kwargs) -> Optional["ChecksConfiguration"]:
         return None
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.model_config["validate_assignment"] = True
 
-
-class BaseServoConfiguration(AbstractBaseConfiguration, abc.ABC):
+class BaseServoConfiguration(
+    AbstractBaseConfiguration, abc.ABC, pydantic_settings.BaseSettings
+):
     """
     Abstract base class for Servo instances.
 
@@ -634,14 +649,6 @@ class BaseServoConfiguration(AbstractBaseConfiguration, abc.ABC):
         default_factory=lambda: ChecksConfiguration(),
         description="Configuration of Checks behavior",
     )
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
-        # If optimizer hasn't failed validation then it was set by environment variables.
-        # Explicitly assign it so that its included in pydantic's __fields_set__
-        # Ideally we could just set include=True on the Field but that doesn't seem to override exclude_unset
-        self.optimizer = self.optimizer
 
     @classmethod
     def generate(
@@ -703,11 +710,12 @@ class BaseServoConfiguration(AbstractBaseConfiguration, abc.ABC):
 
         return connectors
 
-    def __init__(self, *args, **kwargs):
-        self.model_config["extra"] = "forbid"
-        self.model_config["title"] = "Abstract Servo Configuration Schema"
-        self.model_config["env_prefix"] = "SERVO_"
-        super().__init__(*args, **kwargs)
+    model_config = pydantic_settings.SettingsConfigDict(
+        extra="forbid",
+        validate_assignment=False,
+        title="Abstract Servo Configuration Schema",
+        env_prefix="servo_",
+    )
 
 
 class FastFailConfiguration(pydantic_settings.BaseSettings):

@@ -1446,10 +1446,11 @@ class Mixin(pydantic.BaseModel):
         pubsub_exchange: The pub/sub Exchange that the object belongs to.
     """
 
-    __private_attributes__ = {
-        "_publishers_map": pydantic.PrivateAttr({}),
-        "_subscribers_map": pydantic.PrivateAttr({}),
-    }
+    _publishers_map: dict[str, tuple[Publisher, asyncio.Task]] = pydantic.PrivateAttr(
+        {}
+    )
+    _subscribers_map: dict[str, Subscriber] = pydantic.PrivateAttr({})
+
     pubsub_exchange: Exchange = pydantic.Field(default_factory=Exchange)
 
     def __init__(self, *args, **kwargs) -> None:

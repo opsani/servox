@@ -295,7 +295,7 @@ def get_api_client_for_optimizer(
         if "Bearer" not in auth_header_value:
             auth_header_value = f"Bearer {auth_header_value}"
         return httpx.AsyncClient(
-            base_url=optimizer.url,
+            base_url=str(optimizer.url),
             headers={
                 "Authorization": auth_header_value,
                 "User-Agent": user_agent(),
@@ -307,7 +307,7 @@ def get_api_client_for_optimizer(
         )
     elif isinstance(optimizer, servo.configuration.AppdynamicsOptimizer):
         api_client = AsyncOAuth2Client(
-            base_url=optimizer.url,
+            base_url=str(optimizer.url),
             headers={
                 "User-Agent": user_agent(),
                 "Content-Type": "application/json",

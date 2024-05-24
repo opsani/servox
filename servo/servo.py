@@ -252,10 +252,24 @@ class Servo(servo.connector.BaseConnector):
 
     @pydantic.model_validator(mode="before")
     def _initialize_name(cls, values: dict[str, Any]) -> dict[str, Any]:
-        if values["name"] == "servo" and values.get("config"):
-            values["name"] = values["config"].name or getattr(
-                values["config"].optimizer, "id", "servo"
-            )
+        if (
+            values["name"] == "servo"
+            and (servo_config := values.get("config", None)) is not None
+        ):
+            if isinstance(servo_config, dict):
+                values["name"] = servo_config.get("name", None) or getattr(
+                    servo_config["optimizer"], "id", "servo"
+                )
+            elif issubclass(
+                servo_config.__class__, servo.configuration.BaseServoConfiguration
+            ):
+                values["name"] = values["config"].name or getattr(
+                    values["config"].optimizer, "id", "servo"
+                )
+            else:
+                raise pydantic.ValidationError(
+                    f"Unable to derive name from config of type {servo_config.__class__}"
+                )
 
         return values
 
@@ -598,13 +612,13 @@ class Servo(servo.connector.BaseConnector):
                 event=event, param=param, servo_uid=self.config.servo_uid
             )
             self.logger.trace(
-                f"POST event request: {devtools.pformat(event_request.json())}"
+                f"POST event request: {devtools.pformat(event_request.model_dump_json())}"
             )
 
             try:
                 try:
                     response = await self._api_client.post(
-                        "servo", data=event_request.json()
+                        "servo", data=event_request.model_dump_json()
                     )
                 except RuntimeError as e:
                     if "the handler is closed" in str(e):
@@ -615,7 +629,7 @@ class Servo(servo.connector.BaseConnector):
                             self.config.optimizer, self.config.settings
                         )
                         response = await self._api_client.post(
-                            "servo", data=event_request.json()
+                            "servo", data=event_request.model_dump_json()
                         )
                     else:
                         raise
@@ -627,9 +641,9 @@ class Servo(servo.connector.BaseConnector):
                 )
                 self.logger.trace(servo.api.redacted_to_curl(response.request))
 
-                return pydantic.parse_obj_as(
-                    Union[servo.api.CommandResponse, servo.api.Status], response_json
-                )
+                return pydantic.TypeAdapter(
+                    Union[servo.api.CommandResponse, servo.api.Status]
+                ).validate_python(response_json)
 
             except httpx.HTTPError as error:
                 if hasattr(error, "response"):

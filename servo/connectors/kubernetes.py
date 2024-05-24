@@ -1951,13 +1951,12 @@ class KubernetesConfiguration(BaseKubernetesConfiguration):
     ) -> list[Union[StatefulSetConfiguration, DeploymentConfiguration]]:
         return (self.deployments or []) + (self.stateful_sets or [])
 
-    @pydantic.model_validator(mode="before")
-    def check_workload(cls, values):
-        if (not values.get("deployments")) and (
-            not values.get("rollouts") and (not values.get("stateful_sets"))
-        ):
+    @pydantic.model_validator(mode="after")
+    def check_workload(self):
+        if self.deployments or self.stateful_sets:
+            return self
+        else:
             raise ValueError("No optimization target(s) were specified")
-        return values
 
     @classmethod
     def generate(cls, **kwargs) -> "KubernetesConfiguration":

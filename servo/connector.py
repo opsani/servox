@@ -88,9 +88,12 @@ class BaseConnector(
 
     ##
     # Connector metadata
+    _name: ClassVar[str] = None
+    """Name of the connector, as derived from the class name.
+    """
 
     name: str = None
-    """Name of the connector, by default derived from the class name.
+    """Name of the connector as set by the route, by default derived from the class name.
     """
 
     full_name: ClassVar[str] = None
@@ -160,7 +163,7 @@ class BaseConnector(
     @pydantic.model_validator(mode="before")
     @classmethod
     def _validate_metadata(cls, v):
-        assert cls.name is not None, "name must be provided"
+        assert cls._name is not None, "name must be provided"
         assert cls.version is not None, "version must be provided"
         if isinstance(cls.version, str):
             # Attempt to parse
@@ -178,7 +181,7 @@ class BaseConnector(
                 )
         return v
 
-    @pydantic.field_validator("name")
+    @pydantic.field_validator("name", check_fields=False)
     @classmethod
     def _validate_name(cls, v):
         assert bool(
@@ -218,7 +221,7 @@ class BaseConnector(
 
         _connector_subclasses.add(cls)
 
-        cls.name = cls.__name__.replace("Connector", "")
+        cls._name = cls.__name__.replace("Connector", "")
         cls.full_name = cls.__name__.replace("Connector", " Connector")
         cls.version = Version.parse("0.0.0")
         cls.__default_name__ = _name_for_connector_class(cls)
@@ -230,6 +233,8 @@ class BaseConnector(
         **kwargs,
     ) -> None:  # noqa: D107
         name = name if name is not None else self.__class__.__default_name__
+        if name is None:
+            name = self.__class__._name
         super().__init__(
             *args,
             name=name,
@@ -284,9 +289,9 @@ def metadata(
                     raise ValueError(
                         f"Connector names given as tuples must contain exactly 2 elements: full name and alias"
                     )
-                cls.name, cls.__default_name__ = name
+                cls._name, cls.__default_name__ = name
             else:
-                cls.name = name
+                cls._name = name
         if description:
             cls.description = description
         if version:
@@ -316,7 +321,7 @@ def metadata(
 
 
 def _name_for_connector_class(cls: Type[BaseConnector]) -> Optional[str]:
-    for name in (cls.name, cls.__name__):
+    for name in (cls._name, cls.__name__):
         if not name:
             continue
         name = re.sub(r"Connector$", "", name)

@@ -118,12 +118,7 @@ class OpsaniDevConfiguration(servo.BaseConfiguration):
         description="Disable to prevent a canary strategy",
     )
 
-    def __init__(self, *args, **kwargs):
-        self.model_config = pydantic_settings.SettingsConfigDict(
-            **servo.AbstractBaseConfiguration.model_config,
-            allow_population_by_field_name=True,
-        )
-        super().__init__()
+    model_config = pydantic_settings.SettingsConfigDict(populate_by_name=True)
 
     @classmethod
     def generate(cls, **kwargs) -> "OpsaniDevConfiguration":

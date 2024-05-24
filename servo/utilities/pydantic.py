@@ -50,12 +50,12 @@ def model_config_override(
     obj: pydantic.BaseModel, values: dict
 ) -> Generator[pydantic.BaseModel, None, None]:
     """Temporarily override the values on a Pydantic model config."""
-    original = obj.model_config.copy()
     obj.model_config.update(**values)
     try:
         yield obj
     finally:
-        obj.model_config = original
+        for k in values.keys():
+            obj.model_config.pop(k)
 
 
 @contextlib.contextmanager
@@ -64,6 +64,10 @@ def extra(
 ) -> Generator[pydantic.BaseModel, None, None]:
     """Temporarily override the value of the `extra` setting on a Pydantic model."""
     with model_config_override(obj, {"extra": extra}):
+        # dynamicly changing extra isn't actually supported. have to tap into undelrying implementation to set field
+        #   normally set during BaseModel.model_construct
+        if obj.__pydantic_extra__ is None:
+            obj.__pydantic_extra__ = {}
         yield obj
 
 

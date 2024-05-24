@@ -24,6 +24,33 @@ from servo.logging import ProgressHandler, reset_to_defaults
 from tests.helpers import *
 
 
+@pytest.fixture()
+def optimizer_config() -> dict[str, str]:
+    return {"id": "dev.opsani.com/servox", "token": "1234556789"}
+
+
+@pytest.fixture()
+async def assembly(
+    servo_yaml: Path, optimizer_config: dict[str, str]
+) -> servox.Assembly:
+    config = {
+        "optimizer": optimizer_config,
+        "connectors": ["first_test_servo", "second_test_servo"],
+        "first_test_servo": {},
+        "second_test_servo": {},
+    }
+    servo_yaml.write_text(yaml.dump(config))
+
+    # TODO: Can't pass in like this, needs to be fixed
+    assembly = await servox.Assembly.assemble(config_file=servo_yaml)
+    return assembly
+
+
+@pytest.fixture()
+def servo(assembly: servox.Assembly) -> servox.Servo:
+    return assembly.servos[0]
+
+
 class TestOptimizer:
     def test_organization_valid(self) -> None:
         optimizer = OpsaniOptimizer(id="example.com/my-app", token="123456")

@@ -24,6 +24,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import devtools
 import jsonschema
 import pydantic
+import pydantic_settings
 
 import servo
 from pydantic import ConfigDict
@@ -121,10 +122,12 @@ class VegetaConfiguration(servo.BaseConfiguration):
         return fmt.value()
 
     target: Optional[str] = pydantic.Field(
-        description="Specifies a single formatted Vegeta target to load. See the format option to learn about available target formats. This option is exclusive of the targets option and will provide a target to Vegeta via stdin."
+        None,
+        description="Specifies a single formatted Vegeta target to load. See the format option to learn about available target formats. This option is exclusive of the targets option and will provide a target to Vegeta via stdin.",
     )
     targets: Optional[pydantic.FilePath] = pydantic.Field(
-        description="Specifies the file from which to read targets. See the format option to learn about available target formats. This option is exclusive of the target option and will provide targets to via through a file on disk."
+        None,
+        description="Specifies the file from which to read targets. See the format option to learn about available target formats. This option is exclusive of the target option and will provide targets to via through a file on disk.",
     )
     connections: int = pydantic.Field(
         10000,
@@ -167,17 +170,27 @@ class VegetaConfiguration(servo.BaseConfiguration):
         else:
             return None
 
-    @pydantic.model_validator(mode="before")
-    @classmethod
-    def validate_target(cls, values: Dict[str, Any]) -> Dict[str, Any]:
-        target, targets = servo.values_for_keys(values, ("target", "targets"))
-        if target is None and targets is None:
+    @pydantic.model_validator(mode="after")
+    def validate_target(self) -> Dict[str, Any]:
+        if self.target is None and self.targets is None:
             raise ValueError("target or targets must be configured")
 
-        if target and targets:
+        if self.target and self.targets:
             raise ValueError("target and targets cannot both be configured")
 
-        return values
+        return self
+
+    # @pydantic.model_validator(mode="before")
+    # @classmethod
+    # def validate_target(cls, values: Dict[str, Any]) -> Dict[str, Any]:
+    #     target, targets = servo.values_for_keys(values, ("target", "targets"))
+    #     if target is None and targets is None:
+    #         raise ValueError("target or targets must be configured")
+
+    #     if target and targets:
+    #         raise ValueError("target and targets cannot both be configured")
+
+    #     return values
 
     @staticmethod
     def target_json_schema() -> Dict[str, Any]:
@@ -245,7 +258,7 @@ class VegetaConfiguration(servo.BaseConfiguration):
 
             return value
 
-    @pydantic.field_validator("rate")
+    @pydantic.field_validator("rate", mode="before")
     @classmethod
     def validate_rate(cls, v: Union[int, str]) -> str:
         assert isinstance(

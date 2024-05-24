@@ -19,6 +19,8 @@ import datetime
 import time
 from typing import Any, Optional, Union, cast
 
+import pydantic_settings
+
 from .core import BaseModel, DataPoint, Duration, Metric, Numeric, Readings, TimeSeries
 from .settings import Setting
 from .slo import SloInput
@@ -65,8 +67,7 @@ component.
 class UserData(BaseModel):
     slo: Optional[SloInput] = None
 
-    def __init__(self):
-        self.model_config["extra"] = "allow"
+    model_config = pydantic_settings.SettingsConfigDict(extra="allow")
 
 
 class Control(BaseModel):

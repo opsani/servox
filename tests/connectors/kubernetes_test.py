@@ -27,7 +27,7 @@ from kubernetes_asyncio.client import (
     VersionInfo,
 )
 from pydantic import BaseModel
-from pydantic.error_wrappers import ValidationError
+from pydantic import ValidationError
 
 import servo
 import servo.connectors.kubernetes

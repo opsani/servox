@@ -20,6 +20,8 @@ import enum
 import pydantic
 from typing import Annotated, cast, Optional
 
+import pydantic_settings
+
 from .core import BaseModel, Numeric
 
 
@@ -45,9 +47,7 @@ class SloCondition(BaseModel):
     threshold_metric: Optional[str] = None
     slo_threshold_minimum: float = 0.25
 
-    def __init__(self, *args, **kwargs):
-        self.model_config["extra"] = "forbid"
-        super().__init__(*args, **kwargs)
+    model_config = pydantic_settings.SettingsConfigDict(extra="forbid")
 
     @pydantic.model_validator(mode="before")
     @classmethod
@@ -125,9 +125,7 @@ class SloCondition(BaseModel):
 class SloInput(BaseModel):
     conditions: list[SloCondition]
 
-    def __init__(self, *args, **kwargs):
-        self.model_config["extra"] = "forbid"
-        super().__init__(*args, **kwargs)
+    model_config = pydantic_settings.SettingsConfigDict(extra="forbid")
 
     @pydantic.field_validator("conditions")
     def _conditions_are_unique(cls, value: list[SloCondition]):

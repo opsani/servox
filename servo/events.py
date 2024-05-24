@@ -615,7 +615,7 @@ _is_base_class_defined = False
 
 # https://github.com/pydantic/pydantic/issues/5124#issuecomment-1449653294
 class Metaclass(type(pydantic.BaseModel)):
-    def __new__(mcs, name, bases, namespace, **kwargs):
+    def __new__(mcs, cls_name, bases, namespace, *args, **kwargs):
         # Decorate the class with an event registry, inheriting from our parent connectors
         event_handlers: List[EventHandler] = []
 
@@ -628,7 +628,7 @@ class Metaclass(type(pydantic.BaseModel)):
             **{n: v for n, v in namespace.items()},
         }
 
-        cls = super().__new__(mcs, name, bases, new_namespace, **kwargs)
+        cls = super().__new__(mcs, cls_name, bases, new_namespace, *args, **kwargs)
         return cls
 
 

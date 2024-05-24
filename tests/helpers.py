@@ -23,6 +23,7 @@ import typing
 import fastapi
 import httpx
 import kubernetes_asyncio.client
+import pytest
 import respx
 import uvicorn
 import yaml

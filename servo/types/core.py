@@ -84,24 +84,15 @@ def _orjson_dumps(
         raise err
 
 
-BaseModelConfigDict = Annotated[
-    pydantic.ConfigDict,
-    """
-The `BaseModelConfig` class provides a common set of Pydantic model
-configuration shared across the library.
-""",
-]
-BASE_MODEL_CONFIG: BaseModelConfigDict = {
-    "validate_assignment": True,
-}
-
-
 class BaseModel(pydantic.BaseModel):
     """The `BaseModel` class is the base class implementation of Pydantic model
     types utilized throughout the library.
     """
 
-    model_config: pydantic.ConfigDict = {**BASE_MODEL_CONFIG, "validate_default": True}
+    model_config: pydantic.ConfigDict = {
+        "validate_assignment": True,
+        "validate_default": True,
+    }
 
 
 class License(enum.Enum):
@@ -178,8 +169,7 @@ DurationDescriptor = Union[datetime.timedelta, str, Numeric]
 # DELETE ME
 from typing import Any
 from pydantic_core import CoreSchema, core_schema
-from pydantic import GetCoreSchemaHandler, TypeAdapter
-from typing_extensions import Annotated
+from pydantic import GetCoreSchemaHandler
 
 from pydantic import (
     BaseModel,
