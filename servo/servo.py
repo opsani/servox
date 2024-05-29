@@ -618,7 +618,7 @@ class Servo(servo.connector.BaseConnector):
             try:
                 try:
                     response = await self._api_client.post(
-                        "servo", data=event_request.model_dump_json()
+                        "servo", data=event_request.model_dump_json(exclude_none=True)
                     )
                 except RuntimeError as e:
                     if "the handler is closed" in str(e):
@@ -629,7 +629,8 @@ class Servo(servo.connector.BaseConnector):
                             self.config.optimizer, self.config.settings
                         )
                         response = await self._api_client.post(
-                            "servo", data=event_request.model_dump_json()
+                            "servo",
+                            data=event_request.model_dump_json(exclude_none=True),
                         )
                     else:
                         raise

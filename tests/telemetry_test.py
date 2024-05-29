@@ -14,7 +14,7 @@ import servo.telemetry
 async def test_telemetry_hello(
     monkeypatch, optimizer: servo.configuration.OpsaniOptimizer
 ) -> None:
-    expected = f'"telemetry": {{"servox.version": "{servo.__version__}", "servox.platform": "{platform.platform()}", "servox.namespace": "test-namespace"}}'
+    expected = f'"telemetry":{{"servox.version":"{servo.__version__}","servox.platform":"{platform.platform()}","servox.namespace":"test-namespace"}}'
 
     # Simulate running as a k8s pod
     monkeypatch.setenv("POD_NAMESPACE", "test-namespace")
@@ -142,7 +142,7 @@ async def test_diagnostics_put(
         method="PUT",
         endpoint=servo.telemetry.DIAGNOSTICS_OUTPUT_ENDPOINT,
         output_model=servo.api.Status,
-        json=diagnostic_data.dict(),
+        json=diagnostic_data.model_dump(),
     )
 
     assert put.called

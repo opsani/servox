@@ -116,7 +116,7 @@ class Request(pydantic.BaseModel):
 class Status(pydantic.BaseModel):
     status: Statuses
     message: Optional[str] = None
-    other_messages: Optional[list[str]] = (
+    additional_messages: Optional[list[str]] = (
         None  # other lower priority error in exception group
     )
     reason: Optional[str] = None

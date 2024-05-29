@@ -141,8 +141,11 @@ class Message(pydantic.BaseModel):
                 content = text.encode()
             elif json is not None:
                 content = (
-                    json.json()
-                    if (hasattr(json, "json") and callable(json.json))
+                    json.model_dump_json()
+                    if (
+                        hasattr(json, "model_dump_json")
+                        and callable(json.model_dump_json)
+                    )
                     else json_.dumps(json)
                 )
             elif yaml is not None:
@@ -204,7 +207,8 @@ class _ExchangeChildModel(pydantic.BaseModel):
 
     def __init__(self, *args, exchange: Exchange, **kwargs) -> None:
         super().__init__(*args, **kwargs)
-        self._exchange = weakref.ref(exchange)
+        if exchange is not None:
+            self._exchange = weakref.ref(exchange)
 
     @property
     def exchange(self) -> Exchange:
@@ -1370,7 +1374,7 @@ class _ChannelMethod:
         while True:
             name = _random_string()
             if self.pubsub_exchange.get_channel(name) is None and re.match(
-                ChannelName.regex, name
+                ChannelName.__metadata__[0].pattern, name
             ):
                 return name
 
