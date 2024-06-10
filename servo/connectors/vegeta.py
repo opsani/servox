@@ -512,7 +512,7 @@ def _time_series_readings_from_vegeta_reports(
 
         data_points: List[servo.DataPoint] = []
         for report in vegeta_reports:
-            value = servo.value_for_key_path(report.dict(by_alias=True), key)
+            value = servo.value_for_key_path(report.model_dump(by_alias=True), key)
             data_points.append(servo.DataPoint(metric, report.end, value))
 
         readings.append(servo.TimeSeries(metric, data_points))

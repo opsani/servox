@@ -374,7 +374,7 @@ def stub_servo_yaml(tmp_path: pathlib.Path) -> pathlib.Path:
     settings = servo.BaseConfiguration()
     measure_config_json = json.loads(
         json.dumps(
-            settings.dict(
+            settings.model_dump(
                 by_alias=True,
             )
         )
@@ -396,7 +396,7 @@ def stub_multiservo_yaml(tmp_path: pathlib.Path) -> pathlib.Path:
     settings = tests.helpers.BaseConfiguration()
     measure_config_json = json.loads(
         json.dumps(
-            settings.dict(
+            settings.model_dump(
                 by_alias=True,
             )
         )
@@ -673,10 +673,11 @@ async def assembly(servo_yaml: pathlib.Path) -> servo.assembly.Assembly:
     config_model = servo.assembly._create_config_model_from_routes(
         {
             "adjust": tests.helpers.AdjustConnector,
-        }
+        },
+        require_fields=False,
     )
     config = config_model.generate()
-    servo_yaml.write_text(config.yaml())
+    servo_yaml.write_text(config.yaml(warnings=False, exclude_unset=True))
 
     assembly_ = await servo.assembly.Assembly.assemble(config_file=servo_yaml)
     return assembly_

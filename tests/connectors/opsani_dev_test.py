@@ -95,7 +95,7 @@ def no_tuning_checks(
 class TestConfig:
     def test_generate(self) -> None:
         config = servo.connectors.opsani_dev.OpsaniDevConfiguration.generate()
-        assert list(config.dict().keys()) == [
+        assert list(config.model_dump().keys()) == [
             "description",
             "namespace",
             "workload_name",

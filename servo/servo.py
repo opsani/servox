@@ -541,7 +541,7 @@ class Servo(servo.connector.BaseConnector):
             raise servo.errors.EventCancelledError(status.reason or "Command cancelled")
         elif status.status == servo.api.OptimizerStatuses.invalid:
             self.logger.warning(
-                f"progress report was rejected as invalid: {devtools.pformat(status.dict())}"
+                f"progress report was rejected as invalid: {devtools.pformat(status.model_dump())}"
             )
             if status.reason == "unexpected cmd_uid":
                 raise servo.errors.UnexpectedCommandIdError(status.reason)

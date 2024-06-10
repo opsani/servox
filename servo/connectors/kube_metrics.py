@@ -121,10 +121,11 @@ class KubeMetricsConfiguration(servo.BaseConfiguration):
         description="How often to get metrics from the metrics-server. Default is once per minute",
     )
     kubeconfig: Optional[pydantic.FilePath] = pydantic.Field(
+        None,
         description="Path to the kubeconfig file. If `None`, use the default from the environment.",
     )
     context: Optional[str] = pydantic.Field(
-        description="Name of the kubeconfig context to use."
+        None, description="Name of the kubeconfig context to use."
     )
 
     @pydantic.field_validator("metrics_to_collect")

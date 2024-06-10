@@ -312,11 +312,9 @@ class AbstractBaseConfiguration(pydantic_settings.BaseSettings, servo.logging.Mi
         include: Union[pydantic.AbstractSetIntStr, pydantic.MappingIntStrAny] = None,
         exclude: Union[pydantic.AbstractSetIntStr, pydantic.MappingIntStrAny] = None,
         by_alias: bool = False,
-        skip_defaults: bool = None,
         exclude_unset: bool = False,
         exclude_defaults: bool = False,
         exclude_none: bool = False,
-        encoder: Optional[Callable[[Any], Any]] = None,
         **dumps_kwargs: Any,
     ) -> str:
         """
@@ -325,15 +323,13 @@ class AbstractBaseConfiguration(pydantic_settings.BaseSettings, servo.logging.Mi
         Arguments are passed through to the Pydantic `BaseModel.json` method.
         """
         # NOTE: We have to serialize through JSON first (not all fields serialize directly to YAML)
-        config_json = self.json(
+        config_json = self.model_dump_json(
             include=include,
             exclude=exclude,
             by_alias=by_alias,
-            skip_defaults=skip_defaults,
             exclude_unset=exclude_unset,
             exclude_defaults=exclude_defaults,
             exclude_none=exclude_none,
-            encoder=encoder,
             **dumps_kwargs,
         )
         return yaml.dump(json.loads(config_json), sort_keys=False)
@@ -387,6 +383,10 @@ class BackoffSettings(AbstractBaseConfiguration):
     """
     The maximum amount of time to retry before giving up.
     """
+
+    @pydantic.field_serializer("max_time")
+    def serialize_courses_in_order(max_time: servo.types.Duration):
+        return str(max_time)
 
     max_tries: Optional[int]
     """
@@ -657,17 +657,17 @@ class BaseServoConfiguration(
         """
         Generates configuration for the servo assembly.
         """
-        for name, field in cls.__fields__.items():
+        for name, field in cls.model_fields.items():
             if (
                 name not in kwargs
-                and inspect.isclass(field.type_)
-                and issubclass(field.type_, AbstractBaseConfiguration)
+                and inspect.isclass(field.annotation)
+                and issubclass(field.annotation, AbstractBaseConfiguration)
             ):
-                if inspect.isgeneratorfunction(field.type_.generate):
-                    for name, config in field.type_.generate():
+                if inspect.isgeneratorfunction(field.annotation.generate):
+                    for name, config in field.annotation.generate():
                         kwargs[name] = config
                 else:
-                    if config := field.type_.generate():
+                    if config := field.annotation.generate():
                         kwargs[name] = config
 
         if "optimizer" not in kwargs:
@@ -743,8 +743,11 @@ class FastFailConfiguration(pydantic_settings.BaseSettings):
         env_prefix="SERVO_",
     )
 
-    @pydantic.field_validator("span", mode="before")
-    def span_defaults_to_period(cls, v, *, values, **kwargs):
-        if v is None:
-            return values["period"]
-        return v
+    @pydantic.model_validator(mode="before")
+    def span_defaults_to_period(cls, values):
+        if values.get("span", None) is None:
+            if "period" in values:
+                values["span"] = values["period"]
+            else:
+                values["span"] = "60s"
+        return values

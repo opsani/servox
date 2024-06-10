@@ -85,12 +85,12 @@ class TestDNSSubdomainName:
             model(name=invalid_name)
         assert e
         assert {
+            "ctx": {"min_length": 1},
+            "input": "",
             "loc": ("name",),
-            "msg": "ensure this value has at least 1 characters",
-            "type": "value_error.any_str.min_length",
-            "ctx": {
-                "limit_value": 1,
-            },
+            "msg": "String should have at least 1 character",
+            "type": "string_too_short",
+            "url": "https://errors.pydantic.dev/2.7/v/string_too_short",
         } in e.value.errors()
 
     def test_handles_uppercase_chars(self, model) -> None:
@@ -106,12 +106,13 @@ class TestDNSSubdomainName:
             model(name=invalid_name)
         assert e
         assert {
+            "ctx": {"max_length": 253},
+            "input": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab",
             "loc": ("name",),
-            "msg": "ensure this value has at most 253 characters",
-            "type": "value_error.any_str.max_length",
-            "ctx": {
-                "limit_value": 253,
-            },
+            "msg": "String should have at most 253 characters",
+            "type": "string_too_long",
+            "url": "https://errors.pydantic.dev/2.7/v/string_too_long",
         } in e.value.errors()
 
     def test_can_only_contain_alphanumerics_hyphens_and_dots(self, model) -> None:
@@ -123,12 +124,12 @@ class TestDNSSubdomainName:
             model(name=invalid_name)
         assert e
         assert {
+            "ctx": {"pattern": "^[0-9a-zA-Z]([0-9a-zA-Z\\\\.-])*[0-9A-Za-z]$"},
+            "input": "abcd1234.-sss_$%!",
             "loc": ("name",),
-            "msg": f'string does not match regex "{DNS_SUBDOMAIN_NAME_REGEX}"',
-            "type": "value_error.str.regex",
-            "ctx": {
-                "pattern": DNS_SUBDOMAIN_NAME_REGEX,
-            },
+            "msg": "String should match pattern '^[0-9a-zA-Z]([0-9a-zA-Z\\\\.-])*[0-9A-Za-z]$'",
+            "type": "string_pattern_mismatch",
+            "url": "https://errors.pydantic.dev/2.7/v/string_pattern_mismatch",
         } in e.value.errors()
 
     def test_must_start_with_alphanumeric_character(self, model) -> None:
@@ -140,12 +141,12 @@ class TestDNSSubdomainName:
             model(name=invalid_name)
         assert e
         assert {
+            "ctx": {"pattern": "^[0-9a-zA-Z]([0-9a-zA-Z\\\\.-])*[0-9A-Za-z]$"},
+            "input": "-abcd",
             "loc": ("name",),
-            "msg": f'string does not match regex "{DNS_SUBDOMAIN_NAME_REGEX}"',
-            "type": "value_error.str.regex",
-            "ctx": {
-                "pattern": DNS_SUBDOMAIN_NAME_REGEX,
-            },
+            "msg": "String should match pattern '^[0-9a-zA-Z]([0-9a-zA-Z\\\\.-])*[0-9A-Za-z]$'",
+            "type": "string_pattern_mismatch",
+            "url": "https://errors.pydantic.dev/2.7/v/string_pattern_mismatch",
         } in e.value.errors()
 
     def test_must_end_with_alphanumeric_character(self, model) -> None:
@@ -157,12 +158,12 @@ class TestDNSSubdomainName:
             model(name=invalid_name)
         assert e
         assert {
+            "ctx": {"pattern": "^[0-9a-zA-Z]([0-9a-zA-Z\\\\.-])*[0-9A-Za-z]$"},
+            "input": "abcd-",
             "loc": ("name",),
-            "msg": f'string does not match regex "{DNS_SUBDOMAIN_NAME_REGEX}"',
-            "type": "value_error.str.regex",
-            "ctx": {
-                "pattern": DNS_SUBDOMAIN_NAME_REGEX,
-            },
+            "msg": "String should match pattern '^[0-9a-zA-Z]([0-9a-zA-Z\\\\.-])*[0-9A-Za-z]$'",
+            "type": "string_pattern_mismatch",
+            "url": "https://errors.pydantic.dev/2.7/v/string_pattern_mismatch",
         } in e.value.errors()
 
 
@@ -183,12 +184,12 @@ class TestDNSLabelName:
             model(name=invalid_name)
         assert e
         assert {
+            "ctx": {"min_length": 1},
+            "input": "",
             "loc": ("name",),
-            "msg": "ensure this value has at least 1 characters",
-            "type": "value_error.any_str.min_length",
-            "ctx": {
-                "limit_value": 1,
-            },
+            "msg": "String should have at least 1 character",
+            "type": "string_too_short",
+            "url": "https://errors.pydantic.dev/2.7/v/string_too_short",
         } in e.value.errors()
 
     def test_handles_uppercase_chars(self, model) -> None:
@@ -204,12 +205,12 @@ class TestDNSLabelName:
             model(name=invalid_name)
         assert e
         assert {
+            "ctx": {"max_length": 63},
+            "input": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab",
             "loc": ("name",),
-            "msg": "ensure this value has at most 63 characters",
-            "type": "value_error.any_str.max_length",
-            "ctx": {
-                "limit_value": 63,
-            },
+            "msg": "String should have at most 63 characters",
+            "type": "string_too_long",
+            "url": "https://errors.pydantic.dev/2.7/v/string_too_long",
         } in e.value.errors()
 
     def test_can_only_contain_alphanumerics_and_hyphens(self, model) -> None:
@@ -221,12 +222,12 @@ class TestDNSLabelName:
             model(name=invalid_name)
         assert e
         assert {
+            "ctx": {"pattern": "^[0-9a-zA-Z]([0-9a-zA-Z-])*[0-9A-Za-z]$"},
+            "input": "abcd1234.-sss_$%!",
             "loc": ("name",),
-            "msg": f'string does not match regex "{DNSLabelNameField.regex}"',
-            "type": "value_error.str.regex",
-            "ctx": {
-                "pattern": DNSLabelNameField.regex,
-            },
+            "msg": "String should match pattern '^[0-9a-zA-Z]([0-9a-zA-Z-])*[0-9A-Za-z]$'",
+            "type": "string_pattern_mismatch",
+            "url": "https://errors.pydantic.dev/2.7/v/string_pattern_mismatch",
         } in e.value.errors()
 
     def test_must_start_with_alphanumeric_character(self, model) -> None:
@@ -238,12 +239,12 @@ class TestDNSLabelName:
             model(name=invalid_name)
         assert e
         assert {
+            "ctx": {"pattern": "^[0-9a-zA-Z]([0-9a-zA-Z-])*[0-9A-Za-z]$"},
+            "input": "-abcd",
             "loc": ("name",),
-            "msg": f'string does not match regex "{DNSLabelNameField.regex}"',
-            "type": "value_error.str.regex",
-            "ctx": {
-                "pattern": DNSLabelNameField.regex,
-            },
+            "msg": "String should match pattern '^[0-9a-zA-Z]([0-9a-zA-Z-])*[0-9A-Za-z]$'",
+            "type": "string_pattern_mismatch",
+            "url": "https://errors.pydantic.dev/2.7/v/string_pattern_mismatch",
         } in e.value.errors()
 
     def test_must_end_with_alphanumeric_character(self, model) -> None:
@@ -255,12 +256,12 @@ class TestDNSLabelName:
             model(name=invalid_name)
         assert e
         assert {
+            "ctx": {"pattern": "^[0-9a-zA-Z]([0-9a-zA-Z-])*[0-9A-Za-z]$"},
+            "input": "abcd-",
             "loc": ("name",),
-            "msg": f'string does not match regex "{DNSLabelNameField.regex}"',
-            "type": "value_error.str.regex",
-            "ctx": {
-                "pattern": DNSLabelNameField.regex,
-            },
+            "msg": "String should match pattern '^[0-9a-zA-Z]([0-9a-zA-Z-])*[0-9A-Za-z]$'",
+            "type": "string_pattern_mismatch",
+            "url": "https://errors.pydantic.dev/2.7/v/string_pattern_mismatch",
         } in e.value.errors()
 
 
@@ -281,12 +282,12 @@ class TestContainerTagName:
             model(name=invalid_name)
         assert e
         assert {
+            "ctx": {"max_length": 128},
+            "input": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab",
             "loc": ("name",),
-            "msg": "ensure this value has at most 128 characters",
-            "type": "value_error.any_str.max_length",
-            "ctx": {
-                "limit_value": 128,
-            },
+            "msg": "String should have at most 128 characters",
+            "type": "string_too_long",
+            "url": "https://errors.pydantic.dev/2.7/v/string_too_long",
         } in e.value.errors()
 
     @pytest.mark.parametrize(
@@ -314,14 +315,19 @@ class TestContainerTagName:
             with pytest.raises(ValidationError) as e:
                 model(name=tag_name)
             assert e
-            assert {
+            e = next(
+                iter((v for v in e.value.errors() if v.get("loc", None) == ("name",))),
+                None,
+            )
+            assert e
+            assert e.pop("input", None) in ["-", "."]
+            assert e == {
+                "ctx": {"pattern": "^[0-9a-zA-Z]([0-9a-zA-Z_\\.\\-/:@])*$"},
                 "loc": ("name",),
-                "msg": f'string does not match regex "{ContainerTagNameField.regex}"',
-                "type": "value_error.str.regex",
-                "ctx": {
-                    "pattern": ContainerTagNameField.regex,
-                },
-            } in e.value.errors()
+                "msg": "String should match pattern '^[0-9a-zA-Z]([0-9a-zA-Z_\\.\\-/:@])*$'",
+                "type": "string_pattern_mismatch",
+                "url": "https://errors.pydantic.dev/2.7/v/string_pattern_mismatch",
+            }
 
 
 class TestEnvironmentConfiguration:
@@ -335,11 +341,13 @@ class TestCommandConfiguration:
 class TestKubernetesConfiguration:
     @pytest.fixture
     def funkytown(self, config: KubernetesConfiguration) -> KubernetesConfiguration:
-        return config.copy(update={"namespace": "funkytown"})
+        return config.model_computed_fields(
+            update={"namespace": "funkytown"}, deep=True
+        )
 
     def test_cascading_defaults(self, config: KubernetesConfiguration) -> None:
         # Verify that by default we get a null namespace
-        assert DeploymentConfiguration.__fields__["namespace"].default is None
+        assert DeploymentConfiguration.model_fields["namespace"].default is None
         assert (
             DeploymentConfiguration(
                 name="testing", containers=[], replicas=servo.Replicas(min=0, max=1)
@@ -352,7 +360,7 @@ class TestKubernetesConfiguration:
         assert config.deployments[0].namespace == "default"
 
     def test_explicit_cascade(self, config: KubernetesConfiguration) -> None:
-        model = config.copy(update={"namespace": "funkytown"})
+        model = config.model_copy(update={"namespace": "funkytown"}, deep=True)
         assert model.namespace == "funkytown"
         assert model.deployments[0].namespace == "default"
 
@@ -362,7 +370,7 @@ class TestKubernetesConfiguration:
 
     def test_respects_explicit_override(self, config: KubernetesConfiguration) -> None:
         # set the property explictly to value equal to default, then trigger
-        model = config.copy(update={"namespace": "funkytown"})
+        model = config.model_copy(update={"namespace": "funkytown"})
         model.deployments[0].namespace = "default"
         assert model.namespace == "funkytown"
         assert model.deployments[0].namespace == "default"
@@ -460,12 +468,13 @@ class TestDeploymentConfiguration:
             name="testing",
             containers=[],
             replicas=servo.Replicas(min=1, max=4),
-            strategy=OptimizationStrategy.default,
+            strategy=OptimizationStrategy.default.value,
         )
         assert config.yaml(exclude_unset=True) == (
             "name: testing\n"
             "containers: []\n"
-            "strategy: default\n"
+            "strategy:\n"
+            "  type: default\n"
             "replicas:\n"
             "  min: 1\n"
             "  max: 4\n"
@@ -476,9 +485,7 @@ class TestDeploymentConfiguration:
             name="testing",
             containers=[],
             replicas=servo.Replicas(min=1, max=4),
-            strategy=DefaultOptimizationStrategyConfiguration(
-                type=OptimizationStrategy.default
-            ),
+            strategy=OptimizationStrategy.default.value,
         )
         assert config.yaml(exclude_unset=True) == (
             "name: testing\n"
@@ -496,7 +503,7 @@ class TestDeploymentConfiguration:
             containers=[],
             replicas=servo.Replicas(min=1, max=4),
             strategy=CanaryOptimizationStrategyConfiguration(
-                type=OptimizationStrategy.canary, alias="tuning"
+                type=OptimizationStrategy.canary.value, alias="tuning"
             ),
         )
         assert config.yaml(exclude_unset=True) == (
@@ -521,7 +528,7 @@ class TestDeploymentConfiguration:
             "  type: default\n"
         )
         config_dict = yaml.load(config_yaml, Loader=yaml.FullLoader)
-        config = DeploymentConfiguration.parse_obj(config_dict)
+        config = DeploymentConfiguration.model_validate(config_dict)
         assert isinstance(config.strategy, DefaultOptimizationStrategyConfiguration)
         assert config.strategy.type == OptimizationStrategy.default
 
@@ -536,7 +543,8 @@ class TestDeploymentConfiguration:
             "  type: canary\n"
         )
         config_dict = yaml.load(config_yaml, Loader=yaml.FullLoader)
-        config = DeploymentConfiguration.parse_obj(config_dict)
+        config = DeploymentConfiguration.model_validate(config_dict)
+
         assert isinstance(config.strategy, CanaryOptimizationStrategyConfiguration)
         assert config.strategy.type == OptimizationStrategy.canary
         assert config.strategy.alias is None
@@ -553,7 +561,7 @@ class TestDeploymentConfiguration:
             "  type: canary\n"
         )
         config_dict = yaml.load(config_yaml, Loader=yaml.FullLoader)
-        config = DeploymentConfiguration.parse_obj(config_dict)
+        config = DeploymentConfiguration.model_validate(config_dict)
         assert isinstance(config.strategy, CanaryOptimizationStrategyConfiguration)
         assert config.strategy.type == OptimizationStrategy.canary
         assert config.strategy.alias == "tuning"
@@ -562,8 +570,8 @@ class TestDeploymentConfiguration:
 class TestCanaryOptimization:
     @pytest.mark.xfail
     def test_to_components_default_name(self, config) -> None:
-        config.deployments[0].strategy = OptimizationStrategy.canary
-        optimization = CanaryOptimization.construct(
+        config.deployments[0].strategy = OptimizationStrategy.canary.value
+        optimization = CanaryOptimization.model_construct(
             name="fiber-http-deployment/opsani/fiber-http:latest-canary",
             target_deployment_config=config.deployments[0],
             target_container_config=config.deployments[0].containers[0],
@@ -579,10 +587,10 @@ class TestCanaryOptimization:
     @pytest.mark.xfail
     def test_to_components_respects_aliases(self, config) -> None:
         config.deployments[0].strategy = CanaryOptimizationStrategyConfiguration(
-            type=OptimizationStrategy.canary, alias="tuning"
+            type=OptimizationStrategy.canary.value, alias="tuning"
         )
         config.deployments[0].containers[0].alias = "main"
-        optimization = CanaryOptimization.construct(
+        optimization = CanaryOptimization.model_construct(
             name="fiber-http-deployment/opsani/fiber-http:latest-canary",
             target_deployment_config=config.deployments[0],
             target_container_config=config.deployments[0].containers[0],
@@ -593,7 +601,7 @@ class TestCanaryOptimization:
 
 def test_compare_strategy() -> None:
     config = CanaryOptimizationStrategyConfiguration(
-        type=OptimizationStrategy.canary, alias="tuning"
+        type=OptimizationStrategy.canary.value, alias="tuning"
     )
     assert config == OptimizationStrategy.canary
 
@@ -747,7 +755,7 @@ class TestReplicas:
             "unit": None,
             "value": None,
             "pinned": False,
-        } == replicas.dict()
+        } == replicas.model_dump()
 
     def test_to___opsani_repr__(self, replicas: servo.Replicas) -> None:
         replicas.value = 3
@@ -788,7 +796,7 @@ class TestCPU:
                 ResourceRequirement.request,
                 ResourceRequirement.limit,
             ],
-        } == cpu.dict()
+        } == cpu.model_dump()
 
     def test_to___opsani_repr__(self, cpu: CPU) -> None:
         cpu.value = "3"
@@ -811,7 +819,7 @@ class TestCPU:
         assert cpu.step.millicores == 125
 
     def test_resources_encode_to_json_human_readable(self, cpu) -> None:
-        serialization = json.loads(cpu.json())
+        serialization = json.loads(cpu.model_dump_json())
         assert serialization["min"] == "125m"
         assert serialization["max"] == "4"
         assert serialization["step"] == "125m"
@@ -898,7 +906,7 @@ class TestMemory:
                 ResourceRequirement.request,
                 ResourceRequirement.limit,
             ],
-        } == memory.dict()
+        } == memory.model_dump()
 
     def test_to___opsani_repr__(self, memory: Memory) -> None:
         memory.value = "3.0 GiB"
@@ -935,7 +943,7 @@ class TestMemory:
         assert memory.step == 134217728
 
     def test_resources_encode_to_json_human_readable(self, memory) -> None:
-        serialization = json.loads(memory.json())
+        serialization = json.loads(memory.model_dump_json())
         assert serialization["min"] == "256.0Mi"
         assert serialization["max"] == "4.0Gi"
         assert serialization["step"] == "128.0Mi"
@@ -946,7 +954,7 @@ class TestMemory:
         Memory(min="32 MiB", max=4.0, step="256MiB")
         assert (
             captured_logs[0].record["message"]
-            == "Memory('mem' 32.0Mi-4.0Gi, 256.0Mi) min/max difference is not step aligned: 3.96875Gi is not a multiple of 256Mi (consider min 256Mi or 0B, max 3.78125Gi or 4.03125Gi)."
+            == "Memory('mem' 32Mi-4Gi, 256Mi) min/max difference is not step aligned: 3.96875Gi is not a multiple of 256Mi (consider min 256Mi or 0B, max 3.78125Gi or 4.03125Gi)."
         )
 
     def test_min_can_be_less_than_step(self) -> None:
@@ -956,6 +964,12 @@ class TestMemory:
 def test_millicpu():
     class Model(pydantic.BaseModel):
         cpu: Core
+
+        @pydantic.field_validator("cpu", mode="before")
+        def _parse_cpu(v: Any):
+            if v is None:
+                return v
+            return Core.parse(v)
 
     assert Model(cpu=0.1).cpu.millicores == 100
     assert Model(cpu=0.5).cpu.millicores == 500

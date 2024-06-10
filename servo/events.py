@@ -146,7 +146,7 @@ class Event(pydantic.BaseModel):
         if exclude is None:
             exclude = set()
         exclude.add("on_handler_context_manager")
-        return super().dict(
+        return super().model_dump(
             include=include,
             exclude=exclude,
             by_alias=by_alias,

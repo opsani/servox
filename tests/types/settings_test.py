@@ -425,10 +425,10 @@ class TestCPU:
         assert isinstance(setting, RangeSetting)
 
     def test_default_step(self) -> None:
-        assert CPU.__fields__["step"].default == 0.125
+        assert CPU.model_fields["step"].default == 0.125
 
     def test_name(self) -> None:
-        assert CPU.__fields__["name"].default == "cpu"
+        assert CPU.model_fields["name"].default == "cpu"
 
     def test_validate_name_cannot_be_changed(self) -> None:
         with pytest.raises(pydantic.ValidationError) as error:
@@ -488,7 +488,7 @@ class TestReplicas:
     def test_range_fields_strict_integers(
         self, field_name: str, required: bool, allow_none: bool
     ) -> None:
-        field = Replicas.__fields__[field_name]
+        field = Replicas.model_fields[field_name]
         assert field.type_ == pydantic.StrictInt
         assert field.required == required
         assert field.allow_none == allow_none
@@ -525,7 +525,7 @@ class TestInstanceType:
         )
 
     def test_validate_unit(self) -> None:
-        field = InstanceType.__fields__["unit"]
+        field = InstanceType.model_fields["unit"]
         assert field.type_ == InstanceTypeUnits
         assert field.default == InstanceTypeUnits.ec2
         assert field.required == False

@@ -84,26 +84,22 @@ class SloCondition(BaseModel):
 
         return values
 
-    @pydantic.field_validator("trigger_window", mode="before")
-    @classmethod
-    def _trigger_window_defaults_to_trigger_count(cls, v, *, values, **kwargs):
-        if v is None:
-            return values["trigger_count"]
-        return v
-
     @pydantic.model_validator(mode="before")
     @classmethod
-    def _trigger_count_cannot_be_greater_than_window(cls, values) -> Numeric:
-        trigger_window, trigger_count = (
-            values["trigger_window"],
-            values["trigger_count"],
-        )
-        if trigger_count > trigger_window:
-            raise ValueError(
-                f"trigger_count cannot be greater than trigger_window ({trigger_count} > {trigger_window})"
+    def _trigger_window_defaults_to_trigger_count(cls, values):
+        if values.get("trigger_window") is None:
+            values["trigger_window"] = values.get(
+                "trigger_count", cast(TriggerConstraints, 1)
             )
-
         return values
+
+    @pydantic.model_validator(mode="after")
+    def _trigger_count_cannot_be_greater_than_window(self) -> Numeric:
+        if self.trigger_count > self.trigger_window:
+            raise ValueError(
+                f"trigger_count cannot be greater than trigger_window ({self.trigger_count} > {self.trigger_window})"
+            )
+        return self
 
     def __str__(self) -> str:
         ret_str = f"{self.metric} {self.keep}"

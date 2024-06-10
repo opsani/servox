@@ -193,6 +193,7 @@ class Duration(datetime.timedelta):
     def __new__(
         cls,
         duration: Union[str, Numeric, datetime.timedelta] = 0,
+        *args,
         **kwargs,
     ) -> datetime.timedelta:
         seconds = kwargs.pop("seconds", 0)
@@ -218,11 +219,10 @@ class Duration(datetime.timedelta):
             cls, seconds=seconds, microseconds=microseconds, **kwargs
         )
 
-    def __init__(
-        self, duration: Union[str, datetime.timedelta, Numeric] = 0, **kwargs
-    ) -> None:  # noqa: D107
-        # Add a type signature so we don't get warning from linters. Implementation is not used (see __new__)
-        ...
+    # def __init__(
+    #     self, duration: Union[str, datetime.timedelta, Numeric] = 0, *args, **kwargs
+    # ) -> Duration:
+    #     return self.__class__.__new__(duration, *args, **kwargs)
 
     # @classmethod
     # def __get_validators__(cls):

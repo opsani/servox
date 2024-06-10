@@ -163,14 +163,16 @@ class Status(pydantic.BaseModel):
 
         return cls(status=status, message=str(error), reason=reason, **kwargs)
 
-    def dict(
+    def model_dump(
         self,
         *,
         exclude_unset: bool = True,
         by_alias: bool = True,
         **kwargs,
     ) -> DictStrAny:
-        return super().dict(exclude_unset=exclude_unset, by_alias=by_alias, **kwargs)
+        return super().model_dump(
+            exclude_unset=exclude_unset, by_alias=by_alias, **kwargs
+        )
 
     model_config = pydantic.ConfigDict(populate_by_name=True)
 

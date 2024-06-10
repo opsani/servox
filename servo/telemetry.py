@@ -115,7 +115,7 @@ class DiagnosticsHandler(servo.logging.Mixin):
                         method="PUT",
                         endpoint=DIAGNOSTICS_OUTPUT_ENDPOINT,
                         output_model=servo.api.Status,
-                        json=diagnostic_data.dict(),
+                        json=diagnostic_data.model_dump(),
                     )
 
                     # Reset diagnostics check state to withhold
