@@ -87,7 +87,7 @@ class StateMachine(statesman.HistoryMixin, statesman.StateMachine):
         control: servo.Control = servo.Control(),
     ) -> None:
         descriptor = servo.api.adjustments_to_descriptor(adjustments)
-        descriptor["control"] = control.dict(exclude_unset=True)
+        descriptor["control"] = control.model_dump(exclude_unset=True)
 
         self.command_response = servo.api.CommandResponse(
             cmd=servo.api.Commands.adjust, param=descriptor

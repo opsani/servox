@@ -24,8 +24,10 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import devtools
 import jsonschema
 import pydantic
+import pydantic_settings
 
 import servo
+from pydantic import ConfigDict
 
 METRICS = [
     servo.Metric("throughput", servo.Unit.requests_per_minute),
@@ -59,7 +61,7 @@ class Latencies(pydantic.BaseModel):
     max: int
     min: int
 
-    @pydantic.validator("*")
+    @pydantic.field_validator("*")
     @classmethod
     def convert_nanoseconds_to_milliseconds(cls, latency):
         # Convert Nanonsecond -> Millisecond
@@ -84,16 +86,16 @@ class VegetaReport(pydantic.BaseModel):
     rate: float
     throughput: float
     success: float
-    error_rate: float = None
+    error_rate: float = pydantic.Field(None, validate_default=True)
     status_codes: Dict[str, int]
     errors: List[str]
 
-    @pydantic.validator("throughput")
+    @pydantic.field_validator("throughput")
     @classmethod
     def convert_throughput_to_rpm(cls, throughput: float) -> float:
         return throughput * 60
 
-    @pydantic.validator("error_rate", always=True, pre=True)
+    @pydantic.field_validator("error_rate", mode="before")
     @classmethod
     def calculate_error_rate_from_success(cls, v, values: Dict[str, Any]) -> float:
         success_rate = values["success"]
@@ -114,11 +116,18 @@ class VegetaConfiguration(servo.BaseConfiguration):
         TargetFormat.http,
         description="Specifies the format of the targets input. Valid values are http and json. Refer to the Vegeta docs for details.",
     )
+
+    @pydantic.field_serializer("format")
+    def format_value(self, fmt: TargetFormat) -> str:
+        return fmt.value()
+
     target: Optional[str] = pydantic.Field(
-        description="Specifies a single formatted Vegeta target to load. See the format option to learn about available target formats. This option is exclusive of the targets option and will provide a target to Vegeta via stdin."
+        None,
+        description="Specifies a single formatted Vegeta target to load. See the format option to learn about available target formats. This option is exclusive of the targets option and will provide a target to Vegeta via stdin.",
     )
     targets: Optional[pydantic.FilePath] = pydantic.Field(
-        description="Specifies the file from which to read targets. See the format option to learn about available target formats. This option is exclusive of the target option and will provide targets to via through a file on disk."
+        None,
+        description="Specifies the file from which to read targets. See the format option to learn about available target formats. This option is exclusive of the target option and will provide targets to via through a file on disk.",
     )
     connections: int = pydantic.Field(
         10000,
@@ -161,17 +170,27 @@ class VegetaConfiguration(servo.BaseConfiguration):
         else:
             return None
 
-    @pydantic.root_validator(pre=True)
-    @classmethod
-    def validate_target(cls, values: Dict[str, Any]) -> Dict[str, Any]:
-        target, targets = servo.values_for_keys(values, ("target", "targets"))
-        if target is None and targets is None:
+    @pydantic.model_validator(mode="after")
+    def validate_target(self) -> Dict[str, Any]:
+        if self.target is None and self.targets is None:
             raise ValueError("target or targets must be configured")
 
-        if target and targets:
+        if self.target and self.targets:
             raise ValueError("target and targets cannot both be configured")
 
-        return values
+        return self
+
+    # @pydantic.model_validator(mode="before")
+    # @classmethod
+    # def validate_target(cls, values: Dict[str, Any]) -> Dict[str, Any]:
+    #     target, targets = servo.values_for_keys(values, ("target", "targets"))
+    #     if target is None and targets is None:
+    #         raise ValueError("target or targets must be configured")
+
+    #     if target and targets:
+    #         raise ValueError("target and targets cannot both be configured")
+
+    #     return values
 
     @staticmethod
     def target_json_schema() -> Dict[str, Any]:
@@ -181,25 +200,20 @@ class VegetaConfiguration(servo.BaseConfiguration):
         schema_path = pathlib.Path(__file__).parent / "vegeta_target_schema.json"
         return json.load(open(schema_path))
 
-    @pydantic.validator("target", "targets")
+    @pydantic.field_validator("target", "targets")
     @classmethod
-    def validate_target_format(
-        cls,
-        value: Union[str, pydantic.FilePath],
-        field: pydantic.Field,
-        values: Dict[str, Any],
-    ) -> str:
+    def validate_target_format(cls, value: str, info: pydantic.ValidationInfo) -> str:
         if value is None:
             return value
 
-        format: TargetFormat = values.get("format")
+        format: TargetFormat = info.data.get("format")
         with contextlib.ExitStack() as stack:
-            if field.name == "target":
+            if info.field_name == "target":
                 value_stream = io.StringIO(value)
-            elif field.name == "targets":
+            elif info.field_name == "targets":
                 value_stream = stack.enter_context(open(value))
             else:
-                raise ValueError(f"unknown field '{field.name}'")
+                raise ValueError(f"unknown field '{info.field_name}'")
 
             if format == TargetFormat.http:
                 # Scan through the targets and run basic heuristics
@@ -232,7 +246,7 @@ class VegetaConfiguration(servo.BaseConfiguration):
                 try:
                     data = json.load(value_stream)
                 except json.JSONDecodeError as e:
-                    raise ValueError(f"{field.name} contains invalid JSON") from e
+                    raise ValueError(f"{info.field_name} contains invalid JSON") from e
 
                 # Validate the target data with JSON Schema
                 try:
@@ -244,7 +258,7 @@ class VegetaConfiguration(servo.BaseConfiguration):
 
             return value
 
-    @pydantic.validator("rate")
+    @pydantic.field_validator("rate", mode="before")
     @classmethod
     def validate_rate(cls, v: Union[int, str]) -> str:
         assert isinstance(
@@ -278,11 +292,6 @@ class VegetaConfiguration(servo.BaseConfiguration):
             target="GET https://example.com/",
             description="Update the rate and target/targets to match your load profile",
             **kwargs,
-        )
-
-    class Config:
-        json_encoders = servo.BaseConfiguration.json_encoders(
-            {TargetFormat: lambda t: t.value()}
         )
 
 
@@ -503,7 +512,7 @@ def _time_series_readings_from_vegeta_reports(
 
         data_points: List[servo.DataPoint] = []
         for report in vegeta_reports:
-            value = servo.value_for_key_path(report.dict(by_alias=True), key)
+            value = servo.value_for_key_path(report.model_dump(by_alias=True), key)
             data_points.append(servo.DataPoint(metric, report.end, value))
 
         readings.append(servo.TimeSeries(metric, data_points))

@@ -2,7 +2,7 @@ import asyncio
 import datetime
 import hashlib
 import loguru
-from typing import cast
+from typing import cast, Literal
 import re
 
 import kubernetes_asyncio
@@ -20,7 +20,7 @@ from servo.connectors.kubernetes_helpers import (
     ServiceHelper,
 )
 import tests.helpers
-from servo.types.settings import _is_step_aligned, _suggest_step_aligned_values
+from servo.types.settings import _is_step_aligned
 
 pytestmark = [
     pytest.mark.integration,
@@ -119,12 +119,10 @@ def test_deploy_servo_fiberhttp_vegeta_adjust() -> None:
 # Integration test k8s describe, adjust
 
 
-def test_generate_outputs_human_readable_config() -> None:
-    ...
+def test_generate_outputs_human_readable_config() -> None: ...
 
 
-def test_supports_nil_container_name() -> None:
-    ...
+def test_supports_nil_container_name() -> None: ...
 
 
 @pytest.mark.applymanifests("manifests", files=["fiber-http.yaml"])
@@ -644,6 +642,7 @@ async def test_get_latest_pods(kube: kubetest.client.TestClient) -> None:
         await asyncio.sleep(0.1)
 
 
+# TODO apply fix from test_step_alignment_calculations_cpu
 @pytest.mark.parametrize(
     "value, step, expected_lower, expected_upper",
     [
@@ -665,7 +664,6 @@ def test_step_alignment_calculations_memory(
     lower, upper = _suggest_step_aligned_values(
         value_bytes,
         step_bytes,
-        in_repr=servo.connectors.kubernetes.Memory.human_readable,
     )
     assert lower == expected_lower
     assert upper == expected_upper
@@ -678,26 +676,37 @@ def test_step_alignment_calculations_memory(
 
 
 @pytest.mark.parametrize(
-    "value, step, expected_lower, expected_upper",
+    "value, expected_lower, expected_upper",
     [
-        ("250m", "64m", "192m", "256m"),
-        ("4100m", "250m", "4", "4.25"),
-        ("3", "100m", "3", "3.1"),
+        (
+            servo.connectors.kubernetes.CPU(
+                value="250m", min="250m", max="500m", step="64m"
+            ),
+            "192m",
+            "256m",
+        ),
+        (
+            servo.connectors.kubernetes.CPU(
+                value="500m", min="0m", max="4100m", step="250m"
+            ),
+            "4",
+            "4.25",
+        ),
+        (
+            servo.connectors.kubernetes.CPU(value="1", min="0", max="3", step="100m"),
+            "3",
+            "3.1",
+        ),
     ],
 )
 def test_step_alignment_calculations_cpu(
-    value, step, expected_lower, expected_upper
+    value: servo.connectors.kubernetes.CPU, expected_lower, expected_upper
 ) -> None:
-    value_cores, step_cores = servo.connectors.kubernetes.Core.parse(
-        value
-    ), servo.connectors.kubernetes.Core.parse(step)
-    lower, upper = _suggest_step_aligned_values(
-        value_cores, step_cores, in_repr=servo.connectors.kubernetes.CPU.human_readable
-    )
-    assert lower == expected_lower
-    assert upper == expected_upper
-    assert _is_step_aligned(servo.connectors.kubernetes.Core.parse(lower), step_cores)
-    assert _is_step_aligned(servo.connectors.kubernetes.Core.parse(upper), step_cores)
+    lower, upper = value._suggest_step_aligned_values()
+    assert servo.connectors.kubernetes.Core.parse(lower) == expected_lower
+    assert servo.connectors.kubernetes.Core.parse(upper) == expected_upper
+    assert _is_step_aligned(servo.connectors.kubernetes.Core.parse(lower), value.step)
+    assert _is_step_aligned(servo.connectors.kubernetes.Core.parse(upper), value.step)
 
 
 def test_cpu_not_step_aligned(captured_logs: list["loguru.Message"]) -> None:

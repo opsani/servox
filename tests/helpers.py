@@ -23,6 +23,7 @@ import typing
 import fastapi
 import httpx
 import kubernetes_asyncio.client
+import pytest
 import respx
 import uvicorn
 import yaml
@@ -141,7 +142,7 @@ def generate_config_yaml(
     config_dict = {}
     for k, v in config.items():
         if isinstance(v, BaseConfiguration):
-            config_dict[k] = v.dict(**dict_kwargs)
+            config_dict[k] = v.model_dump(**dict_kwargs)
         else:
             config_dict[k] = v
     config_json = cls.__config__.json_dumps(config, default=pydantic_encoder)

@@ -42,9 +42,10 @@ def test_non_unique_conditions() -> None:
         SloInput(conditions=conditions)
 
     assert str(err_info.value) == (
-        "1 validation error for SloInput\n"
-        "conditions\n"
-        "  Slo conditions must be unique. Redundant conditions found: (same below 6000), (same2 below same3) (type=value_error)"
+        "1 validation error for SloInput"
+        "\nconditions"
+        "\n  Value error, Slo conditions must be unique. Redundant conditions found: (same below 6000), (same2 below same3) [type=value_error, input_value=[SloCondition(description...threshold_minimum=0.25)], input_type=list]"
+        "\n    For further information visit https://errors.pydantic.dev/2.7/v/value_error"
     )
 
 
@@ -57,9 +58,9 @@ def test_trigger_count_greater_than_window() -> None:
             trigger_window=1,
         )
     assert str(err_info.value) == (
-        "1 validation error for SloCondition\n"
-        "__root__\n"
-        "  trigger_count cannot be greater than trigger_window (2 > 1) (type=value_error)"
+        "1 validation error for SloCondition"
+        "\n  Value error, trigger_count cannot be greater than trigger_window (2 > 1) [type=value_error, input_value={'metric': 'test', 'thres... 2, 'trigger_window': 1}, input_type=dict]"
+        "\n    For further information visit https://errors.pydantic.dev/2.7/v/value_error"
     )
 
 
@@ -120,7 +121,7 @@ def _make_time_series_list(
     ret_list = []
     for index, val_list in enumerate(values):
         points = list(map(lambda v: DataPoint(metric, datetime.now(), v), val_list))
-        ret_list.append(TimeSeries(metric=metric, data_points=points, id=index))
+        ret_list.append(TimeSeries(metric=metric, data_points=points, id=str(index)))
     return ret_list
 
 

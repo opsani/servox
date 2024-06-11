@@ -41,11 +41,13 @@ from typing import (
 
 import pydantic
 import pydantic.typing
+import pydantic_core
 
 import servo.errors
 import servo.pubsub
 import servo.utilities.inspect
 import servo.utilities.strings
+from pydantic import ConfigDict
 
 __all__ = [
     "Event",
@@ -144,7 +146,7 @@ class Event(pydantic.BaseModel):
         if exclude is None:
             exclude = set()
         exclude.add("on_handler_context_manager")
-        return super().dict(
+        return super().model_dump(
             include=include,
             exclude=exclude,
             by_alias=by_alias,
@@ -154,8 +156,7 @@ class Event(pydantic.BaseModel):
             exclude_none=exclude_none,
         )
 
-    class Config:
-        arbitrary_types_allowed = True
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
 EventCallable = TypeVar("EventCallable", bound=Callable[..., Any])
@@ -204,7 +205,7 @@ class Preposition(enum.Flag):
 class EventContext(pydantic.BaseModel):
     event: Event
     preposition: Preposition
-    created_at: datetime.datetime = None
+    created_at: datetime.datetime = pydantic.Field(None, validate_default=True)
 
     @classmethod  # Usable as a validator
     def from_str(cls, event_str) -> Optional["EventContext"]:
@@ -227,7 +228,7 @@ class EventContext(pydantic.BaseModel):
 
         return EventContext(preposition=Preposition.from_str(preposition), event=event)
 
-    @pydantic.validator("created_at", pre=True, always=True)
+    @pydantic.field_validator("created_at", mode="before")
     @classmethod
     def set_created_at_now(cls, v):
         return v or datetime.datetime.now()
@@ -318,10 +319,10 @@ class EventResult(pydantic.BaseModel):
     preposition: Preposition
     handler: EventHandler
     connector: "Mixin"
-    created_at: datetime.datetime = None
-    value: Any
+    created_at: datetime.datetime = pydantic.Field(None, validate_default=True)
+    value: Any = None
 
-    @pydantic.validator("created_at", pre=True, always=True)
+    @pydantic.field_validator("created_at", mode="before")
     @classmethod
     def set_created_at_now(cls, v):
         return v or datetime.datetime.now()
@@ -387,7 +388,9 @@ def create_event(
             try:
                 lines = inspect.getsourcelines(signature)
                 last = lines[0][-1]
-                if not last.strip() in ("pass", "..."):
+                if last.strip() in ("pass", "...") or last.endswith(": ...\n"):
+                    pass
+                else:
                     raise ValueError(
                         "function body of event declaration must be an async generator or a stub using `...` or `pass` keywords"
                     )
@@ -566,9 +569,11 @@ def event_handler(
                     localns=handler_localns,
                 ),
                 name=name,
-                callable_description="event handler"
-                if preposition == Preposition.on
-                else "before event handler",
+                callable_description=(
+                    "event handler"
+                    if preposition == Preposition.on
+                    else "before event handler"
+                ),
             )
         elif preposition == Preposition.after:
             after_handler_signature = inspect.Signature.from_callable(__after_handler)
@@ -608,8 +613,9 @@ def __after_handler(self, results: List[EventResult]) -> None:
 _is_base_class_defined = False
 
 
-class Metaclass(pydantic.main.ModelMetaclass):
-    def __new__(mcs, name, bases, namespace, **kwargs):
+# https://github.com/pydantic/pydantic/issues/5124#issuecomment-1449653294
+class Metaclass(type(pydantic.BaseModel)):
+    def __new__(mcs, cls_name, bases, namespace, *args, **kwargs):
         # Decorate the class with an event registry, inheriting from our parent connectors
         event_handlers: List[EventHandler] = []
 
@@ -622,7 +628,7 @@ class Metaclass(pydantic.main.ModelMetaclass):
             **{n: v for n, v in namespace.items()},
         }
 
-        cls = super().__new__(mcs, name, bases, new_namespace, **kwargs)
+        cls = super().__new__(mcs, cls_name, bases, new_namespace, *args, **kwargs)
         return cls
 
 
@@ -652,30 +658,17 @@ class Mixin:
             **kwargs,
         )
 
+        # Ideally, the name property would be part of an abstract base but pydantic doesn't play nice with abc
+        # https://github.com/samuelcolvin/pydantic/discussions/2410
+        if (not hasattr(self, "name")) or not isinstance(self.name, str):
+            raise TypeError(
+                f"events.Mixin inheritors must define a name property of type str (found {type(getattr(self, 'name', None))})"
+            )
+
         # NOTE: Connector references are held off the model so
         # that Pydantic doesn't see additional attributes
         __connectors__ = __connectors__ if __connectors__ is not None else [self]
         _connector_event_bus[self] = __connectors__
-
-    @classmethod
-    def __get_validators__(cls: Mixin) -> pydantic.typing.CallableGenerator:
-        yield cls.validate
-
-    @classmethod
-    def validate(cls: Mixin, value: Any) -> Mixin:
-        if not isinstance(value, Mixin):
-            raise TypeError(
-                f"field (type {type(value)}) must be instance of events.Mixin"
-            )
-
-        # Ideally, the name property would be part of an abstract base but pydantic doesn't play nice with abc
-        # https://github.com/samuelcolvin/pydantic/discussions/2410
-        if (not hasattr(value, "name")) or not isinstance(value.name, str):
-            raise TypeError(
-                f"events.Mixin inheritors must define a name property of type str (found {type(getattr(value, 'name', None))})"
-            )
-
-        return value
 
     @classmethod
     def responds_to_event(cls, event: Union[Event, str]) -> bool:

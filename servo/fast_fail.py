@@ -42,10 +42,10 @@ class SloOutcomeStatus(enum.StrEnum):
 
 class SloOutcome(pydantic.BaseModel):
     status: SloOutcomeStatus
-    metric_readings: Optional[List[servo.types.Reading]]
-    threshold_readings: Optional[List[servo.types.Reading]]
-    metric_value: Optional[decimal.Decimal]
-    threshold_value: Optional[decimal.Decimal]
+    metric_readings: Optional[List[servo.types.Reading]] = None
+    threshold_readings: Optional[List[servo.types.Reading]] = None
+    metric_value: Optional[decimal.Decimal] = None
+    threshold_value: Optional[decimal.Decimal] = None
     checked_at: datetime.datetime
 
     def to_message(self, condition: servo.types.SloCondition):
@@ -200,9 +200,9 @@ class FastFailObserver(pydantic.BaseModel):
         servo.logger.debug(f"SLO results: {devtools.pformat(self._results)}")
 
         # Log the latest results
-        last_results_buckets: Dict[
-            SloOutcomeStatus, List[str]
-        ] = collections.defaultdict(list)
+        last_results_buckets: Dict[SloOutcomeStatus, List[str]] = (
+            collections.defaultdict(list)
+        )
         for condition, results_list in self._results.items():
             last_result = results_list[-1]
             last_results_buckets[last_result.status].append(str(condition))

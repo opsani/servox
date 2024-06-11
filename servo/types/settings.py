@@ -15,15 +15,16 @@
 import abc
 import decimal
 import enum
-import functools
 from inspect import isclass
+import typing
 import pydantic
+import pydantic_core
 import pydantic.fields
 from typing import (
+    List,
     Annotated,
     Any,
     Callable,
-    Generator,
     Literal,
     Optional,
     Type,
@@ -34,6 +35,8 @@ from typing import (
 )
 
 from .core import BaseModel, HumanReadable, Numeric, Unit
+from pydantic import Field, ConfigDict
+from typing_extensions import Annotated
 
 
 class Setting(BaseModel, abc.ABC):
@@ -100,29 +103,41 @@ class Setting(BaseModel, abc.ABC):
         property if one exists, else coerces the value into a string. Subclasses
         can provide arbitrary implementations to directly control the representation.
         """
-        if isinstance(self.value, HumanReadable):
+        if getattr(self.value, "human_readable", None):
             return cast(HumanReadable, self.value).human_readable()
         return str(self.value)
 
     def __setattr__(self, name, value) -> None:
-        if name == "value":
-            self._validate_pinned_values_cannot_be_changed(value)
+        if (
+            name == "value"
+            and self.pinned
+            and self.value is not None
+            and value != self.value
+        ):
+            raise ValueError(
+                f"value of pinned settings cannot be changed: assigned value {repr(value)} is not equal to existing value {repr(self.value)}"
+            )
+
         super().__setattr__(name, value)
 
-    def _validate_pinned_values_cannot_be_changed(self, new_value) -> None:
-        if not self.pinned or self.value is None:
-            return
-
-        if new_value != self.value:
-            error = ValueError(
-                f"value of pinned settings cannot be changed: assigned value {repr(new_value)} is not equal to existing value {repr(self.value)}"
-            )
-            error_ = pydantic.error_wrappers.ErrorWrapper(error, loc="value")
-            raise pydantic.ValidationError([error_], self.__class__)
-
     @classmethod
-    def get_setting_type(cls) -> Type[Any]:
-        return cls.__fields__["value"].type_
+    def get_setting_type(cls, unwrap_union=False) -> Type[Any]:
+        value_type = cls.model_fields["value"].annotation
+        if unwrap_union and get_origin(value_type) is Union:
+            none_filtered = [
+                a for a in typing.get_args(value_type) if a is not type(None)
+            ]
+            if len(none_filtered) > 0:
+                value_type = none_filtered[0]
+            else:
+                import servo
+
+                servo.logger.warning(
+                    f"unable to determine inner type for Union field value of model {cls}"
+                )
+                value_type = str
+
+        return value_type
 
     @classmethod
     def human_readable(cls, value: Any) -> str:
@@ -136,9 +151,7 @@ class Setting(BaseModel, abc.ABC):
 
         return str(value)
 
-    class Config:
-        validate_all = True
-        validate_assignment = True
+    model_config = ConfigDict(validate_default=True, validate_assignment=True)
 
 
 # Helper methods for working with lists of settings
@@ -161,10 +174,9 @@ class EnumSetting(Setting):
 
     type: Literal["enum"] = pydantic.Field(
         "enum",
-        const=True,
         description="Identifies the setting as an enumeration setting.",
     )
-    values: pydantic.conlist(Union[str, Numeric], min_items=1) = pydantic.Field(
+    values: Annotated[List[Union[str, Numeric]], Field(min_length=1)] = pydantic.Field(
         ..., description="A list of the available options for the value of the setting."
     )
     value: Optional[Union[str, Numeric]] = pydantic.Field(
@@ -172,10 +184,10 @@ class EnumSetting(Setting):
         description="The value of the setting as set by the servo during a measurement or set by the optimizer during an adjustment. When set, must a value in the `values` attribute.",
     )
 
-    @pydantic.root_validator(skip_on_failure=True)
+    @pydantic.model_validator(mode="before")
     @classmethod
     def _validate_value_in_values(cls, values: dict[str, Any]) -> dict[str, Any]:
-        value, options = values["value"], values["values"]
+        value, options = values.get("value", None), values["values"]
         if value is not None and value not in options:
             raise ValueError(
                 f"invalid value: {repr(value)} is not in the values list {repr(options)}"
@@ -190,12 +202,13 @@ class EnumSetting(Setting):
 
     def __opsani_repr__(self) -> dict[str, dict[Any, Any]]:
         return {
-            self.name: self.dict(
+            self.name: self.model_dump(
                 include={"type", "unit", "values", "pinned", "value"}, exclude_none=True
             )
         }
 
 
+# TODO implement generics if possible
 class RangeSetting(Setting):
     """RangeSetting objects describe an inclusive span of numeric values that can be
     applied to an adjustable parameter.
@@ -212,7 +225,7 @@ class RangeSetting(Setting):
     """
 
     type: Literal["range"] = pydantic.Field(
-        "range", const=True, description="Identifies the setting as a range setting."
+        "range", description="Identifies the setting as a range setting."
     )
     min: Numeric = pydantic.Field(
         ...,
@@ -233,12 +246,13 @@ class RangeSetting(Setting):
     def summary(self) -> str:
         return f"{self.__class__.__name__}(range=[{self.human_readable(self.min)}..{self.human_readable(self.max)}], step={self.human_readable(self.step)}, unit={self.unit})"
 
-    @pydantic.root_validator(skip_on_failure=True)
-    @classmethod
-    def _attributes_must_be_of_same_type(cls, values: dict[str, Any]) -> dict[str, Any]:
+    @pydantic.model_validator(mode="after")
+    def _attributes_must_be_of_same_type(self) -> "RangeSetting":
         range_types: dict[TypeVar, list[str]] = {}
         for attr in ("min", "max", "step"):
-            value = values[attr] if attr in values else cls.__fields__[attr].default
+            value = getattr(self, attr, None)
+            if value is None:
+                value = self.__class__.model_fields[attr].default
             attr_cls = value.__class__
             if attr_cls in range_types:
                 range_types[attr_cls].append(attr)
@@ -259,52 +273,70 @@ class RangeSetting(Setting):
                 f"invalid range: min, max, and step must all be of the same Numeric type ({desc})"
             )
 
-        return values
+        return self
 
-    @pydantic.root_validator(skip_on_failure=True)
-    @classmethod
-    def _value_must_fall_in_range(cls, values) -> Numeric:
-        value, min, max = values["value"], values["min"], values["max"]
-        if value is not None and (value < min or value > max):
+    @pydantic.model_validator(mode="after")
+    def _value_must_fall_in_range(self) -> "RangeSetting":
+        cls = self.__class__
+        if self.value is not None and (self.value < self.min or self.value > self.max):
             import servo
 
             servo.logger.warning(
-                f"invalid value: {cls.human_readable(value)} is outside of the range {cls.human_readable(min)}-{cls.human_readable(max)}"
+                f"invalid value: {cls.human_readable(self.value)} is outside of the range {cls.human_readable(self.min)}-{cls.human_readable(self.max)}"
             )
 
-        return values
+        return self
 
-    @pydantic.validator("max")
-    @classmethod
-    def _max_must_define_valid_range(cls, max_: Numeric, values) -> Numeric:
-        if not "min" in values:
-            # can't validate if we don't have a min (likely failed validation)
-            return max_
-
-        min_ = values["min"]
-        if min_ > max_:
+    @pydantic.model_validator(mode="after")
+    def _max_must_define_valid_range(self) -> "RangeSetting":
+        cls = self.__class__
+        if self.min > self.max:
             import servo
 
             servo.logger.warning(
-                f"min cannot be greater than max ({cls.human_readable(min_)} > {cls.human_readable(max_)})"
+                f"min cannot be greater than max ({cls.human_readable(self.min)} > {cls.human_readable(self.max)})"
             )
 
-        return max_
+        return self
 
-    @pydantic.root_validator(skip_on_failure=True)
+    def _suggest_step_aligned_values(self) -> tuple[Numeric, Numeric]:
+        # FIXME
+        range_size, step_decimal = decimal.Decimal(
+            self.max - self.min
+        ), decimal.Decimal(self.step)
+        lower_bound, upper_bound = range_size, range_size
+
+        # Find the values that are closest on either side of the value
+        # Ensure the smaller size isn't smaller than step
+        remainder = range_size % step_decimal
+
+        # lower bound -- align by offseting by remainder
+        lower_bound -= remainder
+        assert lower_bound % step_decimal == 0
+        if lower_bound <= step_decimal:
+            lower_bound = step_decimal
+
+        # upper bound -- start from the lower bound and find the next value
+        upper_bound = lower_bound + step_decimal
+        if upper_bound == range_size:
+            upper_bound += step_decimal
+
+        value_type = self.get_setting_type(unwrap_union=True)
+        return (value_type(lower_bound), value_type(upper_bound))
+
+    @pydantic.model_validator(mode="after")
     @classmethod
-    def _min_and_max_must_be_step_aligned(
-        cls, values: dict[str, Any]
-    ) -> dict[str, Any]:
+    def _min_and_max_must_be_step_aligned(cls, value: "RangeSetting") -> dict[str, Any]:
         name, min_, max_, step = (
-            values["name"],
-            values["min"],
-            values["max"],
-            values["step"],
+            value.name,
+            value.min,
+            value.max,
+            value.step,
         )
 
         if max_ is not None and min_ is not None:
-            diff = max_ - min_
+            value_type = cls.get_setting_type(unwrap_union=True)
+            diff = value_type(max_ - min_)
             if step == 0 and diff == 0:
                 pass
             elif step != 0 and diff == 0:
@@ -321,26 +353,19 @@ class RangeSetting(Setting):
                 servo.logger.warning(f"step cannot be zero")
 
             if _is_step_aligned(diff, step):
-                return values
+                return value
             else:
                 import servo
 
-                smaller_range, larger_range = _suggest_step_aligned_values(diff, step)
+                smaller_range, larger_range = value._suggest_step_aligned_values()
                 desc = f"{cls.__name__}({repr(name)} {cls.human_readable(min_)}-{cls.human_readable(max_)}, {cls.human_readable(step)})"
                 # try new error handling and fall back to old if bugs
                 try:
-                    value_type = cls.get_setting_type()
-                    if get_origin(value_type) is Union:
-                        value_type = str
-                    cast_diff, lower_min, upper_min, lower_max, upper_max = (
-                        value_type(v)
-                        for v in (
-                            diff,
-                            max_ - smaller_range,
-                            max_ - larger_range,
-                            min_ + smaller_range,
-                            min_ + larger_range,
-                        )
+                    lower_min, upper_min, lower_max, upper_max = (
+                        value_type(max_ - smaller_range),
+                        value_type(max_ - larger_range),
+                        value_type(min_ + smaller_range),
+                        value_type(min_ + larger_range),
                     )
                 except:
                     servo.logger.exception(
@@ -352,19 +377,19 @@ class RangeSetting(Setting):
                     )
                 else:
                     servo.logger.warning(
-                        f"{desc} min/max difference is not step aligned: {cast_diff} is not a multiple of {step} (consider "
+                        f"{desc} min/max difference is not step aligned: {diff} is not a multiple of {step} (consider "
                         f"min {lower_min} or {upper_min}, max {lower_max} "
                         f"or {upper_max})."
                     )
 
-        return values
+        return value
 
     def __str__(self) -> str:
         return f"{self.name} ({self.type} {self.human_readable(self.min)}-{self.human_readable(self.max)}, {self.human_readable(self.step)})"
 
     def __opsani_repr__(self) -> dict[str, dict[Any, Any]]:
         return {
-            self.name: self.dict(
+            self.name: self.model_dump(
                 include={"type", "unit", "min", "max", "step", "pinned", "value"},
                 exclude_none=True,
             )
@@ -395,8 +420,8 @@ class CPU(RangeSetting):
         else:
             super().__init__(unit=Unit.cores, *args, **kwargs)
 
-    name: str = pydantic.Field(
-        "cpu", const=True, description="Identifies the setting as a CPU setting."
+    name: Literal["cpu"] = pydantic.Field(
+        "cpu", description="Identifies the setting as a CPU setting."
     )
     min: float = pydantic.Field(
         ..., gt=0, description="The inclusive minimum number of vCPUs or cores to run."
@@ -430,11 +455,11 @@ class Memory(RangeSetting):
         else:
             super().__init__(unit=Unit.gibibytes, *args, **kwargs)
 
-    name: str = pydantic.Field(
-        "mem", const=True, description="Identifies the setting as a Memory setting."
+    name: Literal["mem"] = pydantic.Field(
+        "mem", description="Identifies the setting as a Memory setting."
     )
 
-    @pydantic.validator("min")
+    @pydantic.field_validator("min")
     @classmethod
     def ensure_min_greater_than_zero(cls, value: Numeric) -> Numeric:
         if value == 0:
@@ -455,9 +480,8 @@ class Replicas(RangeSetting):
     type derived thereof.
     """
 
-    name: str = pydantic.Field(
+    name: Literal["replicas"] = pydantic.Field(
         "replicas",
-        const=True,
         description="Identifies the setting as a replicas setting.",
     )
     min: pydantic.StrictInt = pydantic.Field(
@@ -494,80 +518,14 @@ class InstanceType(EnumSetting):
     type derived thereof.
     """
 
-    name: str = pydantic.Field(
+    name: Literal["inst_type"] = pydantic.Field(
         "inst_type",
-        const=True,
         description="Identifies the setting as an instance type enum setting.",
     )
     unit: InstanceTypeUnits = pydantic.Field(
         InstanceTypeUnits.ec2,
         description="The unit of instance types identifying the provider.",
     )
-
-
-def _suggest_step_aligned_values(
-    value: Numeric,
-    step: Numeric,
-    *,
-    in_repr: Optional[Callable[[Numeric], Union[str, float, int]]] = None,
-) -> tuple[str, str]:
-    if in_repr is None:
-        # return raw data for further processing
-        in_repr = lambda x: x
-
-    # declare numeric and textual representations
-    parser = functools.partial(pydantic.parse_obj_as, value.__class__)
-    value_dec, step_dec = decimal.Decimal(str(float(value))), decimal.Decimal(
-        str(float(step))
-    )
-    lower_bound, upper_bound = value_dec, value_dec
-    value_repr, lower_repr, upper_repr = in_repr(parser(value_dec)), None, None
-
-    # Find the values that are closest on either side of the value
-    # Don't recommend anything smaller than step
-    while value_dec < step_dec:
-        value_dec += step_dec
-
-    remainder = value_dec % step_dec
-
-    # lower bound -- align by offseting by remainder
-    lower_bound -= remainder
-    assert lower_bound % step_dec == 0
-    while True:
-        # only decrement after first iteration
-        if lower_repr is not None:
-            lower_bound -= step_dec
-
-        # if we dip below the step, anchor on it as the minimum value
-        if lower_bound <= step_dec:
-            lower_bound = step_dec
-            lower_repr = in_repr(parser(lower_bound))
-            break
-
-        lower_repr = in_repr(parser(lower_bound))
-        # if we are step aligned take the current value as lower bound
-        if remainder != 0 and lower_repr == value_repr:
-            continue
-
-        # round trip the value to make sure its not a lossy representation
-        repr_decimal = decimal.Decimal(str(float(parser(lower_repr))))
-        if repr_decimal % step_dec == 0:
-            break
-
-    # upper bound -- start from the lower bound and find the next value
-    upper_bound = lower_bound
-    while True:
-        upper_bound += step_dec
-        upper_repr = in_repr(parser(upper_bound))
-        if upper_repr == value_repr:
-            continue
-
-        # round trip the value to make sure its not a lossy representation
-        repr_decimal = decimal.Decimal(str(float(parser(upper_repr))))
-        if repr_decimal % step_dec == 0:
-            break
-
-    return (lower_repr, upper_repr)
 
 
 class EnvironmentSetting(Setting):
@@ -582,31 +540,9 @@ class EnvironmentSetting(Setting):
         return self.literal or self.name
 
 
-class NumericType(Setting):
-    @classmethod
-    def __get_validators__(cls) -> Generator[Callable[..., Any], None, None]:
-        yield cls.validate
-
-    @classmethod
-    def validate(cls, value, field: pydantic.fields.ModelField = None):
-        if isclass(value) and issubclass(value, (int, float)):
-            return value
-
-        if value == "int":
-            return int
-        if value == "float":
-            return float
-
-        raise ValueError(f"Unrecognized numeric type {repr(value)}")
-
-    @classmethod
-    def __modify_schema__(cls, field_schema: dict[str, Any]):
-        field_schema.update(anyOf=["int", "float"])
-
-
 class EnvironmentRangeSetting(RangeSetting, EnvironmentSetting):
     # # TODO promote to RangeSetting base
-    value_type: NumericType = pydantic.Field(
+    value_type: Union[Literal["int"], Literal["float"], None] = pydantic.Field(
         None, description="The optional data type of the value of the setting"
     )
 
@@ -615,20 +551,17 @@ class EnvironmentRangeSetting(RangeSetting, EnvironmentSetting):
         None, description="The optional value of the setting as reported by the servo"
     )
 
-    @pydantic.validator("value_type", pre=True)
-    def _set_value_type_to_type(cls, value: Any) -> Union[Type[int], Type[float]]:
-        if value == "int":
-            return int
-        if value == "float":
-            return float
-        return value
-
-    @pydantic.root_validator
+    @pydantic.model_validator(mode="before")
     def _cast_value_to_value_type(cls, values: dict[Any, Any]) -> dict[Any, Any]:
         if (value := values.get("value")) is not None and (
             value_type := values.get("value_type")
         ) is not None:
-            values["value"] = value_type(value)
+            if value_type == "int":
+                values["value"] = int(value)
+
+            if value_type == "float":
+                values["value"] = float(value)
+
         return values
 
 
@@ -637,8 +570,8 @@ class EnvironmentEnumSetting(EnumSetting, EnvironmentSetting):
 
 
 # https://github.com/samuelcolvin/pydantic/issues/3714
-class EnvironmentSettingList(pydantic.BaseModel):
-    __root__: list[
+class EnvironmentSettingList(pydantic.RootModel):
+    root: list[
         Annotated[
             Union[EnvironmentRangeSetting, EnvironmentEnumSetting],
             pydantic.Field(discriminator="type"),
@@ -647,10 +580,10 @@ class EnvironmentSettingList(pydantic.BaseModel):
 
     # above https://pydantic-docs.helpmanual.io/usage/models/#faux-immutability
     def __iter__(self):
-        return iter(self.__root__)
+        return iter(self.root)
 
     def __getitem__(self, item):
-        return self.__root__[item]
+        return self.root[item]
 
 
 # TODO: revert to this annotation when the above is resolved

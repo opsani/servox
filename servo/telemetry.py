@@ -51,8 +51,8 @@ class DiagnosticStates(enum.StrEnum):
 
 
 class Diagnostics(pydantic.BaseModel):
-    configmap: Optional[dict[str, Any]]
-    logs: Optional[dict[str, Any]]
+    configmap: Optional[dict[str, Any]] = None
+    logs: Optional[dict[str, Any]] = None
 
 
 class Telemetry(pydantic.BaseModel):
@@ -115,7 +115,7 @@ class DiagnosticsHandler(servo.logging.Mixin):
                         method="PUT",
                         endpoint=DIAGNOSTICS_OUTPUT_ENDPOINT,
                         output_model=servo.api.Status,
-                        json=diagnostic_data.dict(),
+                        json=diagnostic_data.model_dump(),
                     )
 
                     # Reset diagnostics check state to withhold
@@ -201,7 +201,7 @@ class DiagnosticsHandler(servo.logging.Mixin):
             )
             self.logger.trace(servo.api.redacted_to_curl(response.request))
             try:
-                return pydantic.parse_obj_as(output_model, response_json)
+                return pydantic.TypeAdapter(output_model).validate_python(response_json)
             except pydantic.ValidationError as error:
                 # Should not raise due to improperly set diagnostic states
                 self.logger.exception(

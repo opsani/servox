@@ -22,6 +22,7 @@ import sys
 import textwrap
 import types
 from typing import (
+    Annotated,
     Any,
     Awaitable,
     Callable,
@@ -54,6 +55,7 @@ import servo.logging
 import servo.types
 import servo.utilities
 from servo.types import Duration, ErrorSeverity
+from pydantic import ConfigDict
 
 __all__ = [
     "BaseChecks",
@@ -78,12 +80,19 @@ CheckHandler = TypeVar(
 CHECK_HANDLER_SIGNATURE = inspect.Signature(return_annotation=CheckHandlerResult)
 
 
-# https://stackoverflow.com/a/67408276
-class Tag(pydantic.ConstrainedStr):
-    strip_whitespace = True
-    min_length = 1
-    max_length = 32
-    regex = re.compile("^([0-9a-z\\.-])*$")
+Tag = Annotated[
+    str,
+    pydantic.StringConstraints(
+        strip_whitespace=True, min_length=1, max_length=32, pattern=r"^([0-9a-z\\.-])*$"
+    ),
+]
+
+# # https://stackoverflow.com/a/67408276
+# class Tag(pydantic.ConstrainedStr):
+#     strip_whitespace = True
+#     min_length = 1
+#     max_length = 32
+#     regex = re.compile("^([0-9a-z\\.-])*$")
 
 
 class CheckError(RuntimeError):
@@ -116,11 +125,11 @@ class Check(pydantic.BaseModel, servo.logging.Mixin):
     """An arbitrary descriptive name of the condition being checked.
     """
 
-    id: pydantic.StrictStr = None
+    id: pydantic.StrictStr = pydantic.Field(None, validate_default=True)
     """A short identifier for the check. Generated automatically if unset.
     """
 
-    description: Optional[pydantic.StrictStr]
+    description: Optional[pydantic.StrictStr] = None
     """An optional detailed description about the condition being checked.
     """
 
@@ -128,7 +137,7 @@ class Check(pydantic.BaseModel, servo.logging.Mixin):
     """The relative importance of the check determining failure handling.
     """
 
-    tags: Optional[set[Tag]]
+    tags: Optional[set[Tag]] = None
     """
     An optional set of tags for filtering checks.
 
@@ -136,12 +145,12 @@ class Check(pydantic.BaseModel, servo.logging.Mixin):
     only lowercase alphanumeric characters, hyphens '-', and periods '.'.
     """
 
-    success: Optional[bool]
+    success: Optional[bool] = None
     """
     Indicates if the condition being checked was met or not.
     """
 
-    message: Optional[pydantic.StrictStr]
+    message: Optional[pydantic.StrictStr] = None
     """
     An optional message describing the outcome of the check.
 
@@ -152,7 +161,7 @@ class Check(pydantic.BaseModel, servo.logging.Mixin):
     hint: Optional[pydantic.StrictStr] = None
     remedy: Optional[Union[Callable[[], None], Awaitable[None]]] = None
 
-    exception: Optional[Exception]
+    exception: Optional[Exception] = None
     """
     An optional exception encountered while running the check.
 
@@ -161,15 +170,19 @@ class Check(pydantic.BaseModel, servo.logging.Mixin):
     can be presented to the user.
     """
 
-    created_at: datetime.datetime = None
+    @pydantic.field_serializer("exception")
+    def exception_repr(self, exc: Exception) -> str:
+        return repr(exc)
+
+    created_at: datetime.datetime = pydantic.Field(None, validate_default=True)
     """When the check was created (set automatically).
     """
 
-    run_at: Optional[datetime.datetime]
+    run_at: Optional[datetime.datetime] = None
     """An optional timestamp indicating when the check was run.
     """
 
-    runtime: Optional[Duration]
+    runtime: Optional[Duration] = None
     """An optional duration indicating how long it took for the check to run.
     """
 
@@ -239,12 +252,12 @@ class Check(pydantic.BaseModel, servo.logging.Mixin):
         """Return a boolean value that indicates if the check is of warning severity."""
         return self.severity == ErrorSeverity.warning
 
-    @pydantic.validator("created_at", pre=True, always=True)
+    @pydantic.field_validator("created_at", mode="before")
     @classmethod
     def _set_created_at_now(cls, v):
         return v or datetime.datetime.now()
 
-    @pydantic.validator("id", pre=True, always=True)
+    @pydantic.field_validator("id", mode="before")
     @classmethod
     def _generated_id(cls, v, values):
         return (
@@ -257,12 +270,7 @@ class Check(pydantic.BaseModel, servo.logging.Mixin):
     def __hash__(self):
         return hash((self.id,))
 
-    class Config:
-        validate_assignment = True
-        arbitrary_types_allowed = True
-        json_encoders = {
-            Exception: lambda v: repr(v),
-        }
+    model_config = ConfigDict(validate_assignment=True, arbitrary_types_allowed=True)
 
 
 CheckRunner = TypeVar("CheckRunner", Callable[..., Check], Coroutine[None, None, Check])
@@ -471,8 +479,7 @@ class CheckFilter(pydantic.BaseModel):
                 f'unexpected value of type "{attr.__class__.__name__}": {attr}'
             )
 
-    class Config:
-        arbitrary_types_allowed = True
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
 class BaseChecks(pydantic.BaseModel, servo.logging.Mixin):
@@ -739,9 +746,7 @@ class BaseChecks(pydantic.BaseModel, servo.logging.Mixin):
 
         return checks
 
-    class Config:
-        arbitrary_types_allowed = True
-        extra = pydantic.Extra.allow
+    model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
 
 
 class CheckHelpers(pydantic.BaseModel, servo.logging.Mixin):
@@ -803,7 +808,9 @@ class CheckHelpers(pydantic.BaseModel, servo.logging.Mixin):
                                 servo.logger.info("💡 Attempting to apply remedy...")
 
                         except asyncio.TimeoutError:
-                            servo.logger.warning("💡 Remedy attempt timed out after 10s")
+                            servo.logger.warning(
+                                "💡 Remedy attempt timed out after 10s"
+                            )
 
                     if checks_config.check_halting:
                         break

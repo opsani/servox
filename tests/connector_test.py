@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 import httpx
+import pydantic
 import pytest
 import pytest_mock
 import respx
@@ -22,6 +23,33 @@ from servo.connectors.vegeta import TargetFormat, VegetaConfiguration, VegetaCon
 from servo.events import EventContext, Preposition, _events, create_event, event
 from servo.logging import ProgressHandler, reset_to_defaults
 from tests.helpers import *
+
+
+@pytest.fixture()
+def optimizer_config() -> dict[str, str]:
+    return {"id": "dev.opsani.com/servox", "token": "1234556789"}
+
+
+@pytest.fixture()
+async def assembly(
+    servo_yaml: Path, optimizer_config: dict[str, str]
+) -> servox.Assembly:
+    config = {
+        "optimizer": optimizer_config,
+        "connectors": ["first_test_servo", "second_test_servo"],
+        "first_test_servo": {},
+        "second_test_servo": {},
+    }
+    servo_yaml.write_text(yaml.dump(config))
+
+    # TODO: Can't pass in like this, needs to be fixed
+    assembly = await servox.Assembly.assemble(config_file=servo_yaml)
+    return assembly
+
+
+@pytest.fixture()
+def servo(assembly: servox.Assembly) -> servox.Servo:
+    return assembly.servos[0]
 
 
 class TestOptimizer:
@@ -163,9 +191,6 @@ class TestBaseConfiguration:
         }
 
     def test_configuring_with_environment_variables(self) -> None:
-        assert BaseConfiguration.__fields__["description"].field_info.extra[
-            "env_names"
-        ] == {"BASE_DESCRIPTION"}
         with environment_overrides({"BASE_DESCRIPTION": "this description"}):
             assert os.environ["BASE_DESCRIPTION"] == "this description"
             s = BaseConfiguration()
@@ -1063,7 +1088,7 @@ def test_vegeta_cli_validate(
 ) -> None:
     config_file = tmp_path / "vegeta.yaml"
     config = VegetaConfiguration.generate()
-    write_config_yaml({"vegeta": config.dict(exclude_unset=True)}, config_file)
+    write_config_yaml({"vegeta": config.model_dump(exclude_unset=True)}, config_file)
 
     result = cli_runner.invoke(
         servo_cli, "validate -f vegeta.yaml", catch_exceptions=False
@@ -1079,7 +1104,7 @@ def test_vegeta_cli_validate_quiet(
 ) -> None:
     config_file = tmp_path / "vegeta.yaml"
     config = VegetaConfiguration.generate()
-    write_config_yaml({"vegeta": config.dict(exclude_unset=True)}, config_file)
+    write_config_yaml({"vegeta": config.model_dump(exclude_unset=True)}, config_file)
     result = cli_runner.invoke(servo_cli, "validate -q -f vegeta.yaml")
     assert (
         result.exit_code == 0
@@ -1094,8 +1119,8 @@ def test_vegeta_cli_validate_dict(
     config = VegetaConfiguration.generate()
     config_dict = {
         "connectors": {"first": "vegeta", "second": "vegeta"},
-        "first": config.dict(exclude_unset=True),
-        "second": config.dict(exclude_unset=True),
+        "first": config.model_dump(exclude_unset=True),
+        "second": config.model_dump(exclude_unset=True),
     }
 
     write_config_yaml(config_dict, config_file)
@@ -1126,7 +1151,7 @@ def test_vegeta_cli_validate_invalid_key(
 ) -> None:
     config_file = tmp_path / "vegeta.yaml"
     config = VegetaConfiguration.generate()
-    write_config_yaml({"nonsense": config.dict(exclude_unset=True)}, config_file)
+    write_config_yaml({"nonsense": config.model_dump(exclude_unset=True)}, config_file)
     result = cli_runner.invoke(servo_cli, "validate -f vegeta.yaml")
     assert (
         result.exit_code == 1
@@ -1295,8 +1320,7 @@ class TestConnectorEvents:
         async def get_event_context(self) -> Optional[EventContext]:
             return servo.current_event()
 
-        class Config:
-            extra = Extra.allow
+        model_config = pydantic.ConfigDict(extra="allow")
 
     class AnotherFakeConnector(FakeConnector):
         @event(handler=True)

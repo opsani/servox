@@ -1056,8 +1056,9 @@ class TestConnector:
 class TestInstantVector:
     @pytest.fixture
     def vector(self) -> servo.connectors.prometheus.InstantVector:
-        return pydantic.parse_obj_as(
-            servo.connectors.prometheus.InstantVector,
+        return pydantic.TypeAdapter(
+            servo.connectors.prometheus.InstantVector
+        ).validate_python(
             {
                 "metric": {},
                 "value": [
@@ -1095,8 +1096,9 @@ class TestInstantVector:
 class TestRangeVector:
     @pytest.fixture
     def vector(self) -> servo.connectors.prometheus.RangeVector:
-        return pydantic.parse_obj_as(
-            servo.connectors.prometheus.RangeVector,
+        return pydantic.TypeAdapter(
+            servo.connectors.prometheus.RangeVector
+        ).validate_python(
             {
                 "metric": {
                     "__name__": "go_memstats_gc_sys_bytes",
@@ -1172,7 +1174,7 @@ class TestRangeVector:
 
 class TestResultPrimitives:
     def test_scalar(self) -> None:
-        output = pydantic.parse_obj_as(
+        output = pydantic.TypeAdapter.validate_python(
             servo.connectors.prometheus.Scalar, [1607989427.782, "1234"]
         )
         assert output
@@ -1184,7 +1186,7 @@ class TestResultPrimitives:
         )
 
     def test_string(self) -> None:
-        output = pydantic.parse_obj_as(
+        output = pydantic.TypeAdapter.validate_python(
             servo.connectors.prometheus.String, [1607989427.782, "whatever"]
         )
         assert output
@@ -1196,7 +1198,7 @@ class TestResultPrimitives:
         )
 
     def test_scalar_parses_as_string(self) -> None:
-        output = pydantic.parse_obj_as(
+        output = pydantic.TypeAdapter.validate_python(
             servo.connectors.prometheus.String, [1607989427.782, "1234.56"]
         )
         assert output
@@ -1211,7 +1213,7 @@ class TestResultPrimitives:
         with pytest.raises(
             pydantic.ValidationError, match="value is not a valid float"
         ):
-            pydantic.parse_obj_as(
+            pydantic.TypeAdapter.validate_python(
                 servo.connectors.prometheus.Scalar, [1607989427.782, "thug_life"]
             )
 
@@ -1243,13 +1245,17 @@ class TestData:
             }
 
         def test_parse(self, obj) -> None:
-            data = pydantic.parse_obj_as(servo.connectors.prometheus.Data, obj)
+            data = pydantic.TypeAdapter(
+                servo.connectors.prometheus.Data
+            ).validate_python(obj)
             assert data
             assert data.result_type == servo.connectors.prometheus.ResultType.vector
             assert len(data) == 2
 
         def test_iterate(self, obj) -> None:
-            data = pydantic.parse_obj_as(servo.connectors.prometheus.Data, obj)
+            data = pydantic.TypeAdapter(
+                servo.connectors.prometheus.Data
+            ).validate_python(obj)
             assert data
             for vector in data:
                 assert isinstance(vector, servo.connectors.prometheus.InstantVector)
@@ -1292,13 +1298,17 @@ class TestData:
             }
 
         def test_parse(self, obj) -> None:
-            data = pydantic.parse_obj_as(servo.connectors.prometheus.Data, obj)
+            data = pydantic.TypeAdapter(
+                servo.connectors.prometheus.Data
+            ).validate_python(obj)
             assert data
             assert data.result_type == servo.connectors.prometheus.ResultType.matrix
             assert len(data) == 2
 
         def test_iterate(self, obj) -> None:
-            data = pydantic.parse_obj_as(servo.connectors.prometheus.Data, obj)
+            data = pydantic.TypeAdapter(
+                servo.connectors.prometheus.Data
+            ).validate_python(obj)
             assert data
 
             values = [
@@ -1356,13 +1366,17 @@ class TestData:
             return {"resultType": "scalar", "result": [1435781460.781, "1"]}
 
         def test_parse(self, obj) -> None:
-            data = pydantic.parse_obj_as(servo.connectors.prometheus.Data, obj)
+            data = pydantic.TypeAdapter(
+                servo.connectors.prometheus.Data
+            ).validate_python(obj)
             assert data
             assert data.result_type == servo.connectors.prometheus.ResultType.scalar
             assert len(data) == 1
 
         def test_iterate(self, obj) -> None:
-            data = pydantic.parse_obj_as(servo.connectors.prometheus.Data, obj)
+            data = pydantic.TypeAdapter(
+                servo.connectors.prometheus.Data
+            ).validate_python(obj)
             assert data
             for scalar in data:
                 assert scalar[0] == datetime.datetime(
@@ -1376,13 +1390,17 @@ class TestData:
             return {"resultType": "string", "result": [1607989427.782, "thug_life"]}
 
         def test_parse(self, obj) -> None:
-            data = pydantic.parse_obj_as(servo.connectors.prometheus.Data, obj)
+            data = pydantic.TypeAdapter(
+                servo.connectors.prometheus.Data
+            ).validate_python(obj)
             assert data
             assert data.result_type == servo.connectors.prometheus.ResultType.string
             assert len(data) == 1
 
         def test_iterate(self, obj) -> None:
-            data = pydantic.parse_obj_as(servo.connectors.prometheus.Data, obj)
+            data = pydantic.TypeAdapter(
+                servo.connectors.prometheus.Data
+            ).validate_python(obj)
             assert data
             for string in data:
                 assert string[0] == datetime.datetime(

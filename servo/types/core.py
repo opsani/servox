@@ -26,6 +26,7 @@ import inspect
 import operator
 from typing import (
     Any,
+    Annotated,
     AsyncIterator,
     Awaitable,
     Callable,
@@ -41,6 +42,7 @@ from typing import (
 
 import orjson
 import pydantic
+import pydantic.v1.datetime_parse
 import pydantic.error_wrappers
 import pygments.lexers
 import semver
@@ -82,30 +84,15 @@ def _orjson_dumps(
         raise err
 
 
-DEFAULT_JSON_ENCODERS = {
-    pydantic.SecretStr: lambda v: v.get_secret_value() if v else None,
-    pydantic.AnyHttpUrl: str,
-}
-
-
-class BaseModelConfig:
-    """The `BaseModelConfig` class provides a common set of Pydantic model
-    configuration shared across the library.
-    """
-
-    json_encoders = DEFAULT_JSON_ENCODERS
-    json_loads = orjson.loads
-    json_dumps = _orjson_dumps
-    validate_assignment = True
-
-
 class BaseModel(pydantic.BaseModel):
     """The `BaseModel` class is the base class implementation of Pydantic model
     types utilized throughout the library.
     """
 
-    class Config(BaseModelConfig):
-        validate_all = True
+    model_config: pydantic.ConfigDict = {
+        "validate_assignment": True,
+        "validate_default": True,
+    }
 
 
 class License(enum.Enum):
@@ -179,6 +166,19 @@ NoneCallable = TypeVar("NoneCallable", bound=Callable[[None], None])
 # Describing time durations in various forms is very common
 DurationDescriptor = Union[datetime.timedelta, str, Numeric]
 
+# DELETE ME
+from typing import Any
+from pydantic_core import CoreSchema, core_schema
+from pydantic import GetCoreSchemaHandler
+
+from pydantic import (
+    BaseModel,
+    GetCoreSchemaHandler,
+    GetJsonSchemaHandler,
+    ValidationError,
+)
+from pydantic.json_schema import JsonSchemaValue
+
 
 class Duration(datetime.timedelta):
     """
@@ -193,6 +193,7 @@ class Duration(datetime.timedelta):
     def __new__(
         cls,
         duration: Union[str, Numeric, datetime.timedelta] = 0,
+        *args,
         **kwargs,
     ) -> datetime.timedelta:
         seconds = kwargs.pop("seconds", 0)
@@ -218,24 +219,35 @@ class Duration(datetime.timedelta):
             cls, seconds=seconds, microseconds=microseconds, **kwargs
         )
 
-    def __init__(
-        self, duration: Union[str, datetime.timedelta, Numeric] = 0, **kwargs
-    ) -> None:  # noqa: D107
-        # Add a type signature so we don't get warning from linters. Implementation is not used (see __new__)
-        ...
+    # def __init__(
+    #     self, duration: Union[str, datetime.timedelta, Numeric] = 0, *args, **kwargs
+    # ) -> Duration:
+    #     return self.__class__.__new__(duration, *args, **kwargs)
+
+    # @classmethod
+    # def __get_validators__(cls):
+    #     yield cls.validate
 
     @classmethod
-    def __get_validators__(cls):
-        yield cls.validate
+    def __get_pydantic_core_schema__(
+        cls, source_type: Any, handler: GetCoreSchemaHandler
+    ) -> CoreSchema:
+        return core_schema.no_info_before_validator_function(
+            cls.validate, handler(datetime.timedelta)
+        )
 
     @classmethod
-    def __modify_schema__(cls, field_schema: dict[Any, Any]) -> None:
-        field_schema.update(
+    def __get_pydantic_json_schema__(
+        cls, _core_schema: core_schema.CoreSchema, handler: GetJsonSchemaHandler
+    ) -> JsonSchemaValue:
+        _core_schema.update(
             type="string",
             format="duration",
             pattern="([\\d\\.]+y)?([\\d\\.]+mm)?(([\\d\\.]+w)?[\\d\\.]+d)?([\\d\\.]+h)?([\\d\\.]+m)?([\\d\\.]+s)?([\\d\\.]+ms)?([\\d\\.]+us)?([\\d\\.]+ns)?",
             examples=["300ms", "5m", "2h45m", "72h3m0.5s"],
         )
+        # Use the same schema that would be used for `timedelta`
+        return handler(core_schema.timedelta_schema())
 
     @classmethod
     def validate(cls, value) -> "Duration":
@@ -243,7 +255,7 @@ class Duration(datetime.timedelta):
             return cls(value)
 
         # Parse into a timedelta with Pydantic parser
-        td = pydantic.datetime_parse.parse_duration(value)
+        td = pydantic.v1.datetime_parse.parse_duration(value)
         microseconds: float = td / datetime.timedelta(microseconds=1)
         return cls(microseconds=microseconds)
 
@@ -275,7 +287,7 @@ class Duration(datetime.timedelta):
 
 
 class BaseProgress(abc.ABC, BaseModel):
-    started_at: Optional[datetime.datetime]
+    started_at: Optional[datetime.datetime] = None
     """The time that progress tracking was started."""
 
     def start(self) -> None:
@@ -360,8 +372,7 @@ class BaseProgress(abc.ABC, BaseModel):
     async def __aenter__(self):
         return self
 
-    async def __aexit__(self, exc_type, exc_value, traceback):
-        ...
+    async def __aexit__(self, exc_type, exc_value, traceback): ...
 
     def __float__(self) -> float:
         return self.progress

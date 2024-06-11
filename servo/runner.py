@@ -31,25 +31,25 @@ import typer
 
 import servo
 import servo.api
-import servo.telemetry
 import servo.configuration
+import servo.logging
+import servo.telemetry
 import servo.utilities.key_paths
 import servo.utilities.strings
-from servo.servo import _set_current_servo, set_current_command_uid
+from servo.servo import _set_current_servo, set_current_command_uid, Servo
 from servo.types import Adjustment, Control, Description, Duration, Measurement
+from pydantic import ConfigDict
 
 
 class ServoRunner(pydantic.BaseModel, servo.logging.Mixin):
     interactive: bool = False
     _assembly_runner: AssemblyRunner = pydantic.PrivateAttr(None)
-    _servo: servo.Servo = pydantic.PrivateAttr(None)
+    _servo: Servo = pydantic.PrivateAttr(None)
     _running: bool = pydantic.PrivateAttr(False)
     _file_watcher_task: Optional[asyncio.Task] = pydantic.PrivateAttr(None)
     _main_loop_task: Optional[asyncio.Task] = pydantic.PrivateAttr(None)
     _task_group: Optional[asyncio.TaskGroup] = pydantic.PrivateAttr(None)
-
-    class Config:
-        arbitrary_types_allowed = True
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
     def __init__(
         self, servo_: servo, _assembly_runner: AssemblyRunner = None, **kwargs
@@ -137,9 +137,9 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin):
         return aggregate_description
 
     async def exec_command(self) -> servo.api.Status:
-        cmd_response: Union[
-            servo.api.CommandResponse, servo.api.Status
-        ] = await self.servo.post_event(servo.api.Events.whats_next, None)
+        cmd_response: Union[servo.api.CommandResponse, servo.api.Status] = (
+            await self.servo.post_event(servo.api.Events.whats_next, None)
+        )
         self.logger.trace(devtools.pformat(cmd_response))
         self.logger.info(f"What's Next? => {cmd_response.command}")
         set_current_command_uid(cmd_response.command_uid)
@@ -165,11 +165,13 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin):
                     error=top_error,
                     command_uid=cmd_response.command_uid,
                 )
-                self.logger.error(f"Responding with {status.dict()}")
+                self.logger.error(f"Responding with {status.model_dump()}")
                 self.logger.opt(exception=error_group).debug("Describe failure details")
 
             self.clear_progress_queue()
-            return await self.servo.post_event(servo.api.Events.describe, status.dict())
+            return await self.servo.post_event(
+                servo.api.Events.describe, status.model_dump()
+            )
 
         elif cmd_response.command == servo.api.Commands.measure:
             try:
@@ -189,11 +191,13 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin):
                     error=top_error,
                     command_uid=cmd_response.command_uid,
                 )
-                self.logger.error(f"Responding with {status.dict()}")
+                self.logger.error(f"Responding with {status.model_dump()}")
                 self.logger.opt(exception=error_group).debug("Measure failure details")
 
             self.clear_progress_queue()
-            return await self.servo.post_event(servo.api.Events.measure, status.dict())
+            return await self.servo.post_event(
+                servo.api.Events.measure, status.model_dump()
+            )
 
         elif cmd_response.command == servo.api.Commands.adjust:
             adjustments = servo.api.descriptor_to_adjustments(
@@ -223,11 +227,13 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin):
                     error=top_error,
                     command_uid=cmd_response.command_uid,
                 )
-                self.logger.error(f"Responding with {status.dict()}")
+                self.logger.error(f"Responding with {status.model_dump()}")
                 self.logger.opt(exception=error_group).debug("Adjust failure details")
 
             self.clear_progress_queue()
-            return await self.servo.post_event(servo.api.Events.adjust, status.dict())
+            return await self.servo.post_event(
+                servo.api.Events.adjust, status.model_dump()
+            )
 
         elif cmd_response.command == servo.api.Commands.sleep:
             # TODO: Model this
@@ -404,9 +410,7 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
     _root_task: asyncio.Task | None = pydantic.PrivateAttr(None)
     _task_group: asyncio.TaskGroup | None = pydantic.PrivateAttr(None)
     _runners_task_group: asyncio.TaskGroup | None = pydantic.PrivateAttr(None)
-
-    class Config:
-        arbitrary_types_allowed = True
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
     def __init__(self, assembly: servo.Assembly, **kwargs) -> None:
         super().__init__(assembly=assembly, **kwargs)
@@ -760,8 +764,8 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
                 status = servo.api.Status.from_error(
                     error=error, command_uid=command_uid
                 )
-                self.logger.error(f"Responding with {status.dict()}")
-                await servo_.post_event(operation, status.dict())
+                self.logger.error(f"Responding with {status.model_dump()}")
+                await servo_.post_event(operation, status.model_dump())
 
             if self.shutting_down:
                 self.logger.warning(

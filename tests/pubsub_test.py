@@ -47,18 +47,18 @@ class TestMessage:
     @freezegun.freeze_time("2021-01-01 12:00:01")
     def test_json_message_via_protocol(self) -> None:
         # NOTE: Use Pydantic's json() method support
-        channel = servo.pubsub.Channel.construct(
-            name="whatever", created_at=datetime.datetime.now()
+        channel = servo.pubsub.Channel(
+            name="whatever", created_at=datetime.datetime.now(), exchange=None
         )
         message = servo.pubsub.Message(json=channel)
         assert (
             message.text
-            == '{"name": "whatever", "description": null, "created_at": "2021-01-01T12:00:01"}'
+            == '{"name":"whatever","description":null,"created_at":"2021-01-01T12:00:01"}'
         )
         assert message.content_type == "application/json"
         assert (
             message.content
-            == b'{"name": "whatever", "description": null, "created_at": "2021-01-01T12:00:01"}'
+            == b'{"name":"whatever","description":null,"created_at":"2021-01-01T12:00:01"}'
         )
 
     def test_yaml_message(self) -> None:
@@ -87,9 +87,11 @@ class TestMessage:
                 servo.pubsub.Message()
 
             assert {
+                "input": None,
                 "loc": ("content",),
-                "msg": "none is not an allowed value",
-                "type": "type_error.none.not_allowed",
+                "msg": "Input should be a valid bytes",
+                "type": "bytes_type",
+                "url": "https://errors.pydantic.dev/2.7/v/bytes_type",
             } in excinfo.value.errors()
 
         def test_content_type_required(self) -> None:
@@ -97,9 +99,11 @@ class TestMessage:
                 servo.pubsub.Message(content=b"foo")
 
             assert {
+                "input": None,
                 "loc": ("content_type",),
-                "msg": "none is not an allowed value",
-                "type": "type_error.none.not_allowed",
+                "msg": "Input should be a valid string",
+                "type": "string_type",
+                "url": "https://errors.pydantic.dev/2.7/v/string_type",
             } in excinfo.value.errors()
 
 
@@ -127,9 +131,11 @@ class TestChannel:
                 servo.pubsub.Channel(exchange=exchange)
 
             assert {
+                "input": {},
                 "loc": ("name",),
-                "msg": "field required",
-                "type": "value_error.missing",
+                "msg": "Field required",
+                "type": "missing",
+                "url": "https://errors.pydantic.dev/2.7/v/missing",
             } in excinfo.value.errors()
 
         def test_name_constraints(self, exchange: servo.pubsub.Exchange) -> None:
@@ -137,12 +143,12 @@ class TestChannel:
                 servo.pubsub.Channel(exchange=exchange, name="THIS_IS_INVALID***")
 
             assert {
+                "ctx": {"pattern": "^[0-9a-zA-Z]([0-9a-zA-Z\\.\\-_])*[0-9A-Za-z]$"},
+                "input": "THIS_IS_INVALID***",
                 "loc": ("name",),
-                "msg": 'string does not match regex "^[0-9a-zA-Z]([0-9a-zA-Z\\.\\-_])*[0-9A-Za-z]$"',
-                "type": "value_error.str.regex",
-                "ctx": {
-                    "pattern": "^[0-9a-zA-Z]([0-9a-zA-Z\\.\\-_])*[0-9A-Za-z]$",
-                },
+                "msg": "String should match pattern '^[0-9a-zA-Z]([0-9a-zA-Z\\.\\-_])*[0-9A-Za-z]$'",
+                "type": "string_pattern_mismatch",
+                "url": "https://errors.pydantic.dev/2.7/v/string_pattern_mismatch",
             } in excinfo.value.errors()
 
         def test_exchange_required(self) -> None:
@@ -158,7 +164,7 @@ class TestChannel:
         channels = {
             channel,
         }
-        copy_of_channel = channel.copy()
+        copy_of_channel = channel.model_copy()
         assert copy_of_channel in channels
         copy_of_channel.name = "another_name"
         assert copy_of_channel not in channels
@@ -916,7 +922,7 @@ class TestAggregator:
             channel: servo.pubsub.Channel,
         ) -> None:
             if aggregator.message is None:
-                aggregator.message = message.copy()
+                aggregator.message = message.model_copy()
             else:
                 text = "\n".join([aggregator.message.text, message.text])
                 aggregator.message = servo.pubsub.Message(text=text)
@@ -944,7 +950,7 @@ class TestAggregator:
             channel: servo.pubsub.Channel,
         ) -> None:
             if aggregator.message is None:
-                aggregator.message = message.copy()
+                aggregator.message = message.model_copy()
             else:
                 text = "\n".join([aggregator.message.text, message.text])
                 aggregator.message = servo.pubsub.Message(text=text)
@@ -997,7 +1003,7 @@ class TestAggregator:
             channel: servo.pubsub.Channel,
         ) -> None:
             if aggregator.message is None:
-                aggregator.message = message.copy()
+                aggregator.message = message.model_copy()
             else:
                 text = "\n".join([aggregator.message.text, message.text])
                 aggregator.message = servo.pubsub.Message(text=text)
@@ -1044,8 +1050,7 @@ class TestAggregator:
             aggregator: servo.pubsub.Aggregator,
             message: servo.pubsub.Message,
             channel: servo.pubsub.Channel,
-        ) -> None:
-            ...
+        ) -> None: ...
 
         aggregator = servo.pubsub.Aggregator(
             from_channels=[prometheus_metrics, cloudwatch_metrics],
@@ -1237,8 +1242,7 @@ class TestExchange:
     async def test_create_subscriber_with_dependency(
         self, exchange: servo.pubsub.Exchange
     ) -> None:
-        async def _dependency() -> None:
-            ...
+        async def _dependency() -> None: ...
 
         exchange.start()
         subscriber = exchange.create_subscriber("whatever", until_done=_dependency())

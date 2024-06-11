@@ -46,16 +46,29 @@ def append_pydantic_validator(
 
 
 @contextlib.contextmanager
-def extra(
-    obj: pydantic.BaseModel, extra: pydantic.Extra = pydantic.Extra.allow
+def model_config_override(
+    obj: pydantic.BaseModel, values: dict
 ) -> Generator[pydantic.BaseModel, None, None]:
-    """Temporarily override the value of the `extra` setting on a Pydantic model."""
-    original = obj.__config__.extra
-    obj.__config__.extra = extra
+    """Temporarily override the values on a Pydantic model config."""
+    obj.model_config.update(**values)
     try:
         yield obj
     finally:
-        obj.__config__.extra = original
+        for k in values.keys():
+            obj.model_config.pop(k)
+
+
+@contextlib.contextmanager
+def extra(
+    obj: pydantic.BaseModel, extra: str = "allow"
+) -> Generator[pydantic.BaseModel, None, None]:
+    """Temporarily override the value of the `extra` setting on a Pydantic model."""
+    with model_config_override(obj, {"extra": extra}):
+        # dynamicly changing extra isn't actually supported. have to tap into undelrying implementation to set field
+        #   normally set during BaseModel.model_construct
+        if obj.__pydantic_extra__ is None:
+            obj.__pydantic_extra__ = {}
+        yield obj
 
 
 @contextlib.contextmanager
@@ -63,9 +76,5 @@ def allow_mutation(
     obj: pydantic.BaseModel, allow_mutation: bool = True
 ) -> Generator[pydantic.BaseModel, None, None]:
     """Temporarily override the value of the `allow_mutation` setting on a Pydantic model."""
-    original = obj.__config__.allow_mutation
-    obj.__config__.allow_mutation = allow_mutation
-    try:
+    with model_config_override(obj, {"allow_mutation": allow_mutation}):
         yield obj
-    finally:
-        obj.__config__.allow_mutation = original

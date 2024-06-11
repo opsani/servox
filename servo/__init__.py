@@ -61,5 +61,5 @@ from .types.slo import *
 from .utilities import *
 
 # Resolve forward references
-servo.events.EventResult.update_forward_refs()
-servo.events.EventHandler.update_forward_refs()
+servo.events.EventResult.model_rebuild()
+servo.events.EventHandler.model_rebuild()

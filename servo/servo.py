@@ -118,29 +118,23 @@ class _EventDefinitions(Protocol):
 
     # Lifecycle events
     @servo.events.event(Events.attach)
-    async def attach(self, servo_: Servo) -> None:
-        ...
+    async def attach(self, servo_: Servo) -> None: ...
 
     @servo.events.event(Events.detach)
-    async def detach(self, servo_: Servo) -> None:
-        ...
+    async def detach(self, servo_: Servo) -> None: ...
 
     @servo.events.event(Events.startup)
-    async def startup(self) -> None:
-        ...
+    async def startup(self) -> None: ...
 
     @servo.events.event(Events.shutdown)
-    async def shutdown(self) -> None:
-        ...
+    async def shutdown(self) -> None: ...
 
     # Informational events
     @servo.events.event(Events.metrics)
-    async def metrics(self) -> list[servo.types.Metric]:
-        ...
+    async def metrics(self) -> list[servo.types.Metric]: ...
 
     @servo.events.event(Events.components)
-    async def components(self) -> list[servo.types.Component]:
-        ...
+    async def components(self) -> list[servo.types.Component]: ...
 
     # Operational events
     @servo.events.event(Events.measure)
@@ -149,8 +143,7 @@ class _EventDefinitions(Protocol):
         *,
         metrics: list[str] = None,
         control: servo.types.Control = servo.types.Control(),
-    ) -> servo.types.Measurement:
-        ...
+    ) -> servo.types.Measurement: ...
 
     @servo.events.event(Events.check)
     async def check(
@@ -159,26 +152,22 @@ class _EventDefinitions(Protocol):
         halt_on: Optional[
             servo.types.ErrorSeverity
         ] = servo.types.ErrorSeverity.critical,
-    ) -> list[servo.checks.Check]:
-        ...
+    ) -> list[servo.checks.Check]: ...
 
     @servo.events.event(Events.describe)
     async def describe(
         self, control: servo.types.Control = servo.types.Control()
-    ) -> servo.types.Description:
-        ...
+    ) -> servo.types.Description: ...
 
     @servo.events.event(Events.adjust)
     async def adjust(
         self,
         adjustments: list[servo.types.Adjustment],
         control: servo.types.Control = servo.types.Control(),
-    ) -> servo.types.Description:
-        ...
+    ) -> servo.types.Description: ...
 
     @servo.events.event(Events.promote)
-    async def promote(self) -> None:
-        ...
+    async def promote(self) -> None: ...
 
 
 @servo.connector.metadata(
@@ -261,12 +250,26 @@ class Servo(servo.connector.BaseConnector):
             connector._global_config = self.config.settings
             connector._optimizer = self.config.optimizer
 
-    @pydantic.root_validator()
+    @pydantic.model_validator(mode="before")
     def _initialize_name(cls, values: dict[str, Any]) -> dict[str, Any]:
-        if values["name"] == "servo" and values.get("config"):
-            values["name"] = values["config"].name or getattr(
-                values["config"].optimizer, "id", "servo"
-            )
+        if (
+            values["name"] == "servo"
+            and (servo_config := values.get("config", None)) is not None
+        ):
+            if isinstance(servo_config, dict):
+                values["name"] = servo_config.get("name", None) or getattr(
+                    servo_config["optimizer"], "id", "servo"
+                )
+            elif issubclass(
+                servo_config.__class__, servo.configuration.BaseServoConfiguration
+            ):
+                values["name"] = values["config"].name or getattr(
+                    values["config"].optimizer, "id", "servo"
+                )
+            else:
+                raise pydantic.ValidationError(
+                    f"Unable to derive name from config of type {servo_config.__class__}"
+                )
 
         return values
 
@@ -538,7 +541,7 @@ class Servo(servo.connector.BaseConnector):
             raise servo.errors.EventCancelledError(status.reason or "Command cancelled")
         elif status.status == servo.api.OptimizerStatuses.invalid:
             self.logger.warning(
-                f"progress report was rejected as invalid: {devtools.pformat(status.dict())}"
+                f"progress report was rejected as invalid: {devtools.pformat(status.model_dump())}"
             )
             if status.reason == "unexpected cmd_uid":
                 raise servo.errors.UnexpectedCommandIdError(status.reason)
@@ -556,7 +559,7 @@ class Servo(servo.connector.BaseConnector):
         time_remaining: Optional[
             Union[servo.types.Numeric, servo.types.Duration]
         ] = None,
-        **kwargs
+        **kwargs,
         # logs: Optional[list[str]] = None,
         # _servo: Optional[Servo] = None,
         # connector: Optional[servo.connector.BaseConnector] = None,
@@ -609,13 +612,13 @@ class Servo(servo.connector.BaseConnector):
                 event=event, param=param, servo_uid=self.config.servo_uid
             )
             self.logger.trace(
-                f"POST event request: {devtools.pformat(event_request.json())}"
+                f"POST event request: {devtools.pformat(event_request.model_dump_json())}"
             )
 
             try:
                 try:
                     response = await self._api_client.post(
-                        "servo", data=event_request.json()
+                        "servo", data=event_request.model_dump_json(exclude_none=True)
                     )
                 except RuntimeError as e:
                     if "the handler is closed" in str(e):
@@ -626,7 +629,8 @@ class Servo(servo.connector.BaseConnector):
                             self.config.optimizer, self.config.settings
                         )
                         response = await self._api_client.post(
-                            "servo", data=event_request.json()
+                            "servo",
+                            data=event_request.model_dump_json(exclude_none=True),
                         )
                     else:
                         raise
@@ -638,9 +642,9 @@ class Servo(servo.connector.BaseConnector):
                 )
                 self.logger.trace(servo.api.redacted_to_curl(response.request))
 
-                return pydantic.parse_obj_as(
-                    Union[servo.api.CommandResponse, servo.api.Status], response_json
-                )
+                return pydantic.TypeAdapter(
+                    Union[servo.api.CommandResponse, servo.api.Status]
+                ).validate_python(response_json)
 
             except httpx.HTTPError as error:
                 if hasattr(error, "response"):

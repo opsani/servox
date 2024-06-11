@@ -24,6 +24,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple, Type, Union
 
 import pydantic
 import pydantic.json
+import pydantic_settings
 import yaml
 
 import servo.configuration
@@ -69,7 +70,7 @@ class Assembly(pydantic.BaseModel):
     of the schema family of methods. See the method docstrings for specific details.
     """
 
-    config_file: Optional[pathlib.Path]
+    config_file: Optional[pathlib.Path] = None
     servos: List[servo.servo.Servo]
     _context_token: Optional[contextvars.Token] = pydantic.PrivateAttr(None)
 
@@ -115,7 +116,7 @@ class Assembly(pydantic.BaseModel):
             # TODO: Needs to be public / have a better name
             # TODO: We need to index the env vars here for multi-servo
             servo_config_model, routes = _create_config_model(config=config, env=env)
-            servo_config = servo_config_model.parse_obj(config)
+            servo_config = servo_config_model.model_validate(config)
 
             telemetry = servo.telemetry.Telemetry()
 
@@ -278,9 +279,9 @@ def _create_config_model_from_routes(
     require_fields: bool = True,
 ) -> Type[servo.configuration.BaseServoConfiguration]:
     # Create Pydantic fields for each active route
-    connector_versions: Dict[
-        Type[servo.connector.BaseConnector], str
-    ] = {}  # use dict for uniquing and ordering
+    connector_versions: Dict[Type[servo.connector.BaseConnector], str] = (
+        {}
+    )  # use dict for uniquing and ordering
     setting_fields: Dict[
         str, Tuple[Type[servo.configuration.BaseConfiguration], Any]
     ] = {}
@@ -290,28 +291,32 @@ def _create_config_model_from_routes(
 
     for name, connector_class in routes.items():
         config_model = _derive_config_model_for_route(name, connector_class)
-        config_model.__config__.title = (
+        config_model.model_config["title"] = (
             f"{connector_class.full_name} Settings (named {name})"
         )
-        setting_fields[name] = (config_model, default_value)
-        connector_versions[
-            connector_class
-        ] = f"{connector_class.full_name} v{connector_class.version}"
+        setting_fields[name] = (Optional[config_model], default_value)
+        connector_versions[connector_class] = (
+            f"{connector_class.full_name} v{connector_class.version}"
+        )
 
     # Create our model
-    servo_config_model = pydantic.create_model(
-        "ServoConfiguration",
-        __base__=servo.configuration.BaseServoConfiguration,
-        **setting_fields,
+    servo_config_model: servo.configuration.BaseServoConfiguration = (
+        pydantic.create_model(
+            "ServoConfiguration",
+            __base__=servo.configuration.BaseServoConfiguration,
+            **setting_fields,
+        )
     )
 
     connectors_series = servo.utilities.join_to_series(
         list(connector_versions.values())
     )
-    servo_config_model.__config__.title = "Servo Configuration Schema"
-    servo_config_model.__config__.schema_extra = {
+    servo_config_model.model_config["title"] = "Servo Configuration Schema"
+    servo_config_model.model_config["json_schema_extra"] = {
         "description": f"Schema for configuration of Servo v{servo.Servo.version} with {connectors_series}"
     }
+    servo_config_model.model_config["env_nested_delimiter"] = "_"
+    servo_config_model.model_config["extra"] = "ignore"
 
     return servo_config_model
 
@@ -337,6 +342,7 @@ def _create_config_model(
             routes = servo.connector._routes_for_connectors_descriptor(connectors_value)
             require_fields = True
 
+    print(f"require_fields {require_fields}")
     servo_config_model = _create_config_model_from_routes(
         routes, require_fields=require_fields
     )
@@ -412,10 +418,5 @@ def _derive_config_model_for_route(
         connector_type=model, connector_name=name, config_model=config_model
     )
     __config_models_cache__.append(cache_entry)
-
-    # Traverse across all the fields and update the env vars
-    for field_name, field in config_model.__fields__.items():
-        field.field_info.extra.pop("env", None)
-        field.field_info.extra["env_names"] = {f"SERVO_{name}_{field_name}".upper()}
 
     return config_model
