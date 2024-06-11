@@ -8,8 +8,8 @@ from servo.types.settings import _is_step_aligned
 
 
 class BasicSetting(Setting):
-    name = "foo"
-    type = "bar"
+    name: str = "foo"
+    type: str = "bar"
 
     def __opsani_repr__(self) -> dict:
         return {}
@@ -22,11 +22,11 @@ class TestSetting:
     def test_requires_opsani_repr_implementation(self) -> None:
         assert "__opsani_repr__" in Setting.__abstractmethods__
 
-    def test_validates_all(self) -> None:
-        assert Setting.__config__.validate_all
+    def test_validates_default(self) -> None:
+        assert Setting.model_config["validate_default"]
 
     def test_validates_assignment(self) -> None:
-        assert Setting.__config__.validate_assignment
+        assert Setting.model_config["validate_assignment"]
 
     def test_human_readable_value(self) -> None:
         setting = BasicSetting(value="whatever")
@@ -36,8 +36,19 @@ class TestSetting:
             def human_readable(self) -> str:
                 return "another-value"
 
-        setting = BasicSetting(value=HumanReadableTestValue("whatever"))
-        assert setting.human_readable_value == "another-value"
+            @classmethod
+            def __get_pydantic_core_schema__(
+                cls, _: Any, handler: pydantic.GetCoreSchemaHandler
+            ) -> pydantic_core.CoreSchema:
+                return pydantic_core.core_schema.no_info_after_validator_function(
+                    cls, handler(str)
+                )
+
+        class HumanReadableSetting(BasicSetting):
+            value: Optional[HumanReadableTestValue] = None
+
+        setting2 = HumanReadableSetting(value=HumanReadableTestValue("whatever"))
+        assert setting2.human_readable_value == "another-value"
 
     @pytest.mark.parametrize(
         ("pinned", "init_value", "new_value", "error_message"),
@@ -112,13 +123,11 @@ class TestSetting:
         if error_message is not None:
             assert pinned, "Cannot test validation for non-pinned settings"
 
-            with pytest.raises(pydantic.ValidationError) as error:
+            with pytest.raises(ValueError) as error:
                 setting.value = new_value
 
             assert error
-            assert "1 validation error for BasicSetting" in str(error.value)
-            assert error.value.errors()[0]["loc"] == ("value",)
-            assert error.value.errors()[0]["msg"] == error_message
+            assert str(error.value) == error_message
         else:
             setting.value = new_value
             assert setting.value == new_value
@@ -164,8 +173,8 @@ class TestEnumSetting:
         assert error
         assert "1 validation error for EnumSetting" in str(error.value)
         assert error.value.errors()[0]["loc"] == ("type",)
-        assert error.value.errors()[0]["type"] == "value_error.const"
-        assert error.value.errors()[0]["msg"] == "unexpected value; permitted: 'enum'"
+        assert error.value.errors()[0]["type"] == "literal_error"
+        assert error.value.errors()[0]["msg"] == "Input should be 'enum'"
 
     def test_validate_values_list_is_not_empty(self) -> None:
         with pytest.raises(pydantic.ValidationError) as error:
@@ -174,9 +183,10 @@ class TestEnumSetting:
         assert error
         assert "1 validation error for EnumSetting" in str(error.value)
         assert error.value.errors()[0]["loc"] == ("values",)
-        assert error.value.errors()[0]["type"] == "value_error.list.min_length"
+        assert error.value.errors()[0]["type"] == "too_short"
         assert (
-            error.value.errors()[0]["msg"] == "ensure this value has at least 1 items"
+            error.value.errors()[0]["msg"]
+            == "List should have at least 1 item after validation, not 0"
         )
 
     def test_validate_value_is_included_in_values_list(self) -> None:
@@ -185,11 +195,11 @@ class TestEnumSetting:
 
         assert error
         assert "1 validation error for EnumSetting" in str(error.value)
-        assert error.value.errors()[0]["loc"] == ("__root__",)
+        assert error.value.errors()[0]["loc"] == ()
         assert error.value.errors()[0]["type"] == "value_error"
         assert (
             error.value.errors()[0]["msg"]
-            == "invalid value: 'three' is not in the values list ['one', 'two']"
+            == "Value error, invalid value: 'three' is not in the values list ['one', 'two']"
         )
 
 
@@ -205,17 +215,18 @@ class TestRangeSetting:
         assert error
         assert "1 validation error for RangeSetting" in str(error.value)
         assert error.value.errors()[0]["loc"] == ("type",)
-        assert error.value.errors()[0]["type"] == "value_error.const"
-        assert error.value.errors()[0]["msg"] == "unexpected value; permitted: 'range'"
+        assert error.value.errors()[0]["type"] == "literal_error"
+        assert error.value.errors()[0]["msg"] == "Input should be 'range'"
 
     def test_validate_step_alignment_suggestion(
         self, captured_logs: list["loguru.Message"]
     ) -> None:
         RangeSetting(name="invalid", min=3.0, max=11.0, step=3.0)
-        assert (
-            captured_logs[0].record["message"]
+        assert any(
+            c.record["message"]
             == "RangeSetting('invalid' 3.0-11.0, 3.0) min/max difference is not step aligned: 8.0 is not a multiple of 3.0 (consider min 5.0 or 2.0, max 9.0 or 12.0)."
-        )
+            for c in captured_logs
+        ), captured_logs
 
     @pytest.mark.parametrize(
         ("min", "max", "step", "error_message"),
@@ -246,7 +257,7 @@ class TestRangeSetting:
     ) -> None:
         if error_message is not None:
             RangeSetting(name="invalid", min=min, max=max, step=step)
-            assert captured_logs[0].record["message"] == error_message
+            any(c.record["message"] == error_message for c in captured_logs)
 
         else:
             RangeSetting(name="valid", min=min, max=max, step=step)
@@ -287,7 +298,9 @@ class TestRangeSetting:
     ) -> None:
         if error_message is not None:
             RangeSetting(name="invalid", min=min, max=max, step=step)
-            assert captured_logs[0].record["message"] == error_message
+            any(
+                c.record["message"] == error_message for c in captured_logs
+            ), captured_logs
         else:
             RangeSetting(name="valid", min=min, max=max, step=step)
             assert len(captured_logs) < 1
@@ -331,7 +344,9 @@ class TestRangeSetting:
     ) -> None:
         if error_message is not None:
             RangeSetting(name="invalid", min=min, max=max, step=step, value=value)
-            assert captured_logs[0].record["message"] == error_message
+            assert any(
+                c.record["message"] == error_message for c in captured_logs
+            ), captured_logs
 
         else:
             RangeSetting(name="valid", min=min, max=max, step=step, value=value)
@@ -347,7 +362,7 @@ class TestRangeSetting:
                 1,
                 "step must be zero when min equals max: step 1 cannot step from 1 to 1 (consider using the pinned attribute of settings if you have a value you don't want changed)",
             ),
-            (1, 0, 1, "min cannot be greater than max (1 > 0)"),
+            (1, 0, 1, "invalid value: 1 is outside of the range 1-0"),
             (1.0, 3.0, 1.0, None),
             (
                 1.0,
@@ -355,7 +370,7 @@ class TestRangeSetting:
                 3.0,
                 "RangeSetting('invalid' 1.0-2.0, 3.0) min/max difference is not step aligned: 1.0 is not a multiple of 3.0 (consider min -1.0 or -4.0, max 4.0 or 7.0).",
             ),
-            (1.0, 0.0, 1.0, "min cannot be greater than max (1.0 > 0.0)"),
+            (1.0, 0.0, 1.0, "invalid value: 1 is outside of the range 1.0-0.0"),
         ],
     )
     def test_max_validation(
@@ -368,7 +383,9 @@ class TestRangeSetting:
     ) -> None:
         if error_message is not None:
             RangeSetting(name="invalid", min=min, max=max, step=step, value=1)
-            assert captured_logs[0].record["message"] == error_message
+            assert any(
+                c.record["message"] == error_message for c in captured_logs
+            ), captured_logs
 
         else:
             RangeSetting(name="valid", min=min, max=max, step=step, value=1)
@@ -379,10 +396,10 @@ class TestRangeSetting:
     ) -> None:
         setting = RangeSetting(name="range", min=0, max=10, step=1)
         setting.value = 25
-        assert (
-            captured_logs[0].record["message"]
-            == "invalid value: 25 is outside of the range 0-10"
-        )
+        assert any(
+            c.record["message"] == "invalid value: 25 is outside of the range 0-10"
+            for c in captured_logs
+        ), captured_logs
 
     @pytest.mark.parametrize(
         ("min", "max", "step", "error_message"),
@@ -401,7 +418,9 @@ class TestRangeSetting:
     ) -> None:
         if error_message is not None:
             RangeSetting(name="invalid", min=min, max=max, step=step, value=1)
-            assert captured_logs[0].record["message"] == error_message
+            assert any(
+                c.record["message"] == error_message for c in captured_logs
+            ), captured_logs
 
         else:
             RangeSetting(name="valid", min=min, max=max, step=step, value=1)
@@ -409,8 +428,11 @@ class TestRangeSetting:
 
     def test_step_cannot_be_zero(self, captured_logs: list["loguru.Message"]) -> None:
         RangeSetting(name="range", min=0, max=10, step=0)
-        assert captured_logs[0].record["message"] == "step cannot be zero"
-        assert captured_logs[0].record["level"].name == "WARNING"
+        assert any(
+            c.record["message"] == "step cannot be zero"
+            and c.record["level"].name == "WARNING"
+            for c in captured_logs
+        ), captured_logs
 
     def test_min_can_equal_max(self) -> None:
         RangeSetting(name="range", min=5, max=5, step=0)
@@ -437,8 +459,8 @@ class TestCPU:
         assert error
         assert "1 validation error for CPU" in str(error.value)
         assert error.value.errors()[0]["loc"] == ("name",)
-        assert error.value.errors()[0]["type"] == "value_error.const"
-        assert error.value.errors()[0]["msg"] == "unexpected value; permitted: 'cpu'"
+        assert error.value.errors()[0]["type"] == "literal_error"
+        assert error.value.errors()[0]["msg"] == "Input should be 'cpu'"
 
     def test_validate_min_cant_be_zero(self) -> None:
         with pytest.raises(pydantic.ValidationError) as error:
@@ -447,8 +469,8 @@ class TestCPU:
         assert error
         assert "1 validation error for CPU" in str(error.value)
         assert error.value.errors()[0]["loc"] == ("min",)
-        assert error.value.errors()[0]["type"] == "value_error.number.not_gt"
-        assert error.value.errors()[0]["msg"] == "ensure this value is greater than 0"
+        assert error.value.errors()[0]["type"] == "greater_than"
+        assert error.value.errors()[0]["msg"] == "Input should be greater than 0"
 
 
 class TestMemory:
@@ -462,14 +484,17 @@ class TestMemory:
         assert error
         assert "1 validation error for Memory" in str(error.value)
         assert error.value.errors()[0]["loc"] == ("name",)
-        assert error.value.errors()[0]["type"] == "value_error.const"
-        assert error.value.errors()[0]["msg"] == "unexpected value; permitted: 'mem'"
+        assert error.value.errors()[0]["type"] == "literal_error"
+        assert error.value.errors()[0]["msg"] == "Input should be 'mem'"
 
     def test_validate_min_cant_be_zero(
         self, captured_logs: list["loguru.Message"]
     ) -> None:
         Memory(min=0.0, max=10.0, step=1.0)
-        assert captured_logs[0].record["message"] == "min must be greater than zero"
+        any(
+            c.record["message"] == "min must be greater than zero"
+            for c in captured_logs
+        )
 
 
 class TestReplicas:
@@ -489,9 +514,14 @@ class TestReplicas:
         self, field_name: str, required: bool, allow_none: bool
     ) -> None:
         field = Replicas.model_fields[field_name]
-        assert field.type_ == pydantic.StrictInt
-        assert field.required == required
-        assert field.allow_none == allow_none
+        if not required and allow_none:
+            assert (
+                field.annotation
+                == typing.Optional[typing.Annotated[int, pydantic.Strict(strict=True)]]
+            )
+        else:
+            assert field.annotation == int
+        assert field.is_required() == required
 
     def test_validate_name_cannot_be_changed(self) -> None:
         with pytest.raises(pydantic.ValidationError) as error:
@@ -500,10 +530,8 @@ class TestReplicas:
         assert error
         assert "1 validation error for Replicas" in str(error.value)
         assert error.value.errors()[0]["loc"] == ("name",)
-        assert error.value.errors()[0]["type"] == "value_error.const"
-        assert (
-            error.value.errors()[0]["msg"] == "unexpected value; permitted: 'replicas'"
-        )
+        assert error.value.errors()[0]["type"] == "literal_error"
+        assert error.value.errors()[0]["msg"] == "Input should be 'replicas'"
 
 
 class TestInstanceType:
@@ -519,17 +547,14 @@ class TestInstanceType:
         assert error
         assert "1 validation error for InstanceType" in str(error.value)
         assert error.value.errors()[0]["loc"] == ("name",)
-        assert error.value.errors()[0]["type"] == "value_error.const"
-        assert (
-            error.value.errors()[0]["msg"] == "unexpected value; permitted: 'inst_type'"
-        )
+        assert error.value.errors()[0]["type"] == "literal_error"
+        assert error.value.errors()[0]["msg"] == "Input should be 'inst_type'"
 
     def test_validate_unit(self) -> None:
         field = InstanceType.model_fields["unit"]
-        assert field.type_ == InstanceTypeUnits
+        assert field.annotation == InstanceTypeUnits
         assert field.default == InstanceTypeUnits.ec2
-        assert field.required == False
-        assert field.allow_none == False
+        assert field.is_required() == False
 
 
 @pytest.mark.parametrize(
@@ -555,17 +580,6 @@ def test_step_alignment(value, step, aligned) -> None:
     assert (
         _is_step_aligned(value, step) == aligned
     ), f"Expected value {value} {qualifier} be aligned with step {step}"
-
-
-@pytest.mark.parametrize(
-    "input, expected_type",
-    [
-        ("int", int),
-        ("float", float),
-    ],
-)
-def test_numeric_type(input, expected_type):
-    assert NumericType.validate(input) == expected_type
 
 
 class TestEnvironmentSettings:

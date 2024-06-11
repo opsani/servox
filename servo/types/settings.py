@@ -103,25 +103,22 @@ class Setting(BaseModel, abc.ABC):
         property if one exists, else coerces the value into a string. Subclasses
         can provide arbitrary implementations to directly control the representation.
         """
-        if isinstance(self.value, HumanReadable):
+        if getattr(self.value, "human_readable", None):
             return cast(HumanReadable, self.value).human_readable()
         return str(self.value)
 
     def __setattr__(self, name, value) -> None:
-        if name == "value":
-            self._validate_pinned_values_cannot_be_changed(value)
-        super().__setattr__(name, value)
-
-    def _validate_pinned_values_cannot_be_changed(self, new_value) -> None:
-        if not self.pinned or self.value is None:
-            return
-
-        if new_value != self.value:
-            error = ValueError(
-                f"value of pinned settings cannot be changed: assigned value {repr(new_value)} is not equal to existing value {repr(self.value)}"
+        if (
+            name == "value"
+            and self.pinned
+            and self.value is not None
+            and value != self.value
+        ):
+            raise ValueError(
+                f"value of pinned settings cannot be changed: assigned value {repr(value)} is not equal to existing value {repr(self.value)}"
             )
-            error_ = pydantic.error_wrappers.ErrorWrapper(error, loc="value")
-            raise pydantic.ValidationError([error_], self.__class__)
+
+        super().__setattr__(name, value)
 
     @classmethod
     def get_setting_type(cls, unwrap_union=False) -> Type[Any]:
@@ -130,7 +127,7 @@ class Setting(BaseModel, abc.ABC):
             none_filtered = [
                 a for a in typing.get_args(value_type) if a is not type(None)
             ]
-            if len(none_filtered) == 1:
+            if len(none_filtered) > 0:
                 value_type = none_filtered[0]
             else:
                 import servo
@@ -304,25 +301,28 @@ class RangeSetting(Setting):
 
     def _suggest_step_aligned_values(self) -> tuple[Numeric, Numeric]:
         # FIXME
-        range_size = decimal.Decimal(self.max - self.min)
+        range_size, step_decimal = decimal.Decimal(
+            self.max - self.min
+        ), decimal.Decimal(self.step)
         lower_bound, upper_bound = range_size, range_size
 
         # Find the values that are closest on either side of the value
         # Ensure the smaller size isn't smaller than step
-        remainder = range_size % self.step
+        remainder = range_size % step_decimal
 
         # lower bound -- align by offseting by remainder
         lower_bound -= remainder
-        assert lower_bound % self.step == 0
-        if lower_bound <= self.step:
-            lower_bound = self.step
+        assert lower_bound % step_decimal == 0
+        if lower_bound <= step_decimal:
+            lower_bound = step_decimal
 
         # upper bound -- start from the lower bound and find the next value
-        upper_bound = lower_bound + self.step
+        upper_bound = lower_bound + step_decimal
         if upper_bound == range_size:
-            upper_bound += self.step
+            upper_bound += step_decimal
 
-        return (lower_bound, upper_bound)
+        value_type = self.get_setting_type(unwrap_union=True)
+        return (value_type(lower_bound), value_type(upper_bound))
 
     @pydantic.model_validator(mode="after")
     @classmethod
@@ -540,45 +540,9 @@ class EnvironmentSetting(Setting):
         return self.literal or self.name
 
 
-class NumericType(Setting):
-
-    @classmethod
-    def __get_pydantic_core_schema__(
-        cls, source_type: Any, handler: pydantic.GetCoreSchemaHandler
-    ) -> pydantic_core.CoreSchema:
-        return pydantic_core.core_schema.no_info_after_validator_function(
-            cls.validate, handler(Setting)
-        )
-
-    @classmethod
-    def validate(cls, value):
-        if isclass(value) and issubclass(value, (int, float)):
-            return value
-
-        if value == "int":
-            return int
-        if value == "float":
-            return float
-
-        raise ValueError(f"Unrecognized numeric type {repr(value)}")
-
-    @classmethod
-    def __get_pydantic_json_schema__(
-        cls,
-        _core_schema: pydantic_core.core_schema.CoreSchema,
-        handler: pydantic.GetJsonSchemaHandler,
-    ) -> pydantic.json_schema.JsonSchemaValue:
-        # _core_schema.update(anyOf=["int", "float"])
-        # return handler(Setting)
-        json_schema = handler(_core_schema)
-        json_schema = handler.resolve_ref_schema(json_schema)
-        json_schema["anyOf"] = ["int", "float"]
-        return json_schema
-
-
 class EnvironmentRangeSetting(RangeSetting, EnvironmentSetting):
     # # TODO promote to RangeSetting base
-    value_type: NumericType = pydantic.Field(
+    value_type: Union[Literal["int"], Literal["float"], None] = pydantic.Field(
         None, description="The optional data type of the value of the setting"
     )
 
@@ -587,20 +551,17 @@ class EnvironmentRangeSetting(RangeSetting, EnvironmentSetting):
         None, description="The optional value of the setting as reported by the servo"
     )
 
-    @pydantic.field_validator("value_type", mode="before")
-    def _set_value_type_to_type(cls, value: Any) -> Union[Type[int], Type[float]]:
-        if value == "int":
-            return int
-        if value == "float":
-            return float
-        return value
-
     @pydantic.model_validator(mode="before")
     def _cast_value_to_value_type(cls, values: dict[Any, Any]) -> dict[Any, Any]:
         if (value := values.get("value")) is not None and (
             value_type := values.get("value_type")
         ) is not None:
-            values["value"] = value_type(value)
+            if value_type == "int":
+                values["value"] = int(value)
+
+            if value_type == "float":
+                values["value"] = float(value)
+
         return values
 
 
