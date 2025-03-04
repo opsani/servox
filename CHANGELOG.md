@@ -17,6 +17,14 @@ based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/). Releases are
 versioned in accordance with [Semantic
 Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [25.3.0] "ollyander" - 2025-03-03
+
+### Changed
+
+- Support for Cisco O11y authentication
+- Switched to --groups for managing dev dependency with Poetry
+- Dependency updates
+
 ## [24.3.0] "speedwagon" - 2024-03-11
 
 ### Changed

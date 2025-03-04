@@ -237,7 +237,7 @@ def adjustments_to_descriptor(
     descriptor = {"state": {"application": {"components": components}}}
 
     for adjustment in adjustments:
-        if not adjustment.component_name in components:
+        if adjustment.component_name not in components:
             components[adjustment.component_name] = {"settings": {}}
 
         components[adjustment.component_name]["settings"][adjustment.setting_name] = {
@@ -284,15 +284,19 @@ def get_api_client_for_optimizer(
     settings: servo.configuration.CommonConfiguration,
 ) -> Union[httpx.AsyncClient, AsyncOAuth2Client]:
     if optimizer.token:
-        # NOTE httpx useage docs indicate context manager but author states singleton is fine...
+        # NOTE httpx usage docs indicate context manager but author states singleton is fine...
         #   https://github.com/encode/httpx/issues/1042#issuecomment-652951591
         auth_header_value = optimizer.token.get_secret_value()
-        if "Bearer" not in auth_header_value:
+        auth_header_name = "Authorization"
+        if auth_header_value.startswith("X-SF-Token"):
+            auth_header_name = "X-SF-Token"
+            auth_header_value = auth_header_value[len("X-SF-Token") + 1 :]
+        elif "Bearer" not in auth_header_value:
             auth_header_value = f"Bearer {auth_header_value}"
         return httpx.AsyncClient(
             base_url=optimizer.url,
             headers={
-                "Authorization": auth_header_value,
+                auth_header_name: auth_header_value,
                 "User-Agent": user_agent(),
                 "Content-Type": "application/json",
             },
