@@ -26,12 +26,13 @@ data:
     servo_uid: {{ . }}
     {{- end }}
     optimizer:
-      optimizer_id: {{ required ".Values.optimizerId is required" .Values.optimizerId }}
       {{- if eq .Values.connectionSettingsType "static" }}
-      tenant_id: {{ required ".Values.tenantId is required for static connection settings type" .Values.tenantId  }}
-      base_url: {{ required ".Values.baseUrl is required for static connection settings type" .Values.baseUrl }}
-      client_id: {{ required ".Values.clientId is required for static connection settings type" .Values.clientId }}
+      id: {{ required ".Values.tenantId is required for static connection settings type" .Values.tenantId  }}/{{ required ".Values.optimizerId is required" .Values.optimizerId }}
+      url: {{ required ".Values.urlOverride is required for static connection settings type" .Values.urlOverride }}
+      token: X-SF-Token {{ .Values.token | required ".Values.token is required for static connection settings type" }}
       {{- else if eq .Values.connectionSettingsType "sidecar" }}
+      optimizer_id: {{ required ".Values.optimizerId is required" .Values.optimizerId }}
+      tenant_id: {{ required ".Values.tenantId is required for static connection settings type" .Values.tenantId  }}
       connection_file: /agent-management-sidecar/connection.yaml
       {{- end }}
       {{- if .Values.urlOverride }}

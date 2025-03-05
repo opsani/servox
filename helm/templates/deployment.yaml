@@ -41,13 +41,6 @@ spec:
           - 'run'
           - '--check'
         env:
-        {{- if eq .Values.connectionSettingsType "static" }}
-        - name: APPD_CLIENT_SECRET
-          valueFrom:
-            secretKeyRef:
-              name: {{ include "servox.fullname" . }}
-              key: client_secret
-        {{- end }}
         - name: SERVO_LOG_LEVEL
           valueFrom:
             configMapKeyRef:

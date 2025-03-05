@@ -1045,7 +1045,7 @@ You can take control of the banner output with two environment variables:
 ## Release Process
 
 1. Use [Semantic Versioning](https://semver.org/) to choose a release number.
-   Run `poetry version [major | minor | patch]` to increment the version. This
+   Run `poetry version [major.minor.patch]` to increment the version. This
    will update the version number as `version` in  section `[tool.poetry]` of
    the [pyproject.toml](pyproject.toml) file.
 1. Minor version release series each have a unique cryptonym. If incrementing

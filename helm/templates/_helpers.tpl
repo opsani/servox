@@ -77,7 +77,7 @@ app.kubernetes.io/component: core
 Servo Image
 */}}
 {{- define "servox.servoImage" -}}
-{{- default (printf "IMAGE_REGISTRY_VALUE/servox:%s" .Chart.AppVersion) .Values.servoImageOverride }}
+{{- default (printf "ghcr.io/opsani/servox:%s" .Chart.AppVersion) .Values.servoImageOverride }}
 {{- end }}
 
 {{/*
