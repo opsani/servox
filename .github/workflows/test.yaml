@@ -128,11 +128,11 @@ jobs:
             --junitxml=artifacts/unit-test-report.xml --html=artifacts/unit-test-report.html \
             --self-contained-html
       - name: Upload coverage file
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: coverage-unit-temp
           path: ${{ github.workspace }}/.coverage-unit-temp
-      - uses: actions/upload-artifact@v2
+      - uses: actions/upload-artifact@v4
         with:
           name: unit-test-reports
           path: artifacts/
@@ -216,15 +216,15 @@ jobs:
   #         --cov-report=html:artifacts/integration-test-coverage-html --junitxml=artifacts/integration-test-report.xml \
   #         --html=artifacts/integration-test-report.html --self-contained-html
   #   - name: Upload coverage file
-  #     uses: actions/upload-artifact@v3
+  #     uses: actions/upload-artifact@v4
   #     with:
   #       name: coverage-integration-temp
   #       path: ${{ github.workspace }}/.coverage-integration-temp
-  #   - uses: actions/upload-artifact@v2
+  #   - uses: actions/upload-artifact@v4
   #     with:
   #       name: integration-test-reports
   #       path: artifacts/
-  #   - uses: actions/upload-artifact@v2
+  #   - uses: actions/upload-artifact@v4
   #     with:
   #       name: integration-test-logs
   #       path: logs/
@@ -262,11 +262,11 @@ jobs:
   #         python-${{ steps.setup-python.outputs.python-version }}-\
   #         ${{ hashFiles('**/poetry.lock', 'servo/**/*.py') }}"
   #   - name: Download unit coverage
-  #     uses: actions/download-artifact@v3
+  #     uses: actions/download-artifact@v4
   #     with:
   #       name: coverage-unit-temp
   #   - name: Download integration coverage
-  #     uses: actions/download-artifact@v3
+  #     uses: actions/download-artifact@v4
   #     with:
   #       name: coverage-integration-temp
   #   - name: Combine coverage reports
@@ -274,7 +274,7 @@ jobs:
   #       source .venv/bin/activate
   #       coverage combine --append .coverage-unit-temp .coverage-integration-temp
   #       coverage html -d artifacts/combined_coverage --skip-covered
-  #   - uses: actions/upload-artifact@v2
+  #   - uses: actions/upload-artifact@v4
   #     with:
   #       name: combined-coverage-report
   #       path: artifacts/
@@ -367,11 +367,11 @@ jobs:
             -T system --verbose --durations=0 --durations-min=5 \
             --junitxml=artifacts/system-test-report.xml \
             --html=artifacts/system-test-report.html --self-contained-html
-      - uses: actions/upload-artifact@v2
+      - uses: actions/upload-artifact@v4
         with:
           name: system-test-reports
           path: artifacts/
-      - uses: actions/upload-artifact@v2
+      - uses: actions/upload-artifact@v4
         with:
           name: system-test-logs
           path: logs/
